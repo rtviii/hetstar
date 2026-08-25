@@ -12,6 +12,7 @@ import { conformerCount, type Track } from "@dynamic-pdb/hetkit/metrics";
 
 import MolstarViewer from "@/components/MolstarViewer";
 import type { MolstarViewer as ViewerInstance, PickInfo } from "@/lib/molstar/viewer";
+import type { StructureView } from "@/lib/molstar/style";
 import {
   buildIsosurfaces,
   clearClip,
@@ -29,6 +30,7 @@ import {
   type DensityVolumes,
   type MetricPoint,
 } from "@/lib/molstar/density";
+import { carveDensityToStructure } from "@/lib/molstar/carve";
 import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/state";
 
 // Density capability spike on the 7A1X qFit multiconformer model:
@@ -41,6 +43,11 @@ import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/sta
 
 const MODEL_URL = "/spike/7a1x_qFit_010.cif";
 const SF_URL = "https://files.rcsb.org/download/7A1X-sf.cif";
+
+// Module-level so the load effect in MolstarViewer never sees a new identity: an inline
+// literal here re-triggered clear()+load() on every status re-render, and a clear() lands
+// mid density pipeline and deletes the volume nodes out from under it.
+const VIEW: StructureView = { representation: "ball-and-stick", colorTheme: "alt-loc" };
 
 type SliceAxis = "x" | "y" | "z";
 const AXIS_NORMALS: Record<SliceAxis, [number, number, number]> = {
@@ -125,6 +132,12 @@ export default function DensitySpikePanel() {
       setStatus("computing maps from map coefficients (client-side FFT)...");
       const vols = await loadStructureFactors(viewer.ctx, text, { entryId: "7A1X", label: "7A1X-sf" });
       if (!vols.twoFoFc && !vols.foFc) throw new Error("no map coefficients found in sf file");
+      // The FFT grids cover one unit cell, away from the model; resample them around it.
+      const structure = viewer.getCurrentStructure();
+      if (structure) {
+        setStatus("carving maps around the model...");
+        carveDensityToStructure(viewer.ctx, vols, structure);
+      }
       const reprs = await buildIsosurfaces(viewer.ctx, vols);
       volsRef.current = vols;
       reprsRef.current = reprs;
@@ -238,14 +251,9 @@ export default function DensitySpikePanel() {
   const ready = densityState === "ready";
 
   return (
-    <div className="flex h-[calc(100vh-49px)] min-h-0">
+    <div className="flex h-screen min-h-0">
       <div className="relative min-w-0 flex-1">
-        <MolstarViewer
-          data={modelText}
-          binary={false}
-          view={{ representation: "ball-and-stick", colorTheme: "alt-loc" }}
-          onReady={setViewer}
-        />
+        <MolstarViewer data={modelText} binary={false} view={VIEW} onReady={setViewer} />
       </div>
       <div className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-neutral-200 bg-neutral-50 p-3 text-[13px]">
         <div className="font-semibold">Density spike: 7A1X qFit</div>
