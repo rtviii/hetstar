@@ -1,0 +1,14 @@
+{
+  "name": "hetstar-workspace",
+  "private": true,
+  "workspaces": [
+    "app",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w hetstar-app",
+    "build": "npm run build -w hetstar-app",
+    "typecheck": "npm run typecheck -ws --if-present",
+    "test": "npm run test -w @dynamic-pdb/hetkit"
+  }
+}

@@ -19,7 +19,7 @@
     "./package.json": "./package.json"
   },
   "peerDependencies": {
-    "molstar": "^5.10.1"
+    "molstar": "^5.11.0"
   },
   "devDependencies": {
     "typescript": "^5",
