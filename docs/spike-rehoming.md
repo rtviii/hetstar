@@ -44,8 +44,12 @@ existing primitives only (details and caveats in scoping section 4):
 1. Serverless density from structure factors. The `sfcif` data format provider (new in
    molstar 5.11.0, 2026-07-18) FFTs `pdbx_FWT/PHWT` and `pdbx_DELFWT/DELPHWT` map
    coefficients to 2Fo-Fc and Fo-Fc grids client-side. Our `-sf.cif` files carry exactly
-   those columns. No VolumeServer, no preprocessing. The grids are periodic and 5.10+ wraps
-   isosurfaces across cell boundaries, so the map follows the model.
+   those columns. No VolumeServer, no preprocessing. (Correction, 2026-08-25: the claim
+   that periodic wrapping makes the map follow the model was wrong. Mol* wraps periodic
+   grids only when sampling values, e.g. in the external-volume theme; the isosurface mesh
+   covers just the literal one-cell grid, which renders as a box away from the model. The
+   maps must be resampled around the model -- dynamic-pdb's expandMapAroundModel, ported
+   here as app/src/lib/molstar/carve.ts.)
 2. Live isosurface control. Sigma changes and clip objects are parameter updates on the
    representation node. Clip-sphere gotcha captured in `density.ts`: clip shapes are unit
    objects where `scale` is treated as the diameter (`sphereSD` uses `scale * 0.5`), and
