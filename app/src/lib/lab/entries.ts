@@ -1,7 +1,7 @@
 // The entries the compare lab ships with: the two whose qFit multiconformer models are
-// bundled into the app (app/public/corpus/). The deposited model and structure factors
-// for anything the PDB holds are downloadable at runtime (files.rcsb.org sends open CORS
-// headers), so growing this registry is one more row.
+// bundled into the app (app/public/corpus/). These rows are the offline fallback; anything
+// else is resolved live from the Dynamic PDB catalogue (lib/dpdb/), and both paths produce
+// the same EntryManifest (lib/dpdb/types.ts) via lib/dpdb/resolve.ts.
 
 export interface EntrySource {
   url: string;
@@ -63,11 +63,12 @@ export function findEntry(id: string): EntryDef | null {
 }
 
 // Loader pipeline stages, in order. Each renders as a status dot in the loader panel.
-export const STAGES = ["models", "tables", "sf-fetch", "fft", "carve", "iso"] as const;
+export const STAGES = ["catalogue", "models", "tables", "sf-fetch", "fft", "carve", "iso"] as const;
 export type StageId = (typeof STAGES)[number];
 export type StageState = "pending" | "active" | "done" | "error";
 
 export const STAGE_LABELS: Record<StageId, string> = {
+  catalogue: "catalogue lookup",
   models: "model files",
   tables: "atom tables",
   "sf-fetch": "structure factors",

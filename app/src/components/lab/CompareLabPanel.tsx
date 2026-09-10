@@ -45,7 +45,10 @@ import SelectionPanel from "@/components/lab/compare/SelectionPanel";
 import StyleTray from "@/components/lab/compare/StyleTray";
 import { METRIC_UI, metricLabel, metricUnit, type MetricId } from "@/components/lab/compare/metrics";
 import { SectionLabel } from "@/components/lab/compare/ui";
-import { findEntry, type EntryDef, type ProvenanceRecord, type StageId, type StageState } from "@/lib/lab/entries";
+import { type ProvenanceRecord, type StageId, type StageState } from "@/lib/lab/entries";
+import { pickPair, ROLE_LABELS, type EntryManifest, type ManifestModel } from "@/lib/dpdb/types";
+import { resolveEntry } from "@/lib/dpdb/resolve";
+import { toFetchableUrl } from "@/lib/dpdb/client";
 import {
   buildAtomTable,
   parseCifText,
@@ -76,10 +79,20 @@ import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/sta
 const VIEW: StructureView = { representation: "ball-and-stick", colorTheme: "uniform", uniformColor: MODEL_A_COLOR };
 const DEFAULT_ENTRY = "7A1X";
 const DEFAULT_CLIP_RADIUS = 5;
+// structure-factor downloads above this ask before fetching (PanDDA deposits run to hundreds of MB)
+const SF_CONFIRM_MB = 50;
 const WATER_COMPS = new Set(["HOH", "DOD", "WAT"]);
 
 function initialStages(): Record<StageId, StageState> {
-  return { models: "pending", tables: "pending", "sf-fetch": "pending", fft: "pending", carve: "pending", iso: "pending" };
+  return {
+    catalogue: "pending",
+    models: "pending",
+    tables: "pending",
+    "sf-fetch": "pending",
+    fft: "pending",
+    carve: "pending",
+    iso: "pending",
+  };
 }
 
 function residueCentroid(table: AtomTable, picked: PickInfo): [number, number, number] | null {
@@ -129,12 +142,25 @@ async function fetchText(url: string): Promise<string> {
   return res.text();
 }
 
+// provenance prose for a model: the bundled rows bring their own; catalogue models get what
+// the artifact record says about them
+function describeModel(m: ManifestModel): string {
+  if (m.note) return m.note;
+  const bits = [ROLE_LABELS[m.role], m.format ?? "unknown format"];
+  if (m.sizeBytes != null) bits.push(`${(m.sizeBytes / 1e6).toFixed(2)} MB`);
+  if (m.sha256) bits.push(`sha256 ${m.sha256.slice(0, 12)}`);
+  if (m.software) bits.push(m.software);
+  return `${m.title} from the Dynamic PDB catalogue (${bits.join(", ")})`;
+}
+
 export default function CompareLabPanel() {
   const [viewer, setViewer] = useState<ViewerInstance | null>(null);
 
   // --- loader / entry state ---
   const [entryInput, setEntryInput] = useState(DEFAULT_ENTRY);
-  const [entry, setEntry] = useState<EntryDef | null>(null);
+  const [entry, setEntry] = useState<EntryManifest | null>(null);
+  // the A/B pair; startLoad only sets an entry pickPair already accepted, so this cannot throw
+  const pair = useMemo(() => (entry ? pickPair(entry) : null), [entry]);
   const [loading, setLoading] = useState(false);
   const [stages, setStages] = useState<Record<StageId, StageState>>(initialStages());
   const [provenance, setProvenance] = useState<ProvenanceRecord[]>([]);
@@ -255,14 +281,8 @@ export default function CompareLabPanel() {
 
   const startLoad = useCallback(
     (id: string) => {
-      const def = findEntry(id);
-      if (!def) {
-        setLoadError(`unknown entry "${id.trim()}" — available: 7A1X, 9JD2`);
-        return;
-      }
       setLoadError(null);
-      setEntry(def);
-      setEntryInput(def.id);
+      setEntry(null);
       setLoading(true);
 
       // reset everything scene-derived; setting new texts clears the Mol* state tree
@@ -293,15 +313,21 @@ export default function CompareLabPanel() {
       setPopup(null);
       setStatus(null);
       setProvenance([]);
-      setStages({ ...initialStages(), models: "active" });
+      setStages({ ...initialStages(), catalogue: "active" });
 
       void (async () => {
         try {
-          const [aT, bT] = await Promise.all([fetchText(def.qfit.url), fetchText(def.deposited.url)]);
+          const manifest = await resolveEntry(id);
+          const { a, b } = pickPair(manifest);
+          setEntry(manifest);
+          setEntryInput(manifest.pdbId);
+          setStage("catalogue", "done");
+          setStage("models", "active");
+          const [aT, bT] = await Promise.all([fetchText(toFetchableUrl(a.url)), fetchText(toFetchableUrl(b.url))]);
           setStage("models", "done");
           setProvenance([
-            { role: "model A", desc: def.qfit.note, url: def.qfit.url },
-            { role: "model B", desc: def.deposited.note, url: def.deposited.url },
+            { role: "model A", desc: describeModel(a), url: a.url },
+            { role: "model B", desc: describeModel(b), url: b.url },
           ]);
           setAText(aT);
           setBText(bT);
@@ -316,6 +342,7 @@ export default function CompareLabPanel() {
         } catch (e) {
           setStages((prev) => {
             const next = { ...prev };
+            if (next.catalogue === "active") next.catalogue = "error";
             if (next.models === "active") next.models = "error";
             if (next.tables === "active") next.tables = "error";
             return next;
@@ -338,16 +365,16 @@ export default function CompareLabPanel() {
   // --- second model into the same scene, once the primary is in ---
 
   useEffect(() => {
-    if (!viewer || !primaryLoaded || !bText || !entry || secondaryRef || secondaryBusyRef.current) return;
+    if (!viewer || !primaryLoaded || !bText || !entry || !pair || secondaryRef || secondaryBusyRef.current) return;
     secondaryBusyRef.current = true;
     viewer
-      .loadSecondary(bText, { label: `${entry.id} deposited`, color: GHOST_B_COLOR })
+      .loadSecondary(bText, { label: `${entry.pdbId} ${pair.b.title}`, color: GHOST_B_COLOR })
       .then((ref) => setSecondaryRef(ref))
       .catch((e) => setLoadError(`model B failed: ${e instanceof Error ? e.message : String(e)}`))
       .finally(() => {
         secondaryBusyRef.current = false;
       });
-  }, [viewer, primaryLoaded, bText, entry, secondaryRef]);
+  }, [viewer, primaryLoaded, bText, entry, pair, secondaryRef]);
 
   useEffect(() => {
     const ctx = viewer?.ctx;
@@ -473,15 +500,23 @@ export default function CompareLabPanel() {
     void (async () => {
       try {
         setStage("sf-fetch", "active");
-        const text = await fetchText(entry.sf.url);
+        const mb = entry.sf.sizeBytes != null ? entry.sf.sizeBytes / 1e6 : null;
+        if (mb != null && mb > SF_CONFIRM_MB && !window.confirm(`${entry.pdbId} structure factors are ~${mb.toFixed(0)} MB. Download anyway?`)) {
+          throw new Error(`structure factors skipped (~${mb.toFixed(0)} MB); "retry density" asks again`);
+        }
+        const text = await fetchText(toFetchableUrl(entry.sf.url));
         if (stale()) return;
         setStage("sf-fetch", "done");
         setProvenance((prev) => [
           ...prev.filter((p) => p.role !== "structure factors" && p.role !== "maps"),
-          { role: "structure factors", desc: `${entry.sf.note} (~${entry.sf.approxMB} MB)`, url: entry.sf.url },
+          {
+            role: "structure factors",
+            desc: `${entry.sf.note} (${mb != null ? `~${mb.toFixed(1)} MB` : "size unknown"})`,
+            url: entry.sf.url,
+          },
         ]);
         setStage("fft", "active");
-        const vols = await loadStructureFactors(ctx, text, { entryId: entry.id, label: `${entry.id}-sf` });
+        const vols = await loadStructureFactors(ctx, text, { entryId: entry.pdbId, label: `${entry.pdbId}-sf` });
         if (stale()) return;
         if (!vols.twoFoFc && !vols.foFc) throw new Error("no map coefficients found in the sf file");
         setStage("fft", "done");
@@ -1077,11 +1112,11 @@ export default function CompareLabPanel() {
             densityReady={ready}
             hasB={!!bTable}
             provenance={{
-              aUrl: entry?.qfit.url ?? "model A file",
-              bUrl: entry?.deposited.url ?? "model B file",
+              aUrl: pair?.a.url ?? "model A file",
+              bUrl: pair?.b.url ?? "model B file",
               sfUrl: entry?.sf.url ?? "the entry's sf-cif",
-              aDesc: "qFit multiconformer",
-              bDesc: "deposited",
+              aDesc: pair ? ROLE_LABELS[pair.a.role] : "model A",
+              bDesc: pair ? ROLE_LABELS[pair.b.role] : "model B",
             }}
             scopeMode={scopeMode}
             onScopeMode={setScopeMode}

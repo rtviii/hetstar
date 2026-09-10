@@ -1,13 +1,7 @@
 "use client";
-import {
-  ENTRIES,
-  STAGE_LABELS,
-  STAGES,
-  type EntryDef,
-  type ProvenanceRecord,
-  type StageId,
-  type StageState,
-} from "@/lib/lab/entries";
+import { ENTRIES, STAGE_LABELS, STAGES, type ProvenanceRecord, type StageId, type StageState } from "@/lib/lab/entries";
+import { knownEntryIds, PDB_ALIASES } from "@/lib/dpdb/resolve";
+import type { EntryManifest } from "@/lib/dpdb/types";
 import { PinPopover, SectionLabel, TinyText } from "./ui";
 
 // Entry loader. The staged pipeline dots show only while a load is in flight (or
@@ -46,6 +40,23 @@ function ProvRow({ p }: { p: ProvenanceRecord }) {
   );
 }
 
+// one line of what the catalogue said about a live entry, so the cross-talk is visible
+function CatalogueLine({ m }: { m: EntryManifest }) {
+  const fmt = (v: number | undefined) => (v == null ? "?" : v.toFixed(3));
+  const qfit = m.models.find((x) => x.role === "qfit");
+  const listed = m.models.map((x) => x.title.replace(/ model$/i, "")).join(", ");
+  return (
+    <div className="text-neutral-500">
+      catalogue: {m.title}
+      {m.resolution != null ? `, ${m.resolution.toFixed(2)} Å` : ""}
+      {qfit && (qfit.metrics.r_work != null || qfit.metrics.r_free != null)
+        ? `; qFit R-work ${fmt(qfit.metrics.r_work)} / R-free ${fmt(qfit.metrics.r_free)}`
+        : ""}
+      ; models listed: {listed}
+    </div>
+  );
+}
+
 export default function LoaderPanel({
   entryInput,
   onEntryInput,
@@ -62,7 +73,7 @@ export default function LoaderPanel({
   onEntryInput: (v: string) => void;
   onLoad: () => void;
   loading: boolean;
-  currentEntry: EntryDef | null;
+  currentEntry: EntryManifest | null;
   stages: Record<StageId, StageState>;
   provenance: ProvenanceRecord[];
   error: string | null;
@@ -81,15 +92,21 @@ export default function LoaderPanel({
           content={
             <div className="flex flex-col gap-2">
               <div className="flex flex-col gap-0.5">
-                <div className="font-medium text-neutral-700">available entries</div>
+                <div className="font-medium text-neutral-700">entries</div>
                 <div>
-                  {ENTRIES.map((e) => e.id).join(", ")} — their qFit multiconformer models ship with the app;
-                  deposited models and structure factors are fetched from RCSB at load time.
+                  bundled: {ENTRIES.map((e) => e.id).join(", ")} (their qFit models ship with the app). Dynamic PDB
+                  catalogue: any dpdb_... id, or {Object.keys(PDB_ALIASES).join(", ")} by PDB id. Deposited models and
+                  structure factors come from RCSB; qFit models from files.dynamicpdb.com (through the local /api
+                  proxy in dev).
                 </div>
               </div>
               {provenance.length > 0 && (
                 <div className="flex flex-col gap-1.5 border-t border-neutral-100 pt-1.5">
-                  <div className="font-medium text-neutral-700">{currentEntry?.id} files</div>
+                  <div className="font-medium text-neutral-700">
+                    {currentEntry?.pdbId}
+                    {currentEntry?.source === "dpdb" ? ` (${currentEntry.id})` : ""} files
+                  </div>
+                  {currentEntry?.source === "dpdb" && <CatalogueLine m={currentEntry} />}
                   {provenance.map((p, i) => (
                     <ProvRow key={i} p={p} />
                   ))}
@@ -120,13 +137,13 @@ export default function LoaderPanel({
           list="compare-lab-entries"
           value={entryInput}
           onChange={(e) => onEntryInput(e.target.value)}
-          placeholder="PDB id"
+          placeholder="PDB or dpdb id"
           spellCheck={false}
-          className="w-20 rounded border border-neutral-300 bg-white px-1.5 py-0.5 uppercase tracking-wide"
+          className="w-36 rounded border border-neutral-300 bg-white px-1.5 py-0.5 tracking-wide"
         />
         <datalist id="compare-lab-entries">
-          {ENTRIES.map((e) => (
-            <option key={e.id} value={e.id} />
+          {knownEntryIds().map((id) => (
+            <option key={id} value={id} />
           ))}
         </datalist>
         <button
