@@ -3,10 +3,18 @@
 @tailwind utilities;
 
 body {
-  color: #171717;
+  color: #1a1e2a;
   background: #ffffff;
   /* Geist variables are set on <body> by the root layout; Arial previously overrode them. */
   font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+}
+
+/* Native controls follow the accent (Dynamic PDB purple) when checked or dragged, so
+   checkboxes, radios and sliders match the pressed-button state without per-element classes. */
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"] {
+  accent-color: #663be4;
 }
 
 @layer utilities {
