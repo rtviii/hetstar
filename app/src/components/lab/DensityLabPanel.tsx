@@ -23,7 +23,7 @@ import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/sta
 //   step 2: slice plane with a position slider along its normal.
 //   step 3: metric projection onto the carved surface.
 
-const MODEL_URL = "/spike/7a1x_qFit_010.cif";
+const MODEL_URL = "/corpus/7a1x_qFit_010.cif";
 const SF_URL = "https://files.rcsb.org/download/7A1X-sf.cif";
 const VIEW: StructureView = { representation: "ball-and-stick", colorTheme: "alt-loc" };
 

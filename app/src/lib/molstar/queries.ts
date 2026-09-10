@@ -96,6 +96,11 @@ export const buildAltGroupExpression = (selectors: AltGroupSelector[]) => {
   return groups.length === 1 ? groups[0] : MS.struct.combinator.merge(groups);
 };
 
+// Union of arbitrary atomGroups expressions (e.g. residue queries across chains).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const mergeExpressions = (exprs: any[]) =>
+  exprs.length === 1 ? exprs[0] : MS.struct.combinator.merge(exprs);
+
 // The constant "base" part: every atom not claimed by any network selector (empty in files that
 // list only the alternate atoms; the single-conformer scaffold in a full structure).
 export const buildHetBaseExpression = (allSelectors: AltGroupSelector[]) =>

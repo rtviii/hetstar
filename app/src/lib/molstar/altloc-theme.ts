@@ -12,13 +12,19 @@ import { Color } from "molstar/lib/mol-util/color";
 // by the "Alternate conformations" examples via `color: 'alt-loc'`.
 const NoAlt = Color(0xcfd8dc);
 const OtherAlt = Color(0x8c564b);
-const AltColors: Record<string, number> = {
+export const ALT_FALLBACK_COLOR = 0x8c564b;
+export const AltColors: Record<string, number> = {
   A: 0x2ca02c,
   B: 0xd62728,
   C: 0x1f77b4,
   D: 0xff7f0e,
   E: 0x9467bd,
 };
+
+/** CSS hex of a letter's 3D color — UI chips MUST read this so panel and scene agree. */
+export function altColorCss(letter: string): string {
+  return `#${(AltColors[letter] ?? ALT_FALLBACK_COLOR).toString(16).padStart(6, "0")}`;
+}
 
 function altColor(unit: Unit, element: ElementIndex): Color {
   if (!Unit.isAtomic(unit)) return NoAlt;

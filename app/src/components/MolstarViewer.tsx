@@ -2,7 +2,7 @@
 import "molstar/build/viewer/molstar.css";
 import { useEffect, useRef } from "react";
 import { useMolstarViewer } from "@/hooks/useMolstarViewer";
-import type { HetVizNetwork, MolstarViewer as MolstarViewerInstance } from "@/lib/molstar/viewer";
+import type { HetVizNetwork, MolstarViewer as MolstarViewerInstance, ViewerVariant } from "@/lib/molstar/viewer";
 import type { StructureView } from "@/lib/molstar/style";
 import type { TlsGroup } from "@/lib/molstar/tls";
 
@@ -15,6 +15,7 @@ export default function MolstarViewer({
   tlsGroups,
   hetNetworks,
   minimal,
+  variant,
   onReady,
   onLoaded,
 }: {
@@ -25,11 +26,13 @@ export default function MolstarViewer({
   hetNetworks?: HetVizNetwork[] | null;
   /** Chrome-free look for inline figures: no viewport buttons, no axes gizmo, atom-level picking. */
   minimal?: boolean;
+  /** Spec/behavior bundle; overrides `minimal` when given (see ViewerVariant). */
+  variant?: ViewerVariant;
   onReady?: (viewer: MolstarViewerInstance | null) => void;
   onLoaded?: (info: { modelCount: number }) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { viewer, ready } = useMolstarViewer(containerRef, { minimal });
+  const { viewer, ready } = useMolstarViewer(containerRef, { minimal, variant });
 
   // Keep latest onLoaded without making it a load-effect dependency (it changes identity each render).
   const onLoadedRef = useRef(onLoaded);

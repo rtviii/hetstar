@@ -41,7 +41,7 @@ import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/sta
 //   5. 2Fo-Fc isosurface recolored by a conformer-count field computed with
 //      @dynamic-pdb/hetkit (the package integration probe).
 
-const MODEL_URL = "/spike/7a1x_qFit_010.cif";
+const MODEL_URL = "/corpus/7a1x_qFit_010.cif";
 const SF_URL = "https://files.rcsb.org/download/7A1X-sf.cif";
 
 // Module-level so the load effect in MolstarViewer never sees a new identity: an inline
@@ -256,7 +256,7 @@ export default function DensitySpikePanel() {
         <MolstarViewer data={modelText} binary={false} view={VIEW} onReady={setViewer} />
       </div>
       <div className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-neutral-200 bg-neutral-50 p-3 text-[13px]">
-        <div className="font-semibold">Density spike: 7A1X qFit</div>
+        <div className="font-semibold">Density workbench: 7A1X qFit</div>
         <div className="text-neutral-500">{status}</div>
 
         <button

@@ -10,21 +10,22 @@ export default function Home() {
       </p>
       <ul className="mt-8 space-y-2">
         <li>
+          <Link className="text-blue-700 hover:underline" href="/compare-lab">
+            /compare-lab
+          </Link>{" "}
+          <span className="text-neutral-500">
+            — two models of one entry against their shared maps: qFit multiconformer vs
+            deposited, carved 2Fo-Fc / Fo-Fc density, per-residue metrics painted onto the
+            surface, conformer track and slice viewer.
+          </span>
+        </li>
+        <li>
           <Link className="text-blue-700 hover:underline" href="/density-lab">
             /density-lab
           </Link>{" "}
           <span className="text-neutral-500">
             — incremental density prototyping: one capability at a time. Currently: carved
             2Fo-Fc / Fo-Fc hugging the model, live sigma contour.
-          </span>
-        </li>
-        <li>
-          <Link className="text-blue-700 hover:underline" href="/density-spike">
-            /density-spike
-          </Link>{" "}
-          <span className="text-neutral-500">
-            — the original all-at-once spike (clip sphere, slice, metric-colored 2Fo-Fc);
-            retires once the lab reaches parity.
           </span>
         </li>
       </ul>

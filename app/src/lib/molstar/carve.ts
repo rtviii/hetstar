@@ -66,17 +66,30 @@ function columnLength(m: Mat4, c: number): number {
 }
 
 /**
- * Replace `volume.grid` (in place, before any representation is built on it) with an
- * orthogonal resampling that covers the structure's bounding box. Voxels farther than
- * `radius` from every atom keep the map mean, so no isosurface appears there at any
- * positive sigma. Source (cell-wide) stats are kept so sigma-relative iso levels retain
- * their crystallographic meaning. Returns false when the grid is not a periodic full-cell
- * map (already carved, or a box from a density server) -- those must not be index-wrapped.
+ * Replace `volume.grid` (in place) with an orthogonal resampling that covers the
+ * structure's bounding box. Voxels farther than `radius` from every atom keep the map
+ * mean, so no isosurface appears there at any positive sigma. Source (cell-wide) stats
+ * are kept so sigma-relative iso levels retain their crystallographic meaning.
+ *
+ * RE-RUNNABLE: always resamples from the pristine full-cell periodic grid, stashed at
+ * `_hetstarSourceGrid` on the first carve — so the quality knob can re-carve at a
+ * different budget (opts.maxPoints) without accumulating resampling error. Returns
+ * false when no periodic full-cell source grid exists (e.g. a box from a density
+ * server) -- those must not be index-wrapped.
  */
-export function carveGridAroundStructure(volume: unknown, structure: Structure, radius = CARVE_RADIUS): boolean {
+export function carveGridAroundStructure(
+  volume: unknown,
+  structure: Structure,
+  radius = CARVE_RADIUS,
+  opts: { maxPoints?: number } = {},
+): boolean {
   const vol = volume as any;
-  const grid = vol?.grid;
+  // Samplers (metric tracks, the slice panel) also read the stash: full-cell data at
+  // native FFT resolution with correct index wrapping, which the carved (cropped,
+  // possibly coarsened) grid cannot provide.
+  const grid = vol?._hetstarSourceGrid ?? vol?.grid;
   if (!grid || grid.periodicity !== "xyz") return false;
+  vol._hetstarSourceGrid = grid;
 
   const lookup = structure.lookup3d;
   const box = structure.boundary.box;
@@ -85,6 +98,7 @@ export function carveGridAroundStructure(volume: unknown, structure: Structure, 
   const origSpace = grid.cells.space;
   const [ox, oy, oz] = origSpace.dimensions as number[];
   const mean = grid.stats.mean as number;
+  const maxPoints = opts.maxPoints ?? MAX_POINTS;
 
   const gridToCartn = Grid.getGridToCartesianTransform(grid);
   const cartnToGrid = Mat4.invert(Mat4.identity(), gridToCartn);
@@ -106,7 +120,7 @@ export function carveGridAroundStructure(volume: unknown, structure: Structure, 
     nx = Math.max(2, Math.ceil(sizeX / spacing) + 1);
     ny = Math.max(2, Math.ceil(sizeY / spacing) + 1);
     nz = Math.max(2, Math.ceil(sizeZ / spacing) + 1);
-    if (nx * ny * nz <= MAX_POINTS) break;
+    if (nx * ny * nz <= maxPoints) break;
     spacing *= 1.26;
   }
   const stepX = sizeX / (nx - 1);
@@ -148,18 +162,78 @@ export function carveGridAroundStructure(volume: unknown, structure: Structure, 
   return true;
 }
 
-/** Carve every volume in `vols` around the structure. Call between parse and isosurface build. */
+/** The grid to SAMPLE from: the pristine full-cell grid stashed by the carve when the
+ * volume has been carved, else the volume's own grid. */
+export function getSourceGrid(volume: unknown): any | undefined {
+  const vol = volume as any;
+  return vol?._hetstarSourceGrid ?? vol?.grid;
+}
+
+/**
+ * Cartesian-position sampler over a grid. Periodic full-cell grids are index-wrapped
+ * (Mol*'s own trilinear sampler does NOT wrap: its periodic branch merely skips the
+ * bounds check, so out-of-cell positions read wrong voxels — do not use it for atoms,
+ * which routinely sit outside the cell box). Non-periodic grids (carved maps, metric
+ * volumes) return NaN outside their box. `relative` converts to sigma units using the
+ * grid's stats — for a carved grid those are deliberately the full-cell stats.
+ */
+export function makeGridSampler(
+  grid: unknown,
+  opts: { relative?: boolean } = {},
+): (x: number, y: number, z: number) => number {
+  const g = grid as any;
+  const gridToCartn = Grid.getGridToCartesianTransform(g);
+  const cartnToGrid = Mat4.invert(Mat4.identity(), gridToCartn);
+  const data = g.cells.data;
+  const space = g.cells.space;
+  const [nx, ny, nz] = space.dimensions as number[];
+  const periodic = g.periodicity === "xyz";
+  const mean = g.stats.mean as number;
+  const sigma = g.stats.sigma as number;
+  const relative = !!opts.relative;
+  const F = Vec3();
+  return (x: number, y: number, z: number) => {
+    Vec3.set(F, x, y, z);
+    Vec3.transformMat4(F, F, cartnToGrid);
+    let v: number;
+    if (periodic) {
+      v = sampleWrapped(data, space, nx, ny, nz, F[0], F[1], F[2]);
+    } else {
+      const i0 = Math.floor(F[0]);
+      const j0 = Math.floor(F[1]);
+      const k0 = Math.floor(F[2]);
+      if (i0 < 0 || i0 >= nx || j0 < 0 || j0 >= ny || k0 < 0 || k0 >= nz) return NaN;
+      const du = F[0] - i0;
+      const dv = F[1] - j0;
+      const dw = F[2] - k0;
+      const i1 = Math.min(i0 + 1, nx - 1);
+      const j1 = Math.min(j0 + 1, ny - 1);
+      const k1 = Math.min(k0 + 1, nz - 1);
+      const get = space.get;
+      const c00 = get(data, i0, j0, k0) * (1 - du) + get(data, i1, j0, k0) * du;
+      const c10 = get(data, i0, j1, k0) * (1 - du) + get(data, i1, j1, k0) * du;
+      const c01 = get(data, i0, j0, k1) * (1 - du) + get(data, i1, j0, k1) * du;
+      const c11 = get(data, i0, j1, k1) * (1 - du) + get(data, i1, j1, k1) * du;
+      v = (c00 * (1 - dv) + c10 * dv) * (1 - dw) + (c01 * (1 - dv) + c11 * dv) * dw;
+    }
+    return relative ? (v - mean) / sigma : v;
+  };
+}
+
+/** Carve every volume in `vols` around the structure. Call between parse and isosurface
+ * build — or again later (with a different budget) before REBUILDING the isosurfaces. */
 export function carveDensityToStructure(
   ctx: PluginContext,
   vols: DensityVolumes,
   structure: Structure,
   radius = CARVE_RADIUS,
+  opts: { maxPoints?: number } = {},
 ): number {
   let carved = 0;
   for (const ref of [vols.twoFoFc, vols.foFc]) {
     if (!ref) continue;
     const data = ctx.state.data.cells.get(ref)?.obj?.data;
-    if (data && carveGridAroundStructure(data, structure, radius)) carved++;
+    if (data && carveGridAroundStructure(data, structure, radius, opts)) carved++;
   }
   return carved;
 }

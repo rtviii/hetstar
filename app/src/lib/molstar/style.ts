@@ -28,6 +28,17 @@ export const STYLIZED_POSTPROCESSING = {
 
 export const WHITE_BACKGROUND = Color(0xffffff);
 
+// Compare-lab palette. Model A (qFit) is the CONCRETE structure: opaque warm camel — the
+// crystallography-standard warm model tone under a blue map. This SAME color is the base
+// color of the 1D conformer strip, so plot and scene read as one object. Model B
+// (deposited) is a cool blue-gray ghost, hidden by default. Saturated accents (the
+// alt-loc letter colors) sit on top as overpaint; selection uses Mol*'s default green
+// select marker, not an overpaint.
+export const MODEL_A_COLOR = 0xcc9966; // warm camel, shared by 3D model and 1D strip
+export const GHOST_B_COLOR = 0xb8c4d0; // cool blue-gray
+/** the comparison model renders as a ghost behind the solid primary */
+export const SECONDARY_TRANSPARENCY = 0.75;
+
 // Components to render as ball-and-stick by default (everything except water/coarse, so the
 // view isn't dominated by scattered solvent oxygens).
 export const BALL_AND_STICK_COMPONENTS = ["polymer", "ligand", "ion", "branched", "lipid"] as const;
@@ -44,6 +55,8 @@ export type ExampleRepresentation = "ball-and-stick" | "ellipsoid" | "putty" | "
 export interface StructureView {
   representation: ExampleRepresentation;
   colorTheme: ColorTheme.BuiltIn | "alt-loc"; // "alt-loc" is our custom theme registered at viewer init
+  /** only read when colorTheme is "uniform" */
+  uniformColor?: number;
 }
 
 export const DEFAULT_VIEW: StructureView = { representation: "ball-and-stick", colorTheme: "element-symbol" };

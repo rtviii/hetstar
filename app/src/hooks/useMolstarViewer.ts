@@ -1,19 +1,15 @@
 "use client";
 import { type RefObject, useEffect, useRef, useState } from "react";
-import { MolstarViewer } from "@/lib/molstar/viewer";
+import { MolstarViewer, type ViewerVariant } from "@/lib/molstar/viewer";
 
-// Owns a single MolstarViewer bound to a container ref. Disposal is deferred so a
-// React StrictMode unmount/remount (dev double-invoke) reuses the same plugin
-// instead of tearing it down and rebuilding it. Mirrors the deferred-dispose
-// approach in fend_tubulinxyz's MolstarInstanceManager, scoped to one instance.
 export function useMolstarViewer(
   containerRef: RefObject<HTMLDivElement | null>,
-  opts: { minimal?: boolean } = {},
+  opts: { minimal?: boolean; variant?: ViewerVariant } = {},
 ) {
   const viewerRef = useRef<MolstarViewer | null>(null);
   const disposeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ready, setReady] = useState(false);
-  const minimal = opts.minimal;
+  const variant: ViewerVariant = opts.variant ?? (opts.minimal ? "minimal" : "default");
 
   useEffect(() => {
     const container = containerRef.current;
@@ -27,7 +23,7 @@ export function useMolstarViewer(
 
     const viewer = viewerRef.current ?? (viewerRef.current = new MolstarViewer());
     let cancelled = false;
-    viewer.init(container, { minimal }).then(() => {
+    viewer.init(container, { variant }).then(() => {
       if (!cancelled) setReady(true);
     });
 
@@ -40,7 +36,7 @@ export function useMolstarViewer(
         setReady(false);
       }, 1000);
     };
-  }, [containerRef, minimal]);
+  }, [containerRef, variant]);
 
   return { viewer: viewerRef.current, ready };
 }

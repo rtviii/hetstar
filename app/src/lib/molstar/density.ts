@@ -23,6 +23,19 @@ export const TWO_FOFC_COLOR = 0x3362b2;
 export const FOFC_POS_COLOR = 0x33bb33;
 export const FOFC_NEG_COLOR = 0xbb3333;
 
+/** Base isosurface alphas; the user's opacity slider is a factor on top of these. */
+export const DENSITY_BASE_ALPHA = { twoFoFc: 0.5, foFc: 0.6 } as const;
+
+// The density quality knob: carve grid budget + GPU isosurface data type. "high" pays a
+// re-carve (seconds) and a float-textured GPU surface for smooth, unquantized contours;
+// "low" coarsens the carve for weak machines.
+export type DensityQuality = "low" | "auto" | "high";
+export const DENSITY_QUALITY: Record<DensityQuality, { maxPoints: number; gpuDataType: "byte" | "float" }> = {
+  low: { maxPoints: 1_200_000, gpuDataType: "byte" },
+  auto: { maxPoints: 2_600_000, gpuDataType: "byte" },
+  high: { maxPoints: 8_000_000, gpuDataType: "float" },
+};
+
 export interface DensityVolumes {
   /** state refs of the Volume.Data cells */
   twoFoFc: string | null;
@@ -57,11 +70,42 @@ export async function loadStructureFactors(
   };
 }
 
+// Density representations must never intercept picking: hover and right-click belong to
+// the residues beneath the surface. Pickability is per-repr-INSTANCE state, not a state
+// tree param. The instance usually survives a transform update() — but NOT always: the
+// isosurface visual is recreated when it switches between its GPU and CPU paths, and a
+// recreated visual comes back pickable. So every update helper below re-asserts the
+// state after its commit instead of trusting the one set at build time.
+export function setReprsPickable(ctx: PluginContext, reprRefs: (string | null)[], pickable: boolean): void {
+  for (const ref of reprRefs) {
+    if (!ref) continue;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const repr = (ctx.state.data.cells.get(ref)?.obj as any)?.data?.repr;
+    repr?.setState({ pickable });
+  }
+}
+
 // --- isosurfaces (mirrors the dynamic-pdb StructureViewer parameters) ---
 
-export async function buildIsosurfaces(ctx: PluginContext, vols: DensityVolumes): Promise<DensityReprs> {
+export interface IsosurfaceOpts {
+  /** 2Fo-Fc contour level in sigma (Fo-Fc stays at ±3); default 1.5 */
+  sigma?: number;
+  /** multiplied onto DENSITY_BASE_ALPHA (the opacity slider); default 1 */
+  alphaFactor?: number;
+  /** GPU isosurface texture type; "float" renders smoother than the quantized "byte" default */
+  gpuDataType?: "byte" | "float" | "halfFloat";
+}
+
+export async function buildIsosurfaces(
+  ctx: PluginContext,
+  vols: DensityVolumes,
+  opts: IsosurfaceOpts = {},
+): Promise<DensityReprs> {
   const tree = ctx.build();
   const refs: DensityReprs = { twoFoFc: null, foFcPos: null, foFcNeg: null };
+  const factor = opts.alphaFactor ?? 1;
+  const alpha = (base: number) => Math.max(0.02, Math.min(1, base * factor));
+  const extra = opts.gpuDataType ? { gpuDataType: opts.gpuDataType } : {};
 
   if (vols.twoFoFc) {
     refs.twoFoFc = tree
@@ -71,7 +115,7 @@ export async function buildIsosurfaces(ctx: PluginContext, vols: DensityVolumes)
         VolumeRepresentation3DHelpers.getDefaultParamsStatic(
           ctx,
           "isosurface",
-          { isoValue: Volume.IsoValue.relative(1.5), alpha: 0.5 },
+          { isoValue: Volume.IsoValue.relative(opts.sigma ?? 1.5), alpha: alpha(DENSITY_BASE_ALPHA.twoFoFc), ...extra },
           "uniform",
           { value: Color(TWO_FOFC_COLOR) },
         ),
@@ -85,7 +129,7 @@ export async function buildIsosurfaces(ctx: PluginContext, vols: DensityVolumes)
         VolumeRepresentation3DHelpers.getDefaultParamsStatic(
           ctx,
           "isosurface",
-          { isoValue: Volume.IsoValue.relative(3), alpha: 0.6 },
+          { isoValue: Volume.IsoValue.relative(3), alpha: alpha(DENSITY_BASE_ALPHA.foFc), ...extra },
           "uniform",
           { value: Color(FOFC_POS_COLOR) },
         ),
@@ -97,14 +141,36 @@ export async function buildIsosurfaces(ctx: PluginContext, vols: DensityVolumes)
         VolumeRepresentation3DHelpers.getDefaultParamsStatic(
           ctx,
           "isosurface",
-          { isoValue: Volume.IsoValue.relative(-3), alpha: 0.6 },
+          { isoValue: Volume.IsoValue.relative(-3), alpha: alpha(DENSITY_BASE_ALPHA.foFc), ...extra },
           "uniform",
           { value: Color(FOFC_NEG_COLOR) },
         ),
       ).selector.ref;
   }
   await tree.commit();
+  setReprsPickable(ctx, [refs.twoFoFc, refs.foFcPos, refs.foFcNeg], false);
   return refs;
+}
+
+/** The opacity slider: scale every map's alpha by `factor` (relative to its base). */
+export async function setDensityAlpha(ctx: PluginContext, reprs: DensityReprs, factor: number): Promise<void> {
+  const entries: [string | null, number][] = [
+    [reprs.twoFoFc, DENSITY_BASE_ALPHA.twoFoFc],
+    [reprs.foFcPos, DENSITY_BASE_ALPHA.foFc],
+    [reprs.foFcNeg, DENSITY_BASE_ALPHA.foFc],
+  ];
+  const tree = ctx.build();
+  for (const [ref, base] of entries) {
+    if (!ref) continue;
+    tree
+      .to(ref)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .update((old: any) => {
+        old.type.params.alpha = Math.max(0.02, Math.min(1, base * factor));
+      });
+  }
+  await tree.commit();
+  setReprsPickable(ctx, [reprs.twoFoFc, reprs.foFcPos, reprs.foFcNeg], false);
 }
 
 export async function updateIsoSigma(ctx: PluginContext, reprRef: string, sigma: number): Promise<void> {
@@ -116,26 +182,88 @@ export async function updateIsoSigma(ctx: PluginContext, reprRef: string, sigma:
       old.type.params.isoValue = Volume.IsoValue.relative(sigma);
     })
     .commit();
+  setReprsPickable(ctx, [reprRef], false);
 }
 
-// --- clip sphere: keep only density within `radius` A of a point ---
+// --- clip objects: composable per-representation region clipping ---
 // Clip objects are unit shapes scaled by `scale`; the shader treats scale as the
 // diameter (sphereSD uses scale * 0.5), and invert keeps the inside.
 // Variant MUST be "pixel" (per-fragment discard). "instance" tests only the mesh's
 // bounding-sphere center and shows/hides the whole single-instance isosurface as one
 // unit, which visually does nothing for a region clip.
+// `clip` is a base-geometry param, so the same objects apply to STRUCTURE
+// representations exactly as to volume representations. Several objects in one array
+// combine as union-of-discards: a keep-inside sphere plus a half-space plane leaves
+// the intersection of their kept regions.
 
-function clipSphereObjects(center: Vec3, radius: number) {
-  return [
-    {
-      type: "sphere" as const,
-      invert: true,
-      position: Vec3.clone(center),
-      rotation: { axis: Vec3.create(1, 0, 0), angle: 0 },
-      scale: Vec3.create(2 * radius, 2 * radius, 2 * radius),
-      transform: Mat4.identity(),
-    },
-  ];
+export interface ClipObjectSpec {
+  type: "sphere" | "plane";
+  invert: boolean;
+  position: Vec3;
+  rotation: { axis: Vec3; angle: number };
+  scale: Vec3;
+  transform: Mat4;
+}
+
+export function clipSphereObject(center: [number, number, number], radius: number): ClipObjectSpec {
+  return {
+    type: "sphere",
+    invert: true, // keep the inside
+    position: Vec3.create(center[0], center[1], center[2]),
+    rotation: { axis: Vec3.create(1, 0, 0), angle: 0 },
+    scale: Vec3.create(2 * radius, 2 * radius, 2 * radius),
+    transform: Mat4.identity(),
+  };
+}
+
+// The shader's un-rotated clip plane has normal +Y through `position`; `rotation` (an
+// axis + angle in degrees) reorients it. With invert false the +normal half-space is
+// discarded; invert true keeps it instead.
+export function clipPlaneObject(
+  point: [number, number, number],
+  normal: [number, number, number],
+  opts: { invert?: boolean } = {},
+): ClipObjectSpec {
+  const n = Vec3.normalize(Vec3(), Vec3.create(normal[0], normal[1], normal[2]));
+  const up = Vec3.create(0, 1, 0);
+  const d = Vec3.dot(up, n);
+  let axis: Vec3;
+  let angle: number;
+  if (d > 1 - 1e-6) {
+    axis = Vec3.create(1, 0, 0);
+    angle = 0;
+  } else if (d < -1 + 1e-6) {
+    axis = Vec3.create(1, 0, 0);
+    angle = 180;
+  } else {
+    axis = Vec3.normalize(Vec3(), Vec3.cross(Vec3(), up, n));
+    angle = (Math.acos(Math.max(-1, Math.min(1, d))) * 180) / Math.PI;
+  }
+  return {
+    type: "plane",
+    invert: !!opts.invert,
+    position: Vec3.create(point[0], point[1], point[2]),
+    rotation: { axis, angle },
+    scale: Vec3.create(1, 1, 1),
+    transform: Mat4.identity(),
+  };
+}
+
+/** Set (or, with an empty list, clear) the clip objects of every given representation. */
+export async function setClipObjects(
+  ctx: PluginContext,
+  reprRefs: (string | null)[],
+  objects: ClipObjectSpec[],
+): Promise<void> {
+  const tree = ctx.build();
+  for (const ref of reprRefs) {
+    if (!ref) continue;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tree.to(ref).update((old: any) => {
+      old.type.params.clip = { variant: "pixel", objects };
+    });
+  }
+  await tree.commit();
 }
 
 export async function setClipSphere(
@@ -144,28 +272,11 @@ export async function setClipSphere(
   center: [number, number, number],
   radius: number,
 ): Promise<void> {
-  const c = Vec3.create(center[0], center[1], center[2]);
-  const tree = ctx.build();
-  for (const ref of reprRefs) {
-    if (!ref) continue;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tree.to(ref).update((old: any) => {
-      old.type.params.clip = { variant: "pixel", objects: clipSphereObjects(c, radius) };
-    });
-  }
-  await tree.commit();
+  await setClipObjects(ctx, reprRefs, [clipSphereObject(center, radius)]);
 }
 
 export async function clearClip(ctx: PluginContext, reprRefs: (string | null)[]): Promise<void> {
-  const tree = ctx.build();
-  for (const ref of reprRefs) {
-    if (!ref) continue;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tree.to(ref).update((old: any) => {
-      old.type.params.clip = { variant: "pixel", objects: [] };
-    });
-  }
-  await tree.commit();
+  await setClipObjects(ctx, reprRefs, []);
 }
 
 // --- arbitrary-plane slice through a point ---
@@ -189,6 +300,7 @@ export async function createSlice(
     .to(volumeRef)
     .apply(StateTransforms.Representation.VolumeRepresentation3D, params)
     .commit();
+  setReprsPickable(ctx, [selector.ref], false);
   return selector.ref;
 }
 
@@ -210,6 +322,7 @@ export async function updateSlice(
       };
     })
     .commit();
+  setReprsPickable(ctx, [sliceRef], false);
 }
 
 export async function removeNode(ctx: PluginContext, ref: string): Promise<void> {
@@ -226,7 +339,8 @@ export interface MetricPoint {
 }
 
 // Gaussian-weighted average of point values on a regular cartesian grid.
-// Voxels farther than `radius` from every point stay at 0.
+// Voxels farther than `radius` from every point carry NaN ("no data"), which the
+// external-volume theme maps to its defaultColor — distinct from a genuine value of 0.
 function buildMetricGrid(points: MetricPoint[], spacing: number, radius: number) {
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
@@ -275,20 +389,27 @@ function buildMetricGrid(points: MetricPoint[], spacing: number, radius: number)
   }
 
   const data = new Float32Array(nx * ny * nz);
-  let min = Infinity, max = -Infinity, sum = 0;
+  let min = Infinity, max = -Infinity, sum = 0, n = 0;
   for (let idx = 0; idx < data.length; idx++) {
-    const v = w[idx] > 1e-6 ? wv[idx] / w[idx] : 0;
-    data[idx] = v;
-    if (v < min) min = v;
-    if (v > max) max = v;
-    sum += v;
+    if (w[idx] > 1e-6) {
+      const v = wv[idx] / w[idx];
+      data[idx] = v;
+      if (v < min) min = v;
+      if (v > max) max = v;
+      sum += v;
+      n++;
+    } else {
+      data[idx] = NaN;
+    }
   }
-  const mean = sum / data.length;
+  const mean = n > 0 ? sum / n : 0;
   let varSum = 0;
   for (let idx = 0; idx < data.length; idx++) {
+    if (Number.isNaN(data[idx])) continue;
     const d = data[idx] - mean;
     varSum += d * d;
   }
+  if (n === 0) { min = 0; max = 0; }
 
   const matrix = Mat4.identity();
   Mat4.setValue(matrix, 0, 0, spacing);
@@ -301,7 +422,7 @@ function buildMetricGrid(points: MetricPoint[], spacing: number, radius: number)
   return {
     transform: { kind: "matrix" as const, matrix },
     cells: Tensor.create(space, Tensor.Data1(data)),
-    stats: { min, max, mean, sigma: Math.sqrt(varSum / data.length) },
+    stats: { min, max, mean, sigma: n > 0 ? Math.sqrt(varSum / n) : 0 },
   };
 }
 
@@ -357,11 +478,15 @@ export async function createMetricVolume(
 // external-volume colors per VERTEX by trilinearly sampling any Volume in the state
 // tree, so pointing it at the metric volume paints the 2Fo-Fc isosurface by the metric.
 
+/** Missing-data gray, matching hetkit's track color theme. */
+export const METRIC_MISSING_COLOR = 0xcfd8dc;
+
 export async function colorReprByVolume(
   ctx: PluginContext,
   reprRef: string,
   volumeRef: string,
   domain: [number, number],
+  opts: { colors?: number[]; defaultColor?: number } = {},
 ): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const themeParams: any = PD.getDefaultValues(ExternalVolumeColorThemeParams);
@@ -370,6 +495,14 @@ export async function colorReprByVolume(
     name: "absolute-value",
     params: { ...themeParams.coloring.params, domain: { name: "custom", params: domain } },
   };
+  if (opts.colors && opts.colors.length >= 2) {
+    themeParams.coloring.params = {
+      ...themeParams.coloring.params,
+      list: { kind: "interpolate", colors: opts.colors.map((c) => Color(c)) },
+    };
+  }
+  // NaN samples (outside the splat's reach, or masked scope) fall back to this color.
+  themeParams.defaultColor = Color(opts.defaultColor ?? METRIC_MISSING_COLOR);
   await ctx
     .build()
     .to(reprRef)
@@ -378,6 +511,7 @@ export async function colorReprByVolume(
       old.colorTheme = { name: "external-volume", params: themeParams };
     })
     .commit();
+  setReprsPickable(ctx, [reprRef], false);
 }
 
 export async function colorReprUniform(ctx: PluginContext, reprRef: string, color: number): Promise<void> {
@@ -392,4 +526,5 @@ export async function colorReprUniform(ctx: PluginContext, reprRef: string, colo
       old.colorTheme = defaults.colorTheme;
     })
     .commit();
+  setReprsPickable(ctx, [reprRef], false);
 }

@@ -2,6 +2,7 @@ import { Vec3 } from "molstar/lib/mol-math/linear-algebra/3d/vec3";
 import { Vec4 } from "molstar/lib/mol-math/linear-algebra/3d/vec4";
 import { EmptyLoci } from "molstar/lib/mol-model/loci";
 import {
+  Bond,
   Structure,
   StructureElement,
   StructureProperties,
@@ -31,6 +32,7 @@ import { StateSelection } from "molstar/lib/mol-state";
 import { Color } from "molstar/lib/mol-util/color";
 import type { ColorTheme } from "molstar/lib/mol-theme/color";
 import { AltLocColorThemeProvider } from "./altloc-theme";
+import { setReprsPickable } from "./density";
 import { LabelManager } from "./labels";
 import {
   type AltGroupSelector,
@@ -41,7 +43,7 @@ import {
   executeQuery,
 } from "./queries";
 import { setSelectionWiggleFalloff } from "./wiggle-falloff";
-import { proposalViewerSpec, viewerSpec } from "./spec";
+import { labViewerSpec, proposalViewerSpec, viewerSpec } from "./spec";
 import {
   BALL_AND_STICK_COMPONENTS,
   DEFAULT_VIEW,
@@ -76,8 +78,29 @@ export interface PickInfo {
   chainId: string;
   authSeqId: number;
   compId: string;
+  /** alternate-location letter of the picked atom; "" for shared atoms */
+  altId: string;
+  /** insertion code, "" when absent */
+  insCode: string;
   position3d?: [number, number, number];
 }
+
+export interface ClickMeta {
+  /** Mol* button flag of the released button: 1 left, 2 right, 4 middle */
+  button: number;
+  /** viewport (client) coordinates of the click, when the event carries a page position */
+  clientX?: number;
+  clientY?: number;
+}
+
+/**
+ * Which spec/behavior bundle the plugin runs with:
+ *  - "default": full Mol* default behaviors (main inspector).
+ *  - "minimal": chrome-free, atom-granularity picking (proposal figures).
+ *  - "lab":     chrome-free with FocusLoci / camera-fly / hover-toast behaviors REMOVED —
+ *               clicks belong to the app — plus renderer tweaks for the ghost-stick look.
+ */
+export type ViewerVariant = "default" | "minimal" | "lab";
 
 /**
  * Pure Mol* wrapper — owns the plugin lifecycle and exposes low-level operations
@@ -92,6 +115,9 @@ export class MolstarViewer {
   // update to switch frames) and the trajectory's total frame count.
   private modelRef: string | null = null;
   private modelCount = 1;
+  // State ref of the primary structure (the one load()/buildRepresentation created), so callers can
+  // target its hierarchy components (transparency/overpaint/clip) without guessing indices.
+  private primaryStructureRef: string | null = null;
   // TLS libration: one transformable sub-structure per rigid body, plus the running animation handle.
   private tlsRefs: TlsRef[] = [];
   private tlsRaf: number | null = null;
@@ -100,27 +126,39 @@ export class MolstarViewer {
   // every bond stays drawn and nothing floats. Kept here to recompute those layers on each state step.
   private hetNetworks: HetVizNetwork[] = [];
 
-  // `minimal` (proposal explainer figures): use the chrome-free spec (no viewport button strip),
-  // hide the camera axes gizmo, and pick at atom granularity so hovering highlights one atom rather
-  // than the whole residue. The default (main inspector) keeps Mol*'s standard chrome and residue picking.
-  async init(container: HTMLElement, opts: { minimal?: boolean } = {}): Promise<void> {
+  // Variant picks the spec (see ViewerVariant). `minimal: true` is kept as an alias of
+  // variant "minimal" for the existing figure call sites.
+  async init(container: HTMLElement, opts: { minimal?: boolean; variant?: ViewerVariant } = {}): Promise<void> {
     if (this.ctx) return;
     if (this.initPromise) return this.initPromise;
-    const spec = opts.minimal ? proposalViewerSpec : viewerSpec;
-    this.initPromise = this.doInit(container, spec, !!opts.minimal);
+    const variant: ViewerVariant = opts.variant ?? (opts.minimal ? "minimal" : "default");
+    const spec = variant === "minimal" ? proposalViewerSpec : variant === "lab" ? labViewerSpec : viewerSpec;
+    this.initPromise = this.doInit(container, spec, variant);
     return this.initPromise;
   }
 
-  private async doInit(container: HTMLElement, spec: PluginUISpec, minimal: boolean): Promise<void> {
+  private async doInit(container: HTMLElement, spec: PluginUISpec, variant: ViewerVariant): Promise<void> {
     this.ctx = await createPluginUI({ target: container, spec, render: renderReact18 });
     // Register our custom alt-loc color theme so `color: 'alt-loc'` resolves on representations.
     if (!this.ctx.representation.structure.themes.colorThemeRegistry.has(AltLocColorThemeProvider)) {
       this.ctx.representation.structure.themes.colorThemeRegistry.add(AltLocColorThemeProvider);
     }
-    this.applyDefaultStyling(minimal);
-    if (minimal) {
+    this.applyDefaultStyling(variant === "minimal");
+    if (variant === "minimal") {
       // Hover/click highlight one atom, not the enclosing residue.
       this.ctx.managers.interactivity.setProps({ granularity: "element" });
+    }
+    if (variant === "lab") {
+      // Ghost sticks: translucent geometry must stay hoverable/pickable (alpha above 0.1
+      // still picks), hover marks in a light blue that reads on the pastel palette, and
+      // nothing dims while a highlight is active. The pick buffer defaults to quarter
+      // resolution (pickScale 0.25), which misses thin sticks; half resolution makes
+      // clicks land where the cursor is.
+      this.ctx.canvas3d?.setProps({
+        pickScale: 0.5,
+        renderer: { pickingAlphaThreshold: 0.1, highlightColor: Color(0x93b3d1), dimStrength: 0 },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
     }
   }
 
@@ -166,6 +204,49 @@ export class MolstarViewer {
     else await this.buildRepresentation(trajectory, opts.view ?? DEFAULT_VIEW);
   }
 
+  /**
+   * Add a SECOND structure to the existing state tree without touching the primary
+   * load/clear lifecycle or the frame-scrubbing refs. Rendered ball-and-stick in one
+   * uniform color so the two models read apart. Returns the structure's state ref
+   * (toggle it with setSubtreeVisibility; a viewer.clear() removes it with everything
+   * else). Format defaults to mmCIF; "pdb" covers the re-refined corpus files.
+   */
+  async loadSecondary(
+    data: string | Uint8Array,
+    opts: { label?: string; format?: "mmcif" | "pdb"; color?: number } = {},
+  ): Promise<string | null> {
+    const ctx = this.ctx;
+    if (!ctx) throw new Error("Viewer not initialized");
+    const raw = await ctx.builders.data.rawData({
+      data: data as string | Uint8Array<ArrayBuffer>,
+      label: opts.label ?? "secondary structure",
+    });
+    if (!this.ctx) throw new Error("Viewer disposed during load");
+    const trajectory = await ctx.builders.structure.parseTrajectory(raw, opts.format ?? "mmcif");
+    if (!this.ctx) throw new Error("Viewer disposed during load");
+    const model = await ctx.builders.structure.createModel(trajectory);
+    if (!this.ctx) return null;
+    const structure = await ctx.builders.structure.createStructure(model);
+    if (!this.ctx) return null;
+    const reprRefs: string[] = [];
+    for (const kind of BALL_AND_STICK_COMPONENTS) {
+      const comp = await ctx.builders.structure.tryCreateComponentStatic(structure, kind);
+      if (!comp || !this.ctx) continue;
+      const repr = await ctx.builders.structure.representation.addRepresentation(comp, {
+        type: "ball-and-stick",
+        typeParams: { ignoreLight: true },
+        color: "uniform",
+        colorParams: { value: Color(opts.color ?? 0x8a97a5) },
+      });
+      reprRefs.push(repr.ref);
+    }
+    // The secondary model is a reference silhouette: its translucent geometry must never
+    // intercept picks meant for the primary (PickInfo carries no structure identity, so a
+    // pick through the ghost would silently drive primary-side actions on the wrong model).
+    setReprsPickable(ctx, reprRefs, false);
+    return structure.ref;
+  }
+
   async loadFromUrl(url: string, opts: { binary?: boolean; label?: string; view?: StructureView } = {}): Promise<void> {
     if (!this.ctx) throw new Error("Viewer not initialized");
     const raw = await this.ctx.builders.data.download({
@@ -193,6 +274,7 @@ export class MolstarViewer {
     this.modelRef = model.ref;
     const structure = await ctx.builders.structure.createStructure(model);
     if (!this.ctx) return;
+    this.primaryStructureRef = structure.ref;
     const components = POLYMER_ONLY_REPRESENTATIONS.includes(view.representation)
       ? POLYMER_COMPONENTS
       : BALL_AND_STICK_COMPONENTS;
@@ -203,6 +285,7 @@ export class MolstarViewer {
         type: view.representation,
         typeParams: { ignoreLight: true },
         color: view.colorTheme as ColorTheme.BuiltIn,
+        ...(view.colorTheme === "uniform" ? { colorParams: { value: Color(view.uniformColor ?? 0xcfd8dc) } } : {}),
       });
     }
   }
@@ -240,6 +323,7 @@ export class MolstarViewer {
     this.modelRef = model.ref;
     const structure = await ctx.builders.structure.createStructure(model);
     if (!this.ctx) return;
+    this.primaryStructureRef = structure.ref;
     this.tlsRefs = [];
     for (let i = 0; i < groups.length; i++) {
       const g = groups[i];
@@ -324,6 +408,7 @@ export class MolstarViewer {
     this.modelRef = model.ref;
     const structure = await ctx.builders.structure.createStructure(model);
     if (!this.ctx) return;
+    this.primaryStructureRef = structure.ref;
     this.hetNetworks = networks;
 
     // one hierarchy-tracked component for the whole structure (so overpaint/transparency can target it)
@@ -485,6 +570,7 @@ export class MolstarViewer {
     this.hetNetworks = [];
     this.modelRef = null;
     this.modelCount = 1;
+    this.primaryStructureRef = null;
     if (!this.ctx) return;
     await PluginCommands.State.RemoveObject(this.ctx, {
       state: this.ctx.state.data,
@@ -506,6 +592,10 @@ export class MolstarViewer {
     return this.ctx?.managers.structure.hierarchy.current.structures[0]?.cell.obj?.data;
   }
 
+  getPrimaryStructureRef(): string | null {
+    return this.primaryStructureRef;
+  }
+
   getStructureFromRef(ref: string): Structure | undefined {
     if (!this.ctx) return undefined;
     const cell = this.ctx.state.data.select(StateSelection.Generators.byRef(ref))[0];
@@ -519,7 +609,9 @@ export class MolstarViewer {
     if (!loci || StructureElement.Loci.isEmpty(loci)) {
       this.ctx.managers.interactivity.lociHighlights.clearHighlights();
     } else {
-      this.ctx.managers.interactivity.lociHighlights.highlight({ loci }, false);
+      // highlightOnly, not highlight: plain highlight() ACCUMULATES marks, so sweeping
+      // the cursor across the barplot lit up every residue passed over at once.
+      this.ctx.managers.interactivity.lociHighlights.highlightOnly({ loci }, false);
     }
   }
 
@@ -541,8 +633,11 @@ export class MolstarViewer {
     this.ctx?.managers.structure.selection.clear();
   }
 
+  // Routed through lociSelects (not structure.selection.fromLoci) so the SelectLoci
+  // behavior's mark provider runs: the selection gets Mol*'s default green marker tint
+  // in the canvas, and re-marks itself when representations rebuild.
   setSelection(loci: StructureElement.Loci): void {
-    this.ctx?.managers.structure.selection.fromLoci("set", loci);
+    this.ctx?.managers.interactivity.lociSelects.selectOnly({ loci });
   }
 
   addToSelection(loci: StructureElement.Loci): void {
@@ -584,12 +679,27 @@ export class MolstarViewer {
     return () => sub.unsubscribe();
   }
 
-  subscribeToClick(callback: (info: PickInfo | null) => void): () => void {
+  // Fires for ANY button (Mol* already rejects drags: no click when the pointer moved
+  // more than ~4 px between down and up), with a fresh synchronous pick at the release
+  // point — unlike hover, which is async and throttled. meta.button uses Mol*'s flags:
+  // 1 = left, 2 = right, 4 = middle. clientX/Y are viewport coordinates for anchoring
+  // DOM popups, present when the event carries a page position.
+  subscribeToClick(callback: (info: PickInfo | null, meta: ClickMeta) => void): () => void {
     if (!this.ctx) return () => {};
     const sub = this.ctx.behaviors.interaction.click.subscribe((e) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if ((e as any).button === 2) return; // ignore right-click (context menu)
-      callback(pickFromLoci(e));
+      const ev = e as any;
+      const meta: ClickMeta = { button: typeof ev.button === "number" ? ev.button : 1 };
+      // e.page is element-relative CSS pixels (clientXY minus the canvas rect)
+      if (ev.page) {
+        const canvasEl = this.ctx?.canvas3d?.webgl.gl.canvas;
+        const rect = canvasEl instanceof HTMLElement ? canvasEl.getBoundingClientRect() : null;
+        if (rect) {
+          meta.clientX = rect.left + ev.page[0];
+          meta.clientY = rect.top + ev.page[1];
+        }
+      }
+      callback(pickFromLoci(e), meta);
     });
     return () => sub.unsubscribe();
   }
@@ -635,15 +745,23 @@ export class MolstarViewer {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function pickFromLoci(e: any): PickInfo | null {
-  const loci = e?.current?.loci;
+  let loci = e?.current?.loci;
+  // A pick on a STICK is a Bond.Loci, not an atom. Mol* only converts bond -> atom when
+  // the cursor is within the first atom's radius; mid-stick picks arrive here as bonds
+  // and used to be dropped (most of the clickable area in a ball-and-stick scene).
+  // Resolve to the bond's first atom — altloc preserved, both bond ends share it.
+  if (Bond.isLoci(loci) && loci.bonds.length > 0) loci = Bond.toFirstStructureElementLoci(loci);
   if (!StructureElement.Loci.is(loci) || StructureElement.Loci.isEmpty(loci)) return null;
   let info: PickInfo | null = null;
   StructureElement.Loci.forEachLocation(loci, (location) => {
     if (info) return;
+    const rawIns = StructureProperties.residue.pdbx_PDB_ins_code(location);
     info = {
       chainId: StructureProperties.chain.auth_asym_id(location),
       authSeqId: StructureProperties.residue.auth_seq_id(location),
       compId: StructureProperties.atom.label_comp_id(location),
+      altId: StructureProperties.atom.label_alt_id(location) ?? "",
+      insCode: rawIns === "?" || rawIns === "." ? "" : (rawIns ?? ""),
       position3d: e.position
         ? [e.position[0], e.position[1], e.position[2]]
         : [
