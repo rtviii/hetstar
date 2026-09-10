@@ -42,14 +42,14 @@ export default function SelectionPanel({
   }, [aTable, picked, densitySampler, fofcSampler]);
 
   return (
-    <div className="flex flex-col gap-2 border-t border-neutral-200 pt-2">
+    <div className="flex flex-col gap-2 border-t border-line pt-2">
       <SectionLabel>Selection</SectionLabel>
       {!picked && <TinyText>left click selects a residue; right click opens the actions panel</TinyText>}
       {picked && (
-        <div className="text-[12px] text-neutral-700">
+        <div className="text-[12px] text-ink-secondary">
           {picked.compId} {picked.chainId}/{picked.authSeqId}
           {conformerCount != null && (
-            <span className="text-neutral-400">
+            <span className="text-ink-muted/75">
               {" "}
               — {conformerCount > 1 ? `${conformerCount} conformers${conformersShown ? " (shown)" : ""}` : "unsplit"}
             </span>
@@ -59,10 +59,10 @@ export default function SelectionPanel({
 
       {picked && supportRows && (
         <>
-          <div className="text-[11px] text-neutral-500">Conformer support (model A)</div>
+          <div className="text-[11px] text-ink-muted">Conformer support (model A)</div>
           <table className="w-full text-left tabular-nums">
             <thead>
-              <tr className="text-[11px] text-neutral-500">
+              <tr className="text-[11px] text-ink-muted">
                 <th className="font-normal">conf</th>
                 <th className="font-normal">occ</th>
                 <th className="font-normal">atoms</th>
@@ -78,7 +78,7 @@ export default function SelectionPanel({
                   return Number.isNaN(x) ? "-" : x.toFixed(2);
                 };
                 return (
-                  <tr key={row.alt || "shared"} className={belowFloor ? "text-neutral-400" : undefined}>
+                  <tr key={row.alt || "shared"} className={belowFloor ? "text-ink-muted/75" : undefined}>
                     <td>
                       {row.alt ? (
                         <span className="inline-flex items-center gap-1">
@@ -101,7 +101,7 @@ export default function SelectionPanel({
               })}
             </tbody>
           </table>
-          <label className="flex items-center gap-2 text-[11px] text-neutral-600">
+          <label className="flex items-center gap-2 text-[11px] text-ink-secondary">
             <input type="checkbox" checked={occNormalize} onChange={(e) => setOccNormalize(e.target.checked)} />
             <span>per unit occupancy (value / occ)</span>
           </label>

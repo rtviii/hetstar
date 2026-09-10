@@ -1,6 +1,6 @@
 "use client";
 import { altColorCss } from "@/lib/molstar/altloc-theme";
-import { SectionLabel, TinyText } from "./ui";
+import { SectionLabel, SwitchButton, Tooltip } from "./ui";
 
 // Naive global "states" for model A: one button per altloc letter the structure carries.
 // Activating a letter collapses EVERY split residue to that letter (falling back to its
@@ -9,6 +9,9 @@ import { SectionLabel, TinyText } from "./ui";
 // across residues — they are not (qFit assigns letters per residue independently) — so
 // this is a stand-in until real state coupling is solved. Per-residue expansion via the
 // Selection Actions Panel overrides the global choice on that residue.
+//
+// Lives in the bottom tools panel as one row: label + buttons; the explanation is on the
+// label's hover card so the row stays compact.
 
 export interface StateLetter {
   letter: string;
@@ -30,47 +33,43 @@ export default function ConformerStatesPanel({
 }) {
   if (!letters.length) return null;
   return (
-    <div className="flex flex-col gap-1.5 border-t border-neutral-200 pt-2">
-      <SectionLabel>Conformer state (model A)</SectionLabel>
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <Tooltip
+        content={
+          <div className="flex flex-col gap-1">
+            <div className="font-medium">Conformer state, model A</div>
+            <div>
+              Force one letter on every split residue; the residues it actually switches are painted in the letter
+              color (residues without the letter keep their top-occupancy conformer and the base color). Naive: letters
+              are NOT coupled across residues.
+            </div>
+          </div>
+        }
+      >
+        <span className="cursor-help">
+          <SectionLabel>Conformer state</SectionLabel>
+        </span>
+      </Tooltip>
       <div className="flex flex-wrap items-center gap-1">
-        <button
-          type="button"
-          disabled={disabled}
-          aria-pressed={active === null}
-          onClick={() => onChange(null)}
-          className={`rounded border px-1.5 py-0.5 text-[11px] leading-tight transition-colors disabled:cursor-default disabled:opacity-40 ${
-            active === null
-              ? "border-sky-700 bg-sky-50 text-sky-900"
-              : "border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-100"
-          }`}
-        >
+        <SwitchButton pressed={active === null} disabled={disabled} onClick={() => onChange(null)}>
           top occ
-        </button>
+        </SwitchButton>
         {letters.map(({ letter, residueCount }) => (
-          <button
+          <SwitchButton
             key={letter}
-            type="button"
+            pressed={active === letter}
             disabled={disabled}
-            aria-pressed={active === letter}
             title={`${residueCount} residues carry conformer ${letter}`}
             onClick={() => onChange(active === letter ? null : letter)}
-            className={`flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] leading-tight transition-colors disabled:cursor-default disabled:opacity-40 ${
-              active === letter
-                ? "border-sky-700 bg-sky-50 text-sky-900"
-                : "border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-100"
-            }`}
           >
-            <span className="inline-block h-2 w-2 rounded-[2px]" style={{ background: altColorCss(letter) }} />
-            {letter}
-            <span className="tabular-nums text-neutral-400">{residueCount}</span>
-          </button>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2 w-2 rounded-[2px]" style={{ background: altColorCss(letter) }} />
+              {letter}
+              <span className="tabular-nums text-ink-muted">{residueCount}</span>
+            </span>
+          </SwitchButton>
         ))}
       </div>
-      <TinyText>
-        force one letter on every split residue; the residues it actually switches are painted in the letter color
-        (residues without the letter keep their top-occupancy conformer and the base color). Naive: letters are NOT
-        coupled across residues.
-      </TinyText>
     </div>
   );
 }

@@ -52,7 +52,7 @@ export default function MetricsToolbar({
   status: string | null;
 }) {
   return (
-    <div className="flex flex-col gap-2 border-t border-neutral-200 pt-2">
+    <div className="flex flex-col gap-2 border-t border-line pt-2">
       <SectionLabel>Metric on density</SectionLabel>
       {provenance.aDesc && provenance.bDesc && (
         <TinyText>
@@ -74,7 +74,7 @@ export default function MetricsToolbar({
                 <div className="flex flex-col gap-1">
                   <div className="font-medium">
                     {tip.title}
-                    {metricUnit(id) ? <span className="text-neutral-400"> ({metricUnit(id)})</span> : null}
+                    {metricUnit(id) ? <span className="text-ink-muted/75"> ({metricUnit(id)})</span> : null}
                   </div>
                   {tip.lines.map((l, i) => (
                     <div key={i} className="break-words">
@@ -100,7 +100,7 @@ export default function MetricsToolbar({
       )}
 
       <div className="flex items-center gap-3">
-        <span className="text-[11px] text-neutral-500">scope</span>
+        <span className="text-[11px] text-ink-muted">scope</span>
         {(["all", "residue", "range"] as const).map((m) => (
           <label key={m} className="flex items-center gap-1">
             <input type="radio" checked={scopeMode === m} onChange={() => onScopeMode(m)} />
@@ -116,20 +116,20 @@ export default function MetricsToolbar({
       {scopeMode === "range" && (
         <div className="flex items-center gap-1">
           <input
-            className="w-10 rounded border border-neutral-300 px-1 py-0.5"
+            className="w-10 rounded border border-line-strong px-1 py-0.5"
             value={rangeChain}
             onChange={(e) => onRangeChain(e.target.value.trim())}
             placeholder="A"
           />
           <input
-            className="w-14 rounded border border-neutral-300 px-1 py-0.5"
+            className="w-14 rounded border border-line-strong px-1 py-0.5"
             value={rangeFrom}
             onChange={(e) => onRangeFrom(e.target.value.trim())}
             placeholder="from"
           />
-          <span className="text-neutral-400">to</span>
+          <span className="text-ink-muted/75">to</span>
           <input
-            className="w-14 rounded border border-neutral-300 px-1 py-0.5"
+            className="w-14 rounded border border-line-strong px-1 py-0.5"
             value={rangeTo}
             onChange={(e) => onRangeTo(e.target.value.trim())}
             placeholder="to"

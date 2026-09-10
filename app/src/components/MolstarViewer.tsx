@@ -103,7 +103,7 @@ export default function MolstarViewer({
     <div className="relative h-full w-full">
       <div ref={containerRef} className="absolute inset-0" />
       {!ready && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-neutral-500">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-ink-muted">
           Initialising 3D viewer…
         </div>
       )}
