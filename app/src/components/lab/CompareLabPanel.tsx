@@ -34,15 +34,17 @@ import {
 } from "@/lib/molstar/conformers";
 import { MetricProjector, samplerForVolume, trackToPoints } from "@/lib/molstar/project";
 import { buildResidueQuery, executeQuery } from "@/lib/molstar/queries";
-import SlicePanel, { type SlicePlane } from "@/components/lab/SlicePanel";
-import ConformerBarplot, { type ConformerBar } from "@/components/lab/compare/ConformerBarplot";
+import SlicePanel, { slicePlaneFor, type SliceAxis, type SlicePlane } from "@/components/lab/SlicePanel";
 import ConformerStatesPanel from "@/components/lab/compare/ConformerStatesPanel";
 import DensityControls from "@/components/lab/compare/DensityControls";
-import LoaderPanel from "@/components/lab/compare/LoaderPanel";
+import EntryChip from "@/components/lab/compare/EntryChip";
 import MetricsToolbar, { type ScopeMode } from "@/components/lab/compare/MetricsToolbar";
 import SelectionActionsPopup, { type ActionTarget, type ClipMode } from "@/components/lab/compare/SelectionActionsPopup";
 import SelectionPanel from "@/components/lab/compare/SelectionPanel";
+import SliceControls from "@/components/lab/compare/SliceControls";
 import StyleTray from "@/components/lab/compare/StyleTray";
+import SequenceLanes from "@/components/lab/lanes/SequenceLanes";
+import type { LaneMetric } from "@/components/lab/lanes/types";
 import { METRIC_UI, metricLabel, metricUnit, type MetricId } from "@/components/lab/compare/metrics";
 import { SectionLabel } from "@/components/lab/compare/ui";
 import { type ProvenanceRecord, type StageId, type StageState } from "@/lib/lab/entries";
@@ -51,10 +53,13 @@ import { resolveEntry } from "@/lib/dpdb/resolve";
 import { toFetchableUrl } from "@/lib/dpdb/client";
 import {
   buildAtomTable,
+  buildSequenceModel,
   parseCifText,
+  readSecondaryStructure,
   residueKey,
   summarizeAltlocs,
   type AtomTable,
+  type MolCifFile,
   type ResidueRef,
 } from "@dynamic-pdb/hetkit/model";
 import {
@@ -170,6 +175,10 @@ export default function CompareLabPanel() {
   const [bText, setBText] = useState<string | null>(null);
   const [aTable, setATable] = useState<AtomTable | null>(null);
   const [bTable, setBTable] = useState<AtomTable | null>(null);
+  // the parsed files stay around: the sequence bridge reads the polymer scheme and the
+  // secondary structure, categories the atom tables do not carry
+  const [aFile, setAFile] = useState<MolCifFile | null>(null);
+  const [bFile, setBFile] = useState<MolCifFile | null>(null);
   const [primaryLoaded, setPrimaryLoaded] = useState(false);
   const [secondaryRef, setSecondaryRef] = useState<string | null>(null);
   const [showB, setShowB] = useState(false);
@@ -212,6 +221,10 @@ export default function CompareLabPanel() {
   // --- slice ---
   const [slice3d, setSlice3d] = useState(false);
   const [sliceModel, setSliceModel] = useState(false);
+  const [sliceAxis, setSliceAxis] = useState<SliceAxis>(2);
+  const [sliceFrac, setSliceFrac] = useState(0.5);
+  // the optional 2D image of the plane (style flyout); the plane exists regardless
+  const [showSlice2d, setShowSlice2d] = useState(false);
   const [planeVersion, setPlaneVersion] = useState(0);
 
   // --- style (tray) ---
@@ -230,7 +243,6 @@ export default function CompareLabPanel() {
   const densityRunRef = useRef<string | null>(null);
   const planeRef = useRef<SlicePlane | null>(null);
   const slice3dNodeRef = useRef<string | null>(null);
-  const planeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hoverKeyRef = useRef<string | null>(null);
   const selRangeRef = useRef<ResidueRange | null>(null); // click handler reads the live range
   const autoLoadRef = useRef(false);
@@ -276,6 +288,7 @@ export default function CompareLabPanel() {
   const setStage = useCallback((id: StageId, s: StageState) => {
     setStages((prev) => ({ ...prev, [id]: s }));
   }, []);
+  const closePopup = useCallback(() => setPopup(null), []);
 
   // --- load flow: entry -> model files -> tables (density chains in its own effect) ---
 
@@ -292,6 +305,8 @@ export default function CompareLabPanel() {
       setBText(null);
       setATable(null);
       setBTable(null);
+      setAFile(null);
+      setBFile(null);
       setDensityState("idle");
       setDensityQuality("auto"); // a fresh entry builds its maps at the default budget
       setDensityBusy(false);
@@ -332,12 +347,11 @@ export default function CompareLabPanel() {
           setAText(aT);
           setBText(bT);
           setStage("tables", "active");
-          const [tA, tB] = await Promise.all([
-            parseCifText(aT).then(buildAtomTable),
-            parseCifText(bT).then(buildAtomTable),
-          ]);
-          setATable(tA);
-          setBTable(tB);
+          const [fA, fB] = await Promise.all([parseCifText(aT), parseCifText(bT)]);
+          setAFile(fA);
+          setBFile(fB);
+          setATable(buildAtomTable(fA));
+          setBTable(buildAtomTable(fB));
           setStage("tables", "done");
         } catch (e) {
           setStages((prev) => {
@@ -797,20 +811,27 @@ export default function CompareLabPanel() {
 
   // --- slice plane wiring ---
 
-  const onPlaneChange = useCallback(
-    (plane: SlicePlane) => {
-      planeRef.current = plane;
-      if (planeTimerRef.current) clearTimeout(planeTimerRef.current);
-      planeTimerRef.current = setTimeout(() => {
-        setPlaneVersion((v) => v + 1);
-        const ctx = viewer?.ctx;
-        if (ctx && slice3dNodeRef.current) {
-          void updateSlice(ctx, slice3dNodeRef.current, plane.point, plane.normal);
-        }
-      }, 60);
-    },
-    [viewer],
+  // The plane is parent state (normal axis + position through the model box), so it exists
+  // whether or not the 2D map is shown. The ref is written synchronously for the effects
+  // that read it in the same commit; the version bump and the in-scene slice update are
+  // debounced against slider drags, as before.
+  const slicePlane = useMemo(
+    () => (box ? slicePlaneFor(box, sliceAxis, sliceFrac) : null),
+    [box, sliceAxis, sliceFrac],
   );
+
+  useEffect(() => {
+    planeRef.current = slicePlane;
+    if (!slicePlane) return;
+    const timer = setTimeout(() => {
+      setPlaneVersion((v) => v + 1);
+      const ctx = viewer?.ctx;
+      if (ctx && slice3dNodeRef.current) {
+        void updateSlice(ctx, slice3dNodeRef.current, slicePlane.point, slicePlane.normal);
+      }
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [slicePlane, viewer]);
 
   useEffect(() => {
     const ctx = viewer?.ctx;
@@ -825,7 +846,7 @@ export default function CompareLabPanel() {
       void removeNode(ctx, slice3dNodeRef.current);
       slice3dNodeRef.current = null;
     }
-    // planeVersion: after an entry switch planeRef is null until the slice panel re-emits;
+    // planeVersion: after an entry switch planeRef is null until the new box yields a plane;
     // the bump retries the create once a plane exists again.
   }, [viewer, slice3d, densityState, planeVersion]);
 
@@ -921,74 +942,83 @@ export default function CompareLabPanel() {
     }));
   }, [altSummary]);
 
-  const bars = useMemo(() => {
-    if (!aTable) return null;
-    const out: ConformerBar[] = [];
-    let maxCount = 2;
-    for (const res of aTable.residues) {
-      if (WATER_COMPS.has(res.compId)) continue;
-      const key = residueKey(res.ref);
-      const count = confPlan.byKey.get(key)?.altIds.length ?? 1;
-      if (count > maxCount) maxCount = count;
-      out.push({ key, chain: res.ref.chain, seq: res.ref.seq, ins: res.ref.ins, compId: res.compId, count });
-    }
-    return { list: out, maxCount };
-  }, [aTable, confPlan]);
+  // --- sequence lanes: the structure-sequence bridge ---
+  // The deposited file carries the polymer scheme (SEQRES with author numbering) and the
+  // secondary-structure records; qFit output has neither. So model B frames model A
+  // whenever it is there, and A's observed residues frame themselves otherwise. Lanes
+  // speak positions; everything that leaves them is an author-keyed residue or range.
+  const seqModel = useMemo(
+    () => (aTable && aFile ? buildSequenceModel(bFile ?? aFile, aTable) : null),
+    [aTable, aFile, bFile],
+  );
+  const secondaryByChain = useMemo(
+    () => (seqModel && aFile ? readSecondaryStructure(bFile ?? aFile, seqModel) : null),
+    [seqModel, aFile, bFile],
+  );
+  const laneMetric = useMemo<LaneMetric | null>(
+    () =>
+      activeTrack
+        ? {
+            id: activeTrack.id,
+            name: metricLabel(activeTrack.id),
+            unit: metricUnit(activeTrack.id) ?? null,
+            colors: METRIC_UI[activeTrack.id].colors,
+            track: activeTrack.track,
+          }
+        : null,
+    [activeTrack],
+  );
+  const laneHoverRef = useMemo<ResidueRef | null>(
+    () => (hoverInfo ? { chain: hoverInfo.chainId, seq: hoverInfo.authSeqId, ins: hoverInfo.insCode } : null),
+    [hoverInfo],
+  );
+  const laneSelection = useMemo<ResidueRange | null>(
+    () => selRange ?? (picked ? { chain: picked.chainId, from: picked.authSeqId, to: picked.authSeqId } : null),
+    [selRange, picked],
+  );
 
-  // active metric values in bars order (the barplot's metric lane); NaN where the track
-  // has no value for a residue (out of scope, or missing from model A's key set)
-  const laneValues = useMemo(() => {
-    if (!bars || !activeTrack) return null;
-    const byKey = new Map<string, number>();
-    const { keys, values } = activeTrack.track;
-    keys.forEach((k, i) => byKey.set(residueKey(k), values[i]));
-    const out = new Float32Array(bars.list.length);
-    for (let i = 0; i < bars.list.length; i++) out[i] = byKey.get(bars.list[i].key) ?? NaN;
-    return out;
-  }, [bars, activeTrack]);
-
-  const onBarSelect = useCallback(
-    (bar: ConformerBar) => {
-      if (!aTable) return;
-      const info: PickInfo = { chainId: bar.chain, authSeqId: bar.seq, compId: bar.compId, altId: "", insCode: bar.ins };
-      const c = residueCentroid(aTable, info);
-      setPicked({ ...info, position3d: c ?? undefined });
-      setSelRange(null);
+  // a single residue becomes the pick (3D selection marker + actions panel target); a
+  // range becomes the selection AND the metric scope in one gesture
+  const onLaneSelect = useCallback(
+    (range: ResidueRange) => {
+      if (range.from === range.to && aTable) {
+        const res = aTable.residues.find((r) => r.ref.chain === range.chain && r.ref.seq === range.from);
+        if (res) {
+          const info: PickInfo = { chainId: res.ref.chain, authSeqId: res.ref.seq, compId: res.compId, altId: "", insCode: res.ref.ins };
+          const c = residueCentroid(aTable, info);
+          setPicked({ ...info, position3d: c ?? undefined });
+          setSelRange(null);
+          setPopup(null);
+          return;
+        }
+      }
+      setSelRange(range);
+      setPicked(null);
       setPopup(null);
+      setScopeMode("range");
+      setRangeChain(range.chain);
+      setRangeFrom(String(range.from));
+      setRangeTo(String(range.to));
     },
     [aTable],
   );
 
-  // A barplot drag becomes the selection AND the metric scope in one gesture.
-  const onBarRangeSelect = useCallback((range: ResidueRange) => {
-    setSelRange(range);
-    setPicked(null);
-    setPopup(null);
-    setScopeMode("range");
-    setRangeChain(range.chain);
-    setRangeFrom(String(range.from));
-    setRangeTo(String(range.to));
-  }, []);
-
-  const onBarHover = useCallback(
-    (bar: ConformerBar | null) => {
+  const onLaneHover = useCallback(
+    (ref: ResidueRef | null) => {
       if (!viewer) return;
-      if (!bar) {
+      if (!ref) {
         viewer.highlightLoci(null);
         return;
       }
       const structure = viewer.getCurrentStructure();
       if (!structure) return;
-      viewer.highlightLoci(executeQuery(buildResidueQuery(bar.chain, bar.seq), structure));
+      viewer.highlightLoci(executeQuery(buildResidueQuery(ref.chain, ref.seq), structure));
     },
     [viewer],
   );
 
   const onPrimaryLoaded = useCallback(() => setPrimaryLoaded(true), []);
   const ready = densityState === "ready";
-  const hoverBarKey = hoverInfo
-    ? residueIdKey({ chain: hoverInfo.chainId, seq: hoverInfo.authSeqId, ins: hoverInfo.insCode })
-    : null;
 
   const popupTarget: ActionTarget | null = !popup
     ? null
@@ -1015,27 +1045,9 @@ export default function CompareLabPanel() {
       : DEFAULT_CLIP_RADIUS);
 
   return (
-    <div className="flex h-screen min-h-0 flex-col bg-white text-[12px] text-neutral-700">
+    <div className="flex h-screen min-h-0 flex-col bg-white text-[12px] text-ink-secondary">
       <div className="flex min-h-0 flex-1">
-        <aside className="flex w-64 shrink-0 flex-col gap-3 overflow-y-auto border-r border-neutral-200 bg-neutral-50 p-3">
-          <LoaderPanel
-            entryInput={entryInput}
-            onEntryInput={setEntryInput}
-            onLoad={() => startLoad(entryInput)}
-            loading={loading}
-            currentEntry={entry}
-            stages={stages}
-            provenance={provenance}
-            error={loadError}
-            showRetryDensity={densityState === "error"}
-            onRetryDensity={retryDensity}
-          />
-          <ConformerStatesPanel
-            letters={stateLetters}
-            active={globalAlt}
-            disabled={!primaryLoaded}
-            onChange={setGlobalAlt}
-          />
+        <aside className="flex w-64 shrink-0 flex-col gap-3 overflow-y-auto border-r border-line bg-surface-muted p-3">
           <SelectionPanel
             aTable={aTable}
             picked={picked}
@@ -1048,19 +1060,35 @@ export default function CompareLabPanel() {
 
         <div className="relative min-w-0 flex-1" onContextMenu={(e) => e.preventDefault()}>
           <MolstarViewer data={aText} binary={false} view={VIEW} variant="lab" onReady={setViewer} onLoaded={onPrimaryLoaded} />
-          <StyleTray
-            ready={primaryLoaded}
-            densityReady={ready}
-            densityBusy={densityBusy}
-            showDensity={showDensity}
-            onShowDensity={setShowDensity}
-            style={repStyle}
-            onStyle={setRepStyle}
-            densityQuality={densityQuality}
-            onDensityQuality={changeDensityQuality}
-          />
+          <div className="absolute right-2 top-2 z-10 flex items-start gap-1.5">
+            <EntryChip
+              entry={entry}
+              entryInput={entryInput}
+              onEntryInput={setEntryInput}
+              onLoad={() => startLoad(entryInput)}
+              loading={loading}
+              stages={stages}
+              provenance={provenance}
+              error={loadError}
+              showRetryDensity={densityState === "error"}
+              onRetryDensity={retryDensity}
+            />
+            <StyleTray
+              ready={primaryLoaded}
+              densityReady={ready}
+              densityBusy={densityBusy}
+              showDensity={showDensity}
+              onShowDensity={setShowDensity}
+              style={repStyle}
+              onStyle={setRepStyle}
+              densityQuality={densityQuality}
+              onDensityQuality={changeDensityQuality}
+              showSlice2d={showSlice2d}
+              onShowSlice2d={setShowSlice2d}
+            />
+          </div>
           {hoverInfo && (
-            <div className="pointer-events-none absolute bottom-2 left-2 rounded border border-neutral-200 bg-white/85 px-1.5 py-0.5 text-[11px] text-neutral-600">
+            <div className="pointer-events-none absolute bottom-2 left-2 rounded border border-line bg-white/85 px-1.5 py-0.5 text-[11px] text-ink-secondary">
               {hoverInfo.compId} {hoverInfo.chainId}/{hoverInfo.authSeqId}
               {hoverInfo.altId ? ` alt ${hoverInfo.altId}` : ""}
             </div>
@@ -1086,12 +1114,12 @@ export default function CompareLabPanel() {
                 }
                 setPopup(null);
               }}
-              onClose={() => setPopup(null)}
+              onClose={closePopup}
             />
           )}
         </div>
 
-        <aside className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-neutral-200 bg-neutral-50 p-3">
+        <aside className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-line bg-surface-muted p-3">
           <DensityControls
             ready={ready}
             show2fofc={show2fofc}
@@ -1133,70 +1161,71 @@ export default function CompareLabPanel() {
         </aside>
       </div>
 
-      <div className="flex shrink-0 items-start gap-4 border-t border-neutral-200 bg-neutral-50 px-3 py-2">
+      <div className="flex shrink-0 items-start gap-4 border-t border-line bg-white px-3 py-2">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <SectionLabel>Conformers per residue</SectionLabel>
-            {(picked || selRange) && (
-              <span className="flex items-center gap-1 rounded border border-sky-800/30 bg-sky-50 px-1.5 py-px text-[10.5px] tabular-nums text-sky-900">
-                {picked
-                  ? `${picked.compId} ${picked.chainId}/${picked.authSeqId}`
-                  : `${selRange!.chain} ${selRange!.from}–${selRange!.to}`}
-                <button
-                  type="button"
-                  title="clear selection"
-                  onClick={clearSelection}
-                  className="ml-0.5 leading-none text-sky-900/60 hover:text-sky-900"
-                >
-                  {"×"}
-                </button>
-              </span>
-            )}
-          </div>
-          <ConformerBarplot
-            bars={bars?.list ?? null}
-            maxCount={bars?.maxCount ?? 2}
-            selectedKey={pickedKey}
-            selectedRange={selRange}
-            hoverKey={hoverBarKey}
-            metricValues={laneValues}
-            metricDomain={activeTrack?.track.domain ?? null}
-            metricColors={activeTrack ? METRIC_UI[activeTrack.id].colors : null}
-            metricName={activeTrack ? metricLabel(activeTrack.id) : null}
-            metricUnit={activeTrack ? metricUnit(activeTrack.id) : null}
-            onHover={onBarHover}
-            onSelect={onBarSelect}
-            onRangeSelect={onBarRangeSelect}
+          <SequenceLanes
+            model={seqModel}
+            aTable={aTable}
+            confPlan={confPlan}
+            secondaryByChain={secondaryByChain}
+            metric={laneMetric}
+            hoverRef={laneHoverRef}
+            selection={laneSelection}
+            onHover={onLaneHover}
+            onSelect={onLaneSelect}
+            leading={
+              <>
+                <SectionLabel>Sequence</SectionLabel>
+                {(picked || selRange) && (
+                  <span className="flex items-center gap-1 rounded border border-accent/30 bg-accent-soft px-1.5 py-px text-[10.5px] tabular-nums text-accent">
+                    {picked
+                      ? `${picked.compId} ${picked.chainId}/${picked.authSeqId}`
+                      : `${selRange!.chain} ${selRange!.from}–${selRange!.to}`}
+                    <button
+                      type="button"
+                      title="clear selection"
+                      onClick={clearSelection}
+                      className="ml-0.5 leading-none text-accent/60 hover:text-accent"
+                    >
+                      {"×"}
+                    </button>
+                  </span>
+                )}
+              </>
+            }
           />
         </div>
-        <div className="flex w-[380px] shrink-0 flex-col gap-1 border-l border-neutral-200 pl-4">
-          <div className="flex items-center justify-between">
-            <SectionLabel>Slice</SectionLabel>
-            <div className="flex items-center gap-3 text-[11px] text-neutral-600">
-              <label className="flex items-center gap-1">
-                <input type="checkbox" checked={slice3d} disabled={!ready} onChange={(e) => setSlice3d(e.target.checked)} />
-                <span>plane in 3D</span>
-              </label>
-              <label className="flex items-center gap-1">
-                <input
-                  type="checkbox"
-                  checked={sliceModel}
-                  disabled={!ready}
-                  onChange={(e) => setSliceModel(e.target.checked)}
-                />
-                <span>slice model</span>
-              </label>
-            </div>
-          </div>
-          <SlicePanel
-            box={box}
-            densitySampler={densitySampler}
-            metricSampler={metricSampler}
-            metricDomain={projected?.domain ?? null}
-            metricColors={projected ? METRIC_UI[projected.id].colors : null}
-            metricLabel={projected ? metricLabel(projected.id) : null}
-            onPlaneChange={onPlaneChange}
+        <div className="flex w-[380px] shrink-0 flex-col gap-1.5 border-l border-line pl-4">
+          <ConformerStatesPanel
+            letters={stateLetters}
+            active={globalAlt}
+            disabled={!primaryLoaded}
+            onChange={setGlobalAlt}
           />
+          <SliceControls
+            ready={ready}
+            slice3d={slice3d}
+            onSlice3d={setSlice3d}
+            sliceModel={sliceModel}
+            onSliceModel={setSliceModel}
+            axis={sliceAxis}
+            onAxis={setSliceAxis}
+            frac={sliceFrac}
+            onFrac={setSliceFrac}
+            coord={slicePlane?.point[sliceAxis] ?? null}
+          />
+          {showSlice2d && (
+            <SlicePanel
+              box={box}
+              axis={sliceAxis}
+              frac={sliceFrac}
+              densitySampler={densitySampler}
+              metricSampler={metricSampler}
+              metricDomain={projected?.domain ?? null}
+              metricColors={projected ? METRIC_UI[projected.id].colors : null}
+              metricLabel={projected ? metricLabel(projected.id) : null}
+            />
+          )}
         </div>
       </div>
     </div>
