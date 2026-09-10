@@ -1,15 +1,37 @@
 "use client";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from "react";
 
-// Shared UI vocabulary for the compare lab: small, compact, austere. Whites and grays,
-// sky/navy accents only on active state, no component library.
+// Shared UI vocabulary for the compare lab: small, compact, austere. Whites and the Dynamic
+// PDB grays; the purple accent only on pressed state, links, focus and progress. No
+// component library.
 
 export function SectionLabel({ children }: { children: ReactNode }) {
-  return <div className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">{children}</div>;
+  return <span className="block text-[11px] font-medium uppercase tracking-wide text-ink-muted">{children}</span>;
 }
 
 export function TinyText({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={`text-[10.5px] leading-snug text-neutral-400 ${className ?? ""}`}>{children}</div>;
+  return <div className={`text-[10.5px] leading-snug text-ink-muted/75 ${className ?? ""}`}>{children}</div>;
+}
+
+// Escape and a capture-phase mousedown outside `ref` close a floating card; the listeners
+// exist only while it is open. Pass a stable `onClose` (useCallback) so the effect does not
+// re-subscribe on every render.
+export function useDismiss(ref: RefObject<HTMLElement | null>, open: boolean, onClose: () => void): void {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown, true);
+    };
+  }, [ref, open, onClose]);
 }
 
 // Hover tooltip, hand-rolled: the card is position:fixed (measured once on open) so it
@@ -44,7 +66,7 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
       {children}
       {pos && (
         <div
-          className="pointer-events-none fixed z-50 w-72 rounded border border-neutral-200 bg-white p-2 text-[11px] font-normal normal-case leading-snug tracking-normal text-neutral-600 shadow-md"
+          className="pointer-events-none fixed z-50 w-72 rounded border border-line bg-white p-2 text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary shadow-md"
           style={{ left: pos.x, top: pos.above ? undefined : pos.y, bottom: pos.above ? window.innerHeight - pos.y : undefined }}
         >
           {content}
@@ -56,19 +78,25 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
 
 // Click-to-pin popover for content the user needs to READ and USE (select, copy, follow
 // links) — unlike Tooltip, whose card is pointer-events-none. Opens on trigger click,
-// closes on Escape, outside mousedown, or clicking the trigger again. The card is
-// position:fixed (measured on open) so it escapes the overflow-y-auto side columns.
+// closes on Escape, outside mousedown, clicking the trigger again, or when `closeKey`
+// changes (say, a new entry resolved). The card is position:fixed (measured on open) so it
+// escapes the overflow-y-auto side columns; `align: "end"` hangs it leftward from the
+// trigger's right edge, for triggers near the viewport's right side.
 export function PinPopover({
   content,
   children,
   width = 384,
+  align = "start",
+  closeKey,
 }: {
   content: ReactNode;
   children: ReactNode;
   width?: number;
+  align?: "start" | "end";
+  closeKey?: unknown;
 }) {
+  const rootRef = useRef<HTMLSpanElement>(null);
   const anchorRef = useRef<HTMLSpanElement>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ x: number; y: number; above: boolean } | null>(null);
 
   const toggle = useCallback(() => {
@@ -76,39 +104,34 @@ export function PinPopover({
       if (prev) return null;
       const rect = anchorRef.current?.getBoundingClientRect();
       if (!rect) return null;
-      const x = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+      const left = align === "end" ? rect.right - width : rect.left;
+      const x = Math.max(8, Math.min(left, window.innerWidth - width - 8));
       const above = rect.bottom + 280 > window.innerHeight;
       return { x, y: above ? rect.top - 6 : rect.bottom + 6, above };
     });
-  }, [width]);
+  }, [width, align]);
 
+  const close = useCallback(() => setPos(null), []);
+  useDismiss(rootRef, pos !== null, close);
+
+  // close on a key change, not on mount
+  const keySeenRef = useRef(false);
   useEffect(() => {
-    if (!pos) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPos(null);
-    };
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (cardRef.current?.contains(t) || anchorRef.current?.contains(t)) return;
-      setPos(null);
-    };
-    document.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onDown, true);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onDown, true);
-    };
-  }, [pos]);
+    if (!keySeenRef.current) {
+      keySeenRef.current = true;
+      return;
+    }
+    setPos(null);
+  }, [closeKey]);
 
   return (
-    <span className="inline-flex">
+    <span ref={rootRef} className="inline-flex">
       <span ref={anchorRef} className="inline-flex cursor-pointer" onClick={toggle}>
         {children}
       </span>
       {pos && (
         <div
-          ref={cardRef}
-          className="fixed z-50 max-h-[70vh] cursor-auto select-text overflow-y-auto rounded border border-neutral-200 bg-white p-2.5 text-[11px] font-normal normal-case leading-snug tracking-normal text-neutral-600 shadow-md"
+          className="fixed z-50 max-h-[70vh] cursor-auto select-text overflow-y-auto rounded border border-line bg-white p-2.5 text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary shadow-md"
           style={{
             left: pos.x,
             width,
@@ -126,11 +149,13 @@ export function PinPopover({
 export function SwitchButton({
   pressed,
   disabled,
+  title,
   onClick,
   children,
 }: {
   pressed: boolean;
   disabled?: boolean;
+  title?: string;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -139,11 +164,12 @@ export function SwitchButton({
       type="button"
       aria-pressed={pressed}
       disabled={disabled}
+      title={title}
       onClick={onClick}
       className={`rounded border px-1.5 py-0.5 text-[11px] leading-tight transition-colors disabled:cursor-default disabled:opacity-40 ${
         pressed
-          ? "border-sky-700 bg-sky-50 text-sky-900"
-          : "border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-100"
+          ? "border-accent bg-accent-soft text-accent"
+          : "border-line-strong bg-white text-ink-secondary hover:bg-line"
       }`}
     >
       {children}
@@ -170,7 +196,7 @@ export function SliderRow({
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[11px] text-neutral-600">{label}</span>
+      <span className="text-[11px] text-ink-secondary">{label}</span>
       <input
         type="range"
         min={min}
