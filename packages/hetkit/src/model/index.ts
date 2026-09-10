@@ -58,3 +58,21 @@ export type {
   AtomKey,
   StateSource,
 } from "./het-ext";
+export {
+  buildSequenceModel,
+  positionOf,
+  refAt,
+  unobservedSpans,
+  readSecondaryStructure,
+  oneLetter,
+  isPolymerComp,
+  THREE_TO_ONE,
+} from "./sequence";
+export type {
+  SequenceModel,
+  ChainSequence,
+  SequencePosition,
+  Span,
+  SecondarySpan,
+  BuildSequenceOptions,
+} from "./sequence";
