@@ -1,14 +1,15 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import type { DensityQuality } from "@/lib/molstar/density";
 import type { RepColorMode, RepQuality, RepStyle, RepType } from "@/lib/molstar/repstyle";
-import { SliderRow, SwitchButton, TinyText } from "./ui";
+import { SliderRow, SwitchButton, TinyText, useDismiss } from "./ui";
 
-// The viewer's style tray, floating at the canvas's top-right: a density on/off chip and
-// a style flyout (representation type + its size sliders, color mode, mesh quality, and
-// the density quality knob). Everything here updates representations in place — never
-// the MolstarViewer `view` prop, which would clear the state tree.
+// The viewer's style tray at the canvas's top-right (positioned by the parent wrapper,
+// next to the entry chip): a density on/off chip and a style flyout (representation type
+// + its size sliders, color mode, mesh quality, the density quality knob, and the 2D
+// slice map switch). Everything here updates representations in place — never the
+// MolstarViewer `view` prop, which would clear the state tree.
 
 const REP_TYPES: { id: RepType; label: string }[] = [
   { id: "ball-and-stick", label: "sticks" },
@@ -69,8 +70,8 @@ function TrayButton({
       onClick={onClick}
       className={`flex h-6 w-6 items-center justify-center rounded border transition-colors disabled:cursor-default disabled:opacity-40 ${
         active
-          ? "border-sky-700 bg-sky-50 text-sky-900"
-          : "border-neutral-300 bg-white/85 text-neutral-600 hover:bg-neutral-100"
+          ? "border-accent bg-accent-soft text-accent"
+          : "border-line-strong bg-white/85 text-ink-secondary hover:bg-line"
       }`}
     >
       {children}
@@ -88,6 +89,8 @@ export default function StyleTray({
   onStyle,
   densityQuality,
   onDensityQuality,
+  showSlice2d,
+  onShowSlice2d,
 }: {
   /** primary structure loaded (representation controls enable) */
   ready: boolean;
@@ -101,30 +104,20 @@ export default function StyleTray({
   onStyle: (s: RepStyle) => void;
   densityQuality: DensityQuality;
   onDensityQuality: (q: DensityQuality) => void;
+  /** the optional 2D slice map in the bottom tools panel */
+  showSlice2d: boolean;
+  onShowSlice2d: (v: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    const onDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onDown, true);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onDown, true);
-    };
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
+  useDismiss(rootRef, open, close);
 
   const patch = (p: Partial<RepStyle>) => onStyle({ ...style, ...p });
 
   return (
-    <div ref={rootRef} className="absolute right-2 top-2 z-10 flex flex-col items-end gap-1">
+    <div ref={rootRef} className="flex flex-col items-end gap-1">
       <div className="flex items-center gap-1">
         <TrayButton
           active={showDensity}
@@ -140,9 +133,9 @@ export default function StyleTray({
       </div>
 
       {open && (
-        <div className="flex w-60 flex-col gap-2.5 rounded border border-neutral-200 bg-white p-2.5 text-[11px] text-neutral-700 shadow-md">
+        <div className="flex w-60 flex-col gap-2.5 rounded border border-line bg-white p-2.5 text-[11px] text-ink-secondary shadow-md">
           <div className="flex flex-col gap-1">
-            <span className="text-[10.5px] uppercase tracking-wide text-neutral-400">representation</span>
+            <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">representation</span>
             <div className="flex items-center gap-1">
               {REP_TYPES.map((t) => (
                 <SwitchButton key={t.id} pressed={style.type === t.id} onClick={() => patch({ type: t.id })}>
@@ -203,8 +196,8 @@ export default function StyleTray({
             )}
           </div>
 
-          <div className="flex flex-col gap-1 border-t border-neutral-100 pt-1.5">
-            <span className="text-[10.5px] uppercase tracking-wide text-neutral-400">color</span>
+          <div className="flex flex-col gap-1 border-t border-line pt-1.5">
+            <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">color</span>
             <div className="flex items-center gap-1">
               {COLOR_MODES.map((m) => (
                 <SwitchButton key={m.id} pressed={style.colorMode === m.id} onClick={() => patch({ colorMode: m.id })}>
@@ -217,8 +210,8 @@ export default function StyleTray({
             )}
           </div>
 
-          <div className="flex flex-col gap-1 border-t border-neutral-100 pt-1.5">
-            <span className="text-[10.5px] uppercase tracking-wide text-neutral-400">model quality</span>
+          <div className="flex flex-col gap-1 border-t border-line pt-1.5">
+            <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">model quality</span>
             <div className="flex items-center gap-1">
               {REP_QUALITIES.map((q) => (
                 <SwitchButton key={q} pressed={style.quality === q} onClick={() => patch({ quality: q })}>
@@ -228,8 +221,8 @@ export default function StyleTray({
             </div>
           </div>
 
-          <div className={`flex flex-col gap-1 border-t border-neutral-100 pt-1.5 ${densityReady ? "" : "opacity-40"}`}>
-            <span className="text-[10.5px] uppercase tracking-wide text-neutral-400">
+          <div className={`flex flex-col gap-1 border-t border-line pt-1.5 ${densityReady ? "" : "opacity-40"}`}>
+            <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">
               density quality{densityBusy ? " — rebuilding..." : ""}
             </span>
             <div className="flex items-center gap-1">
@@ -245,6 +238,21 @@ export default function StyleTray({
               ))}
             </div>
             <TinyText>high re-carves the maps at a finer grid and renders float-textured surfaces (a few seconds)</TinyText>
+          </div>
+
+          <div className="flex flex-col gap-1 border-t border-line pt-1.5">
+            <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">2D slice map</span>
+            <div className="flex items-center gap-1">
+              <SwitchButton pressed={!showSlice2d} onClick={() => onShowSlice2d(false)}>
+                off
+              </SwitchButton>
+              <SwitchButton pressed={showSlice2d} onClick={() => onShowSlice2d(true)}>
+                on
+              </SwitchButton>
+            </div>
+            <TinyText>
+              images the slice plane in the bottom panel; the plane itself (normal, position, what it cuts) is set there
+            </TinyText>
           </div>
         </div>
       )}

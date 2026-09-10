@@ -6,20 +6,39 @@ import { rampColor } from "@/lib/lab/color";
 // The dedicated slice VIEWER: a 2D canvas sampling density and metric on the same plane
 // lattice, instead of the unusable in-scene slice plane. Density renders as grayscale
 // (white low, dark high, in sigma units), the metric as its color ramp, overlay draws
-// metric color over density luminance. Axis-aligned normals + a position slider for now;
-// arbitrary normals when there is a UI story for orienting them.
+// metric color over density luminance. The plane itself (axis-aligned normal + position)
+// is PARENT state, so slicing the 3D scene keeps working whether or not this canvas is
+// shown; its controls live in compare/SliceControls.tsx and this panel is optional (style
+// flyout). Arbitrary normals when there is a UI story for orienting them.
 
 type Sampler = (x: number, y: number, z: number) => number;
+
+export type Box = { min: [number, number, number]; max: [number, number, number] };
+export type SliceAxis = 0 | 1 | 2;
 
 export interface SlicePlane {
   point: [number, number, number];
   normal: [number, number, number];
 }
 
-const AXES = ["x", "y", "z"] as const;
+export const SLICE_AXES = ["x", "y", "z"] as const;
 const MAX_SAMPLES_U = 320;
 const MAX_SAMPLES_V = 240;
 const DENSITY_SIGMA_RANGE: [number, number] = [-1, 4];
+
+/** The plane with normal along `axis`, `frac` of the way through the box; null for a degenerate box. */
+export function slicePlaneFor(box: Box, axis: SliceAxis, frac: number): SlicePlane | null {
+  const u = ((axis + 1) % 3) as SliceAxis;
+  const v = ((axis + 2) % 3) as SliceAxis;
+  if (box.max[u] - box.min[u] <= 0 || box.max[v] - box.min[v] <= 0) return null;
+  const point: [number, number, number] = [0, 0, 0];
+  point[u] = (box.min[u] + box.max[u]) / 2;
+  point[v] = (box.min[v] + box.max[v]) / 2;
+  point[axis] = box.min[axis] + frac * (box.max[axis] - box.min[axis]);
+  const normal: [number, number, number] = [0, 0, 0];
+  normal[axis] = 1;
+  return { point, normal };
+}
 
 function densityShade(sigma: number): number {
   if (Number.isNaN(sigma)) return 250;
@@ -30,14 +49,18 @@ function densityShade(sigma: number): number {
 
 export default function SlicePanel({
   box,
+  axis,
+  frac,
   densitySampler,
   metricSampler,
   metricDomain,
   metricColors,
   metricLabel,
-  onPlaneChange,
 }: {
-  box: { min: [number, number, number]; max: [number, number, number] } | null;
+  box: Box | null;
+  axis: SliceAxis;
+  /** position along the normal, 0..1 through the box */
+  frac: number;
   /** 2Fo-Fc in sigma units (wrapped, pristine grid) */
   densitySampler: Sampler | null;
   /** projected metric, absolute units; null while nothing is projected */
@@ -45,21 +68,18 @@ export default function SlicePanel({
   metricDomain: [number, number] | null;
   metricColors: number[] | null;
   metricLabel: string | null;
-  onPlaneChange?: (plane: SlicePlane) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [axis, setAxis] = useState<0 | 1 | 2>(2);
-  const [frac, setFrac] = useState(0.5);
   const [mode, setMode] = useState<"overlay" | "metric" | "density">("overlay");
   const [readout, setReadout] = useState<string | null>(null);
 
   const hasMetric = !!(metricSampler && metricDomain);
 
-  // Plane geometry: normal along `axis`; the canvas spans the two remaining axes.
+  // Lattice geometry: the canvas spans the two axes other than the normal.
   const geom = useMemo(() => {
     if (!box) return null;
-    const u = ((axis + 1) % 3) as 0 | 1 | 2;
-    const v = ((axis + 2) % 3) as 0 | 1 | 2;
+    const u = ((axis + 1) % 3) as SliceAxis;
+    const v = ((axis + 2) % 3) as SliceAxis;
     const uLen = box.max[u] - box.min[u];
     const vLen = box.max[v] - box.min[v];
     if (uLen <= 0 || vLen <= 0) return null;
@@ -68,17 +88,6 @@ export default function SlicePanel({
     const planeCoord = box.min[axis] + frac * (box.max[axis] - box.min[axis]);
     return { u, v, uLen, vLen, W, H, planeCoord };
   }, [box, axis, frac]);
-
-  useEffect(() => {
-    if (!geom || !box || !onPlaneChange) return;
-    const point: [number, number, number] = [0, 0, 0];
-    point[geom.u] = box.min[geom.u] + geom.uLen / 2;
-    point[geom.v] = box.min[geom.v] + geom.vLen / 2;
-    point[axis] = geom.planeCoord;
-    const normal: [number, number, number] = [0, 0, 0];
-    normal[axis] = 1;
-    onPlaneChange({ point, normal });
-  }, [geom, box, axis, onPlaneChange]);
 
   const samplePos = useCallback(
     (uFrac: number, vFrac: number): [number, number, number] | null => {
@@ -156,21 +165,15 @@ export default function SlicePanel({
   );
 
   if (!box || !densitySampler) {
-    return <div className="text-[11px] text-neutral-400">slice: density pending</div>;
+    return <div className="text-[11px] text-ink-muted/75">2D map: density pending</div>;
   }
 
   return (
     <div className="flex flex-col gap-1.5 text-[11px]">
       <div className="flex items-center gap-2">
-        <span className="text-neutral-500">normal</span>
-        {AXES.map((a, i) => (
-          <label key={a} className="flex items-center gap-1">
-            <input type="radio" checked={axis === i} onChange={() => setAxis(i as 0 | 1 | 2)} />
-            <span>{a}</span>
-          </label>
-        ))}
+        <span className="text-ink-muted">2D map</span>
         <select
-          className="ml-auto rounded border border-neutral-300 bg-white px-1 py-0.5"
+          className="ml-auto rounded border border-line-strong bg-white px-1 py-0.5 focus:border-accent focus:outline-none focus:shadow-ring-accent"
           value={mode}
           onChange={(e) => setMode(e.target.value as typeof mode)}
         >
@@ -179,28 +182,9 @@ export default function SlicePanel({
           <option value="density">density</option>
         </select>
       </div>
-      <label className="flex items-center gap-2">
-        <span className="whitespace-nowrap tabular-nums text-neutral-500">
-          {AXES[axis]} = {(box.min[axis] + frac * (box.max[axis] - box.min[axis])).toFixed(1)} A
-        </span>
-        <input
-          type="range"
-          className="min-w-0 flex-1"
-          min={0}
-          max={1}
-          step={0.005}
-          value={frac}
-          onChange={(e) => setFrac(Number(e.target.value))}
-        />
-      </label>
-      <canvas
-        ref={canvasRef}
-        className="w-full rounded border border-neutral-200"
-        style={{ aspectRatio: geom ? `${geom.W} / ${geom.H}` : undefined }}
-        onMouseMove={onMove}
-        onMouseLeave={() => setReadout(null)}
-      />
-      <div className="min-h-[1rem] whitespace-pre-wrap text-[10.5px] tabular-nums text-neutral-500">
+      {/* intrinsic size (320 x up to 240 px) so the strip grows by a bounded amount */}
+      <canvas ref={canvasRef} className="rounded border border-line" onMouseMove={onMove} onMouseLeave={() => setReadout(null)} />
+      <div className="min-h-[1rem] whitespace-pre-wrap text-[10.5px] tabular-nums text-ink-muted">
         {readout ??
           (hasMetric
             ? `${metricLabel}: ${metricDomain![0].toFixed(2)} to ${metricDomain![1].toFixed(2)}; density gray ${DENSITY_SIGMA_RANGE[0]} to ${DENSITY_SIGMA_RANGE[1]} sigma`
