@@ -284,6 +284,55 @@ screenshot review):
   "sources" tooltip next to the Entry header; the stage dots render only while a load is
   in flight or failed.
 
+Added 2026-09-10, fifth session (compare-lab reorg, Dynamic PDB styling, and the
+sequence-viewer question):
+
+- Layout, revised from the 2026-08-28 pin: the entry identity moves out of the left
+  column into a chip at the canvas top-right, next to the style tray. It prints the entry
+  the way dynamicpdb.com does ("PDB 7APT | dpdb_kytgultv", the code emphasized, the id
+  muted; "bundled" for the two local rows), shows ONE spinner while the pipeline runs
+  (its hover card lists the seven stages), and opens on click the loader popover (id
+  input, known ids, errors, retry density, per-file provenance). The per-stage list that
+  used to fill in under the loader is gone. Left column = Selection only.
+- Bottom-right tools panel = conformer state row (model A altloc letters, explanation on
+  the label's hover card) + slice controls (plane in 3D, slice model, normal, position).
+  The 2D slice map is optional, behind an off/on switch in the style flyout, and renders
+  under those rows when on. The slice plane is parent state (normal axis + fraction,
+  `slicePlaneFor` in SlicePanel.tsx) so slicing the scene no longer depends on the 2D
+  canvas being mounted.
+- Palette: Dynamic PDB's Prism tokens in app/tailwind.config.ts (accent #663be4, ink,
+  line, surface, danger). Purple only on pressed state, links, focus rings, the spinner
+  and native checked controls (accent-color). Scientific colors (models, maps, altlocs,
+  metric ramps, the barplot's green selection) untouched; only the barplot hover outline
+  follows the accent.
+- Sequence viewer: dynamicpdb.com's Sequence tab is not an EMBL/PDBe component. It is
+  their own website/src/app/components/SequencePanel.tsx (React + CSS Modules, RCSB-style
+  feature rows over pure track builders, label_seq_id positions) with zero Mol*
+  coupling. Decision: port it into hetstar as the 1D host in a follow-up (hover/select
+  props, hetkit Tracks as level rows, sync through the existing viewer.ts subscriptions;
+  hetkit's AtomTable needs label_seq_id and the entity sequence first). The canvas
+  barplot stays until that port reaches parity. tubulinxyz's vendored-Nightingale route
+  was considered and rejected.
+
+Added 2026-09-10, sixth session (the 1D framework):
+
+- The bottom strip is now a lane viewer (app/src/components/lab/lanes/): one chain at a
+  time with a picker, a ruler in author numbering, one row per enabled lane, zoom by
+  buttons or trackpad pinch, hover and selection painted as columns across all rows,
+  and a "lanes" drawer that turns modules on and off. Contract in docs/sequence-lanes.md.
+- The structure-sequence bridge lives in hetkit (`buildSequenceModel`, `positionOf`,
+  `refAt`, `readSecondaryStructure`): positions are the polymer sequence from
+  `_pdbx_poly_seq_scheme`, bridged to author-keyed ResidueRefs. qFit output has no
+  sequence categories, so the deposited model's file frames the qFit model; observed
+  residues frame themselves when there is no deposited model. Tested on the fixtures,
+  including the cross-file case.
+- Lanes shipped: sequence, conformers (the old barplot, now a canvas lane), metric,
+  secondary structure and unobserved (off by default). ConformerBarplot.tsx retired.
+  Selection semantics unchanged: click = pick, drag or feature click = range + metric
+  scope, both mirrored to and from Mol*.
+- Deliberately generic: lanes never see Mol* or hover/selection state; new lanes
+  (domains from an annotation service, contacts, validation) are one module each.
+
 ## Build progress
 
 Steps in the confirmed order. Mark with date when done; "verified" means the user checked
@@ -355,3 +404,12 @@ visuals in their running app (typecheck/tests are the machine gate, not the visu
         chip, master density toggle, slice-panel aspect/resolution/metric-mode fixes,
         loader provenance folded into a tooltip. npx tsc --noEmit clean. Visual check
         pending (step 9 covers it).
+18. [x] 2026-09-10 compare-lab reorg (fifth-session block above): EntryChip replaces
+        LoaderPanel; SliceControls + ConformerStatesPanel in the bottom-right panel; 2D
+        map behind the style-flyout switch; ui.tsx gains useDismiss and PinPopover
+        align/closeKey; palette tokens; sky classes swept. npx tsc --noEmit clean.
+        Visual check pending in the user's running app.
+19. [x] 2026-09-10 sequence lanes (sixth-session block above): hetkit sequence bridge
+        with 6 headless tests; lanes framework + five modules + host; CompareLabPanel
+        keeps the parsed CIF files for the bridge; barplot deleted. tsc and vitest
+        green. Visual check pending in the user's running app.
