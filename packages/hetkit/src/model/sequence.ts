@@ -37,6 +37,8 @@ export interface ChainSequence {
   chain: string;
   labelAsymId: string | null;
   entityId: string | null;
+  /** _entity.pdbx_description of the chain's entity; null when the source file has no _entity */
+  entityDescription: string | null;
   length: number;
   /** positions 1..length, in order */
   positions: SequencePosition[];
@@ -106,6 +108,14 @@ export function buildSequenceModel(
     for (const c of fromTable(table)) if (!known.has(c.chain)) chains.push(c);
   }
 
+  // join _entity.pdbx_description onto the chains (absent from qFit/Phenix output)
+  if (block) {
+    const descOf = entityDescriptions(block);
+    for (const c of chains) {
+      if (c.entityId) c.entityDescription = descOf.get(c.entityId) ?? null;
+    }
+  }
+
   const byChain = new Map<string, ChainSequence>();
   const authOfLabelAsym = new Map<string, string>();
   for (const c of chains) {
@@ -125,8 +135,14 @@ export function refAt(chain: ChainSequence, pos: number): ResidueRef | null {
   return chain.positions[pos - 1]?.ref ?? null;
 }
 
-/** Runs of positions the shown model has no atoms for. */
+/**
+ * Runs of positions the shown model has no atoms for. Cached per chain: lane modules ask
+ * on every render (drawer availability), and a ChainSequence is immutable once built.
+ */
+const unobservedSpansCache = new WeakMap<ChainSequence, Span[]>();
 export function unobservedSpans(chain: ChainSequence): Span[] {
+  const hit = unobservedSpansCache.get(chain);
+  if (hit) return hit;
   const spans: Span[] = [];
   let start: number | null = null;
   for (const p of chain.positions) {
@@ -140,6 +156,7 @@ export function unobservedSpans(chain: ChainSequence): Span[] {
     }
   }
   if (start !== null) spans.push({ start, end: chain.length });
+  unobservedSpansCache.set(chain, spans);
   return spans;
 }
 
@@ -185,6 +202,20 @@ export function readSecondaryStructure(
 }
 
 // --- internals ---
+
+function entityDescriptions(block: MolCifBlock): Map<string, string> {
+  const out = new Map<string, string>();
+  const cat = block.categories["entity"];
+  const fId = cat?.getField("id");
+  const fDesc = cat?.getField("pdbx_description");
+  if (!cat || !fId || !fDesc) return out;
+  for (let r = 0; r < cat.rowCount; r++) {
+    const id = normValue(fId.str(r));
+    const desc = normValue(fDesc.str(r));
+    if (id && desc && !out.has(id)) out.set(id, desc);
+  }
+  return out;
+}
 
 function fromScheme(block: MolCifBlock, observedKeys: Map<string, number> | null): ChainSequence[] {
   const cat = block.categories["pdbx_poly_seq_scheme"];
@@ -365,6 +396,7 @@ function finish(
     chain,
     labelAsymId,
     entityId,
+    entityDescription: null, // joined from _entity by buildSequenceModel
     length: positions.length,
     positions,
     letters: positions.map((p) => p.letter).join(""),

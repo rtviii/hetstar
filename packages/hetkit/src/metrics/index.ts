@@ -1,6 +1,7 @@
 import type { AtomTable } from "../model/atoms";
 import { altlocRmsf, conformerCount, occupancyEntropy } from "./altloc-metrics";
 import { bIsoMean } from "./bfactor";
+import { ensembleRmsf } from "./ensemble-rmsf";
 import type { MapSampler } from "./map";
 import { mapSupportDelta, mapValueTracks } from "./map";
 import { modelRmsd } from "./rmsd";
@@ -72,8 +73,18 @@ const list: AnyMetric[] = [
     compute: (i) => bIsoMean(i.model),
   },
   {
+    id: "ensemble-rmsf",
+    label: "Ensemble RMSF",
+    description:
+      "RMS fluctuation of each heavy atom about its mean position across the ensemble's MODEL frames, averaged over the residue. No superposition: valid in a shared crystal frame (ensemble refinement); inflated for unsuperposed NMR-style bundles.",
+    level: "residue",
+    unit: "A",
+    input: "model-list",
+    compute: (i) => ensembleRmsf(i.models),
+  },
+  {
     id: "model-rmsd",
-    label: "Model vs model",
+    label: "Model displacement",
     description:
       "Per-residue displacement between two models sharing a frame (occupancy-weighted centroids of shared heavy atom names).",
     level: "residue",
@@ -119,6 +130,7 @@ export { makeTrack, scopeTrack, trackDelta, trackFromJSON, trackToJSON } from ".
 export type { Level, Track, TrackJSON } from "./tracks";
 export { conformerCount, occupancyEntropy, altlocRmsf } from "./altloc-metrics";
 export { bIsoMean } from "./bfactor";
+export { ensembleRmsf } from "./ensemble-rmsf";
 export { conformerSupport, mapSupportDelta, mapValueTracks } from "./map";
 export type { ConformerSupportRow, MapSampler } from "./map";
 export { modelRmsd } from "./rmsd";

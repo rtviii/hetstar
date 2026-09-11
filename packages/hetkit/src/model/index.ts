@@ -58,6 +58,8 @@ export type {
   AtomKey,
   StateSource,
 } from "./het-ext";
+export { describeEntry } from "./entry";
+export type { EntryDescription, EntryEntity } from "./entry";
 export {
   buildSequenceModel,
   positionOf,
