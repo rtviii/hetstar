@@ -1,15 +1,17 @@
 "use client";
-import { useCallback, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
-import type { DensityQuality } from "@/lib/molstar/density";
 import type { RepColorMode, RepQuality, RepStyle, RepType } from "@/lib/molstar/repstyle";
-import { SliderRow, SwitchButton, TinyText, useDismiss } from "./ui";
+import { HoverFlyout, SliderRow, SwitchButton, TinyText } from "./ui";
 
-// The viewer's style tray at the canvas's top-right (positioned by the parent wrapper,
-// next to the entry chip): a density on/off chip and a style flyout (representation type
-// + its size sliders, color mode, mesh quality, the density quality knob, and the 2D
-// slice map switch). Everything here updates representations in place — never the
-// MolstarViewer `view` prop, which would clear the state tree.
+// The viewer's icon tray at the canvas's top-right (positioned by the parent wrapper,
+// next to the entry chip): three icons, each with a hover flyout. The density icon's
+// CLICK toggles both maps (its flyout — metric painting, map knobs, quality, slice —
+// is built by the parent and passed in); the conformers icon hosts the selection /
+// conformer-state flyout, also parent-built; the style icon's flyout lives here
+// (representation type + sliders, color mode, mesh quality, the model-B ghost).
+// Everything updates representations in place — never the MolstarViewer `view` prop,
+// which would clear the state tree.
 
 const REP_TYPES: { id: RepType; label: string }[] = [
   { id: "ball-and-stick", label: "sticks" },
@@ -24,13 +26,24 @@ const COLOR_MODES: { id: RepColorMode; label: string }[] = [
 ];
 
 const REP_QUALITIES: RepQuality[] = ["auto", "high", "medium", "low"];
-const DENSITY_QUALITIES: DensityQuality[] = ["low", "auto", "high"];
 
 function DensityIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
       <circle cx="8" cy="8" r="2.6" />
       <circle cx="8" cy="8" r="6" opacity="0.5" />
+    </svg>
+  );
+}
+
+// two offset stick traces sharing endpoints: a residue split into alternate conformers
+function ConformersIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M2 12 L6 8 L10 10 L14 5" />
+      <path d="M2 12 L6 12.5 L10 14 L14 5" opacity="0.45" />
+      <circle cx="2" cy="12" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="14" cy="5" r="1.3" fill="currentColor" stroke="none" />
     </svg>
   );
 }
@@ -51,21 +64,21 @@ function StyleIcon() {
 function TrayButton({
   active,
   disabled,
-  title,
+  label,
   onClick,
   children,
 }: {
   active: boolean;
   disabled?: boolean;
-  title: string;
-  onClick: () => void;
-  children: React.ReactNode;
+  /** aria-label only — no native title: the hover flyout is the explanation */
+  label: string;
+  onClick?: () => void;
+  children: ReactNode;
 }) {
   return (
     <button
       type="button"
-      title={title}
-      aria-label={title}
+      aria-label={label}
       disabled={disabled}
       onClick={onClick}
       className={`flex h-6 w-6 items-center justify-center rounded border transition-colors disabled:cursor-default disabled:opacity-40 ${
@@ -82,180 +95,154 @@ function TrayButton({
 export default function StyleTray({
   ready,
   densityReady,
-  densityBusy,
   showDensity,
   onShowDensity,
   style,
   onStyle,
-  densityQuality,
-  onDensityQuality,
-  showSlice2d,
-  onShowSlice2d,
+  showB,
+  bAvailable,
+  onShowB,
+  densityFlyout,
+  selectionFlyout,
 }: {
   /** primary structure loaded (representation controls enable) */
   ready: boolean;
-  /** maps built (density controls enable) */
+  /** maps built (the density toggle enables) */
   densityReady: boolean;
-  /** a density-quality rebuild is in flight */
-  densityBusy: boolean;
   showDensity: boolean;
   onShowDensity: (v: boolean) => void;
   style: RepStyle;
   onStyle: (s: RepStyle) => void;
-  densityQuality: DensityQuality;
-  onDensityQuality: (q: DensityQuality) => void;
-  /** the optional 2D slice map in the bottom tools panel */
-  showSlice2d: boolean;
-  onShowSlice2d: (v: boolean) => void;
+  showB: boolean;
+  bAvailable: boolean;
+  onShowB: (v: boolean) => void;
+  /** flyout content, parent-built (DensityFlyout / SelectionFlyout) */
+  densityFlyout: ReactNode;
+  selectionFlyout: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  const close = useCallback(() => setOpen(false), []);
-  useDismiss(rootRef, open, close);
-
   const patch = (p: Partial<RepStyle>) => onStyle({ ...style, ...p });
 
+  const styleCard = (
+    <div className="flex flex-col gap-2.5">
+      <div className="flex flex-col gap-1">
+        <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">representation</span>
+        <div className="flex items-center gap-1">
+          {REP_TYPES.map((t) => (
+            <SwitchButton key={t.id} pressed={style.type === t.id} onClick={() => patch({ type: t.id })}>
+              {t.label}
+            </SwitchButton>
+          ))}
+        </div>
+        {style.type === "ball-and-stick" && (
+          <>
+            <SliderRow
+              label={`stick thickness: ${style.ballStick.sizeFactor.toFixed(2)}`}
+              min={0.05}
+              max={0.5}
+              step={0.01}
+              value={style.ballStick.sizeFactor}
+              onChange={(v) => patch({ ballStick: { ...style.ballStick, sizeFactor: v } })}
+            />
+            <SliderRow
+              label={`stick vs ball: ${style.ballStick.sizeAspectRatio.toFixed(2)}`}
+              min={0.2}
+              max={1.5}
+              step={0.05}
+              value={style.ballStick.sizeAspectRatio}
+              onChange={(v) => patch({ ballStick: { ...style.ballStick, sizeAspectRatio: v } })}
+            />
+          </>
+        )}
+        {style.type === "spacefill" && (
+          <SliderRow
+            label={`atom radius scale: ${style.spacefill.sizeFactor.toFixed(2)}`}
+            min={0.3}
+            max={2}
+            step={0.05}
+            value={style.spacefill.sizeFactor}
+            onChange={(v) => patch({ spacefill: { sizeFactor: v } })}
+          />
+        )}
+        {style.type === "cartoon" && (
+          <>
+            <SliderRow
+              label={`trace thickness: ${style.cartoon.sizeFactor.toFixed(2)}`}
+              min={0.05}
+              max={1}
+              step={0.05}
+              value={style.cartoon.sizeFactor}
+              onChange={(v) => patch({ cartoon: { ...style.cartoon, sizeFactor: v } })}
+            />
+            <SliderRow
+              label={`ribbon aspect: ${style.cartoon.aspectRatio.toFixed(1)}`}
+              min={1}
+              max={8}
+              step={0.5}
+              value={style.cartoon.aspectRatio}
+              onChange={(v) => patch({ cartoon: { ...style.cartoon, aspectRatio: v } })}
+            />
+            <TinyText>cartoon draws the polymer trace only: side chains, and with them the expanded conformers, are not visible; ligands and ions stay as sticks</TinyText>
+          </>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1 border-t border-line pt-1.5">
+        <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">layers</span>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={showB} disabled={!bAvailable} onChange={(e) => onShowB(e.target.checked)} />
+          <span>model B: deposited (ghost)</span>
+        </label>
+      </div>
+
+      <div className="flex flex-col gap-1 border-t border-line pt-1.5">
+        <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">color</span>
+        <div className="flex items-center gap-1">
+          {COLOR_MODES.map((m) => (
+            <SwitchButton key={m.id} pressed={style.colorMode === m.id} onClick={() => patch({ colorMode: m.id })}>
+              {m.label}
+            </SwitchButton>
+          ))}
+        </div>
+        {style.colorMode === "element" && (
+          <TinyText>heteroatoms in CPK; carbons keep each model&apos;s identity color</TinyText>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1 border-t border-line pt-1.5">
+        <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">model quality</span>
+        <div className="flex items-center gap-1">
+          {REP_QUALITIES.map((q) => (
+            <SwitchButton key={q} pressed={style.quality === q} onClick={() => patch({ quality: q })}>
+              {q}
+            </SwitchButton>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div ref={rootRef} className="flex flex-col items-end gap-1">
-      <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1">
+      <HoverFlyout content={densityFlyout} width={300} align="end">
         <TrayButton
           active={showDensity}
           disabled={!densityReady}
-          title={showDensity ? "density on (click to hide)" : "density off (click to show)"}
+          label="density: click toggles the maps; hover for metric painting and map controls"
           onClick={() => onShowDensity(!showDensity)}
         >
           <DensityIcon />
         </TrayButton>
-        <TrayButton active={open} disabled={!ready} title="style: representation, colors, quality" onClick={() => setOpen((v) => !v)}>
+      </HoverFlyout>
+      <HoverFlyout content={selectionFlyout} width={300} align="end" pinOnClick>
+        <TrayButton active={false} label="selection and conformer states">
+          <ConformersIcon />
+        </TrayButton>
+      </HoverFlyout>
+      <HoverFlyout content={styleCard} width={240} align="end" pinOnClick>
+        <TrayButton active={false} disabled={!ready} label="style: representation, colors, quality">
           <StyleIcon />
         </TrayButton>
-      </div>
-
-      {open && (
-        <div className="flex w-60 flex-col gap-2.5 rounded border border-line bg-white p-2.5 text-[11px] text-ink-secondary shadow-md">
-          <div className="flex flex-col gap-1">
-            <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">representation</span>
-            <div className="flex items-center gap-1">
-              {REP_TYPES.map((t) => (
-                <SwitchButton key={t.id} pressed={style.type === t.id} onClick={() => patch({ type: t.id })}>
-                  {t.label}
-                </SwitchButton>
-              ))}
-            </div>
-            {style.type === "ball-and-stick" && (
-              <>
-                <SliderRow
-                  label={`stick thickness: ${style.ballStick.sizeFactor.toFixed(2)}`}
-                  min={0.05}
-                  max={0.5}
-                  step={0.01}
-                  value={style.ballStick.sizeFactor}
-                  onChange={(v) => patch({ ballStick: { ...style.ballStick, sizeFactor: v } })}
-                />
-                <SliderRow
-                  label={`stick vs ball: ${style.ballStick.sizeAspectRatio.toFixed(2)}`}
-                  min={0.2}
-                  max={1.5}
-                  step={0.05}
-                  value={style.ballStick.sizeAspectRatio}
-                  onChange={(v) => patch({ ballStick: { ...style.ballStick, sizeAspectRatio: v } })}
-                />
-              </>
-            )}
-            {style.type === "spacefill" && (
-              <SliderRow
-                label={`atom radius scale: ${style.spacefill.sizeFactor.toFixed(2)}`}
-                min={0.3}
-                max={2}
-                step={0.05}
-                value={style.spacefill.sizeFactor}
-                onChange={(v) => patch({ spacefill: { sizeFactor: v } })}
-              />
-            )}
-            {style.type === "cartoon" && (
-              <>
-                <SliderRow
-                  label={`trace thickness: ${style.cartoon.sizeFactor.toFixed(2)}`}
-                  min={0.05}
-                  max={1}
-                  step={0.05}
-                  value={style.cartoon.sizeFactor}
-                  onChange={(v) => patch({ cartoon: { ...style.cartoon, sizeFactor: v } })}
-                />
-                <SliderRow
-                  label={`ribbon aspect: ${style.cartoon.aspectRatio.toFixed(1)}`}
-                  min={1}
-                  max={8}
-                  step={0.5}
-                  value={style.cartoon.aspectRatio}
-                  onChange={(v) => patch({ cartoon: { ...style.cartoon, aspectRatio: v } })}
-                />
-                <TinyText>cartoon draws the polymer trace only: side chains, and with them the expanded conformers, are not visible; ligands and ions stay as sticks</TinyText>
-              </>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1 border-t border-line pt-1.5">
-            <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">color</span>
-            <div className="flex items-center gap-1">
-              {COLOR_MODES.map((m) => (
-                <SwitchButton key={m.id} pressed={style.colorMode === m.id} onClick={() => patch({ colorMode: m.id })}>
-                  {m.label}
-                </SwitchButton>
-              ))}
-            </div>
-            {style.colorMode === "element" && (
-              <TinyText>heteroatoms in CPK; carbons keep each model&apos;s identity color</TinyText>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1 border-t border-line pt-1.5">
-            <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">model quality</span>
-            <div className="flex items-center gap-1">
-              {REP_QUALITIES.map((q) => (
-                <SwitchButton key={q} pressed={style.quality === q} onClick={() => patch({ quality: q })}>
-                  {q}
-                </SwitchButton>
-              ))}
-            </div>
-          </div>
-
-          <div className={`flex flex-col gap-1 border-t border-line pt-1.5 ${densityReady ? "" : "opacity-40"}`}>
-            <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">
-              density quality{densityBusy ? " — rebuilding..." : ""}
-            </span>
-            <div className="flex items-center gap-1">
-              {DENSITY_QUALITIES.map((q) => (
-                <SwitchButton
-                  key={q}
-                  pressed={densityQuality === q}
-                  disabled={!densityReady || densityBusy}
-                  onClick={() => onDensityQuality(q)}
-                >
-                  {q}
-                </SwitchButton>
-              ))}
-            </div>
-            <TinyText>high re-carves the maps at a finer grid and renders float-textured surfaces (a few seconds)</TinyText>
-          </div>
-
-          <div className="flex flex-col gap-1 border-t border-line pt-1.5">
-            <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">2D slice map</span>
-            <div className="flex items-center gap-1">
-              <SwitchButton pressed={!showSlice2d} onClick={() => onShowSlice2d(false)}>
-                off
-              </SwitchButton>
-              <SwitchButton pressed={showSlice2d} onClick={() => onShowSlice2d(true)}>
-                on
-              </SwitchButton>
-            </div>
-            <TinyText>
-              images the slice plane in the bottom panel; the plane itself (normal, position, what it cuts) is set there
-            </TinyText>
-          </div>
-        </div>
-      )}
+      </HoverFlyout>
     </div>
   );
 }

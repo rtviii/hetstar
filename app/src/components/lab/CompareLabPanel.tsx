@@ -33,41 +33,47 @@ import {
   type ResidueRange,
 } from "@/lib/molstar/conformers";
 import { MetricProjector, samplerForVolume, trackToPoints } from "@/lib/molstar/project";
-import { buildResidueQuery, executeQuery } from "@/lib/molstar/queries";
+import { residueLoci } from "@/lib/molstar/queries";
 import SlicePanel, { slicePlaneFor, type SliceAxis, type SlicePlane } from "@/components/lab/SlicePanel";
-import ConformerStatesPanel from "@/components/lab/compare/ConformerStatesPanel";
-import DensityControls from "@/components/lab/compare/DensityControls";
+import DensityFlyout from "@/components/lab/compare/DensityFlyout";
+import EntryCard from "@/components/lab/compare/EntryCard";
 import EntryChip from "@/components/lab/compare/EntryChip";
-import MetricsToolbar, { type ScopeMode } from "@/components/lab/compare/MetricsToolbar";
 import SelectionActionsPopup, { type ActionTarget, type ClipMode } from "@/components/lab/compare/SelectionActionsPopup";
-import SelectionPanel from "@/components/lab/compare/SelectionPanel";
+import SelectionFlyout, { type RangeSummary } from "@/components/lab/compare/SelectionFlyout";
 import SliceControls from "@/components/lab/compare/SliceControls";
 import StyleTray from "@/components/lab/compare/StyleTray";
-import SequenceLanes from "@/components/lab/lanes/SequenceLanes";
+import SequenceLanes, { type LaneContextTarget } from "@/components/lab/lanes/SequenceLanes";
+import { makeMetricLane } from "@/components/lab/lanes/PlotLanes";
 import type { LaneMetric } from "@/components/lab/lanes/types";
-import { METRIC_UI, metricLabel, metricUnit, type MetricId } from "@/components/lab/compare/metrics";
-import { SectionLabel } from "@/components/lab/compare/ui";
-import { type ProvenanceRecord, type StageId, type StageState } from "@/lib/lab/entries";
+import { fetchPdbeAnnotations, mapAnnotations, type AnnotationsBySource, type PdbeRaw } from "@/lib/annotations/pdbe";
+import { METRIC_ORDER, METRIC_UI, metricLabel, metricUnit, type MetricId } from "@/components/lab/compare/metrics";
+import { WATER_COMPS, type ProvenanceRecord, type StageId, type StageState } from "@/lib/lab/entries";
 import { pickPair, ROLE_LABELS, type EntryManifest, type ManifestModel } from "@/lib/dpdb/types";
 import { resolveEntry } from "@/lib/dpdb/resolve";
 import { toFetchableUrl } from "@/lib/dpdb/client";
 import {
   buildAtomTable,
   buildSequenceModel,
+  describeEntry,
   parseCifText,
   readSecondaryStructure,
   residueKey,
   summarizeAltlocs,
+  summarizeEnsemble,
   type AtomTable,
   type MolCifFile,
   type ResidueRef,
 } from "@dynamic-pdb/hetkit/model";
 import {
   altlocRmsf,
+  bIsoMean,
+  conformerCount,
+  ensembleRmsf,
   mapSupportDelta,
   mapValueTracks,
+  METRICS,
   modelRmsd,
-  scopeTrack,
+  occupancyEntropy,
   trackDelta,
   type Track,
 } from "@dynamic-pdb/hetkit/metrics";
@@ -86,7 +92,6 @@ const DEFAULT_ENTRY = "7A1X";
 const DEFAULT_CLIP_RADIUS = 5;
 // structure-factor downloads above this ask before fetching (PanDDA deposits run to hundreds of MB)
 const SF_CONFIRM_MB = 50;
-const WATER_COMPS = new Set(["HOH", "DOD", "WAT"]);
 
 function initialStages(): Record<StageId, StageState> {
   return {
@@ -182,6 +187,8 @@ export default function CompareLabPanel() {
   const [primaryLoaded, setPrimaryLoaded] = useState(false);
   const [secondaryRef, setSecondaryRef] = useState<string | null>(null);
   const [showB, setShowB] = useState(false);
+  // which MODEL frame of a multi-model (ensemble) model A is on screen
+  const [memberIndex, setMemberIndex] = useState(0);
 
   // --- density state ---
   const [densityState, setDensityState] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -206,17 +213,17 @@ export default function CompareLabPanel() {
   // actions panel targets the whole range instead of one residue
   const [popup, setPopup] = useState<{ x: number; y: number; range: boolean } | null>(null);
 
-  // --- metric / scope ---
+  // --- PDBe annotations (lanes) ---
+  const [pdbeRaw, setPdbeRaw] = useState<PdbeRaw | "loading" | null>(null);
+
+  // --- metric ---
   const [metricId, setMetricId] = useState<MetricId | "none">("none");
-  const [scopeMode, setScopeMode] = useState<ScopeMode>("all");
-  const [rangeChain, setRangeChain] = useState("A");
-  const [rangeFrom, setRangeFrom] = useState("");
-  const [rangeTo, setRangeTo] = useState("");
   const [projected, setProjected] = useState<{ id: MetricId; domain: [number, number] } | null>(null);
   const [projVersion, setProjVersion] = useState(0);
   const [status, setStatus] = useState<string | null>(null);
-  // the scoped track behind the current 3D projection, rendered as the barplot's metric lane
-  const [activeTrack, setActiveTrack] = useState<{ id: MetricId; track: Track } | null>(null);
+
+  // --- layout: height of the resizable lanes strip ---
+  const [lanesHeight, setLanesHeight] = useState(260);
 
   // --- slice ---
   const [slice3d, setSlice3d] = useState(false);
@@ -301,6 +308,7 @@ export default function CompareLabPanel() {
       // reset everything scene-derived; setting new texts clears the Mol* state tree
       setPrimaryLoaded(false);
       setSecondaryRef(null);
+      setMemberIndex(0);
       setAText(null);
       setBText(null);
       setATable(null);
@@ -317,7 +325,6 @@ export default function CompareLabPanel() {
       planeRef.current = null;
       projectorRef.current = new MetricProjector();
       setProjected(null);
-      setActiveTrack(null);
       setBox(null);
       setPicked(null);
       setSelRange(null);
@@ -338,20 +345,24 @@ export default function CompareLabPanel() {
           setEntryInput(manifest.pdbId);
           setStage("catalogue", "done");
           setStage("models", "active");
-          const [aT, bT] = await Promise.all([fetchText(toFetchableUrl(a.url)), fetchText(toFetchableUrl(b.url))]);
+          const [aT, bT] = await Promise.all([
+            fetchText(toFetchableUrl(a.url)),
+            b ? fetchText(toFetchableUrl(b.url)) : Promise.resolve(null),
+          ]);
           setStage("models", "done");
           setProvenance([
             { role: "model A", desc: describeModel(a), url: a.url },
-            { role: "model B", desc: describeModel(b), url: b.url },
+            ...(b ? [{ role: "model B" as const, desc: describeModel(b), url: b.url }] : []),
           ]);
           setAText(aT);
           setBText(bT);
           setStage("tables", "active");
-          const [fA, fB] = await Promise.all([parseCifText(aT), parseCifText(bT)]);
+          const fA = await parseCifText(aT);
+          const fB = bT ? await parseCifText(bT) : null;
           setAFile(fA);
           setBFile(fB);
           setATable(buildAtomTable(fA));
-          setBTable(buildAtomTable(fB));
+          setBTable(fB ? buildAtomTable(fB) : null);
           setStage("tables", "done");
         } catch (e) {
           setStages((prev) => {
@@ -379,7 +390,7 @@ export default function CompareLabPanel() {
   // --- second model into the same scene, once the primary is in ---
 
   useEffect(() => {
-    if (!viewer || !primaryLoaded || !bText || !entry || !pair || secondaryRef || secondaryBusyRef.current) return;
+    if (!viewer || !primaryLoaded || !bText || !entry || !pair?.b || secondaryRef || secondaryBusyRef.current) return;
     secondaryBusyRef.current = true;
     viewer
       .loadSecondary(bText, { label: `${entry.pdbId} ${pair.b.title}`, color: GHOST_B_COLOR })
@@ -415,7 +426,8 @@ export default function CompareLabPanel() {
     runStyling("conformers", () =>
       applyConformerStyling(ctx, structureRef, confPlan, { shown: shownConformers, globalAlt }),
     );
-  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, runStyling]);
+    // memberIndex: a frame scrub rebuilds the structure in place, dropping the layers
+  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, memberIndex, runStyling]);
 
   // --- representation style (tray): in-place state-tree updates on both models ---
 
@@ -444,16 +456,16 @@ export default function CompareLabPanel() {
     runStyling("selection", async () => {
       const structure = viewer.getCurrentStructure();
       if (!structure) return;
-      const expr = selRange
-        ? buildResidueQuery(selRange.chain, selRange.from, selRange.to)
+      const loci = selRange
+        ? residueLoci(structure, selRange.chain, selRange.from, selRange.to)
         : picked
-          ? buildResidueQuery(picked.chainId, picked.authSeqId)
+          ? residueLoci(structure, picked.chainId, picked.authSeqId)
           : null;
-      const loci = expr ? executeQuery(expr, structure) : null;
       if (loci) viewer.setSelection(loci);
       else viewer.clearSelection();
     });
-  }, [viewer, primaryLoaded, picked, selRange, repStyle, shownConformers, globalAlt, confPlan, runStyling]);
+    // memberIndex: the selection marker must re-assert on the rebuilt frame
+  }, [viewer, primaryLoaded, picked, selRange, repStyle, shownConformers, globalAlt, confPlan, memberIndex, runStyling]);
 
   // --- interaction: left click selects; right click opens the Selection Actions Panel —
   // on the picked residue, or on the WHOLE range selection when the click lands inside
@@ -504,7 +516,9 @@ export default function CompareLabPanel() {
 
   useEffect(() => {
     const ctx = viewer?.ctx;
-    if (!ctx || !entry || !primaryLoaded || !secondaryRef || !aTable) return;
+    const sf = entry?.sf ?? null; // null: a map-less entry (NMR ensemble) — no density lab
+    if (!ctx || !entry || !sf || !primaryLoaded || !aTable) return;
+    if (pair?.b && !secondaryRef) return; // wait for the ghost only when the entry HAS a B
     if (densityState !== "idle" || densityRunRef.current === entry.id) return;
     densityRunRef.current = entry.id;
     setDensityState("loading");
@@ -514,19 +528,19 @@ export default function CompareLabPanel() {
     void (async () => {
       try {
         setStage("sf-fetch", "active");
-        const mb = entry.sf.sizeBytes != null ? entry.sf.sizeBytes / 1e6 : null;
+        const mb = sf.sizeBytes != null ? sf.sizeBytes / 1e6 : null;
         if (mb != null && mb > SF_CONFIRM_MB && !window.confirm(`${entry.pdbId} structure factors are ~${mb.toFixed(0)} MB. Download anyway?`)) {
           throw new Error(`structure factors skipped (~${mb.toFixed(0)} MB); "retry density" asks again`);
         }
-        const text = await fetchText(toFetchableUrl(entry.sf.url));
+        const text = await fetchText(toFetchableUrl(sf.url));
         if (stale()) return;
         setStage("sf-fetch", "done");
         setProvenance((prev) => [
           ...prev.filter((p) => p.role !== "structure factors" && p.role !== "maps"),
           {
             role: "structure factors",
-            desc: `${entry.sf.note} (${mb != null ? `~${mb.toFixed(1)} MB` : "size unknown"})`,
-            url: entry.sf.url,
+            desc: `${sf.note} (${mb != null ? `~${mb.toFixed(1)} MB` : "size unknown"})`,
+            url: sf.url,
           },
         ]);
         setStage("fft", "active");
@@ -568,7 +582,7 @@ export default function CompareLabPanel() {
         setLoadError(`density failed: ${e instanceof Error ? e.message : String(e)}`);
       }
     })();
-  }, [viewer, entry, primaryLoaded, secondaryRef, aTable, densityState, setStage]);
+  }, [viewer, entry, pair, primaryLoaded, secondaryRef, aTable, densityState, setStage]);
 
   const retryDensity = useCallback(() => {
     densityRunRef.current = null;
@@ -688,44 +702,112 @@ export default function CompareLabPanel() {
     // re-applies after every style change; densityVersion: same, for rebuilt surfaces.
   }, [viewer, clip, sliceModel, planeVersion, densityState, secondaryRef, primaryLoaded, repStyle, densityVersion]);
 
-  // --- metric computation + projection onto the 2Fo-Fc surface ---
+  // --- ensemble members: one AtomTable per MODEL frame of model A ---
 
-  const scopePredicate = useCallback((): ((ref: ResidueRef) => boolean) | null => {
-    if (scopeMode === "all") return () => true;
-    if (scopeMode === "residue") {
-      if (!picked) return null;
-      const { chainId, authSeqId } = picked;
-      return (ref) => ref.chain === chainId && ref.seq === authSeqId;
+  const ensembleInfo = useMemo(() => (aFile ? summarizeEnsemble(aFile) : null), [aFile]);
+  const memberTables = useMemo<AtomTable[]>(() => {
+    if (!aFile || !ensembleInfo) return [];
+    const out: AtomTable[] = [];
+    for (const n of ensembleInfo.modelNums) {
+      const t = buildAtomTable(aFile, { modelNum: n });
+      if (t) out.push(t);
     }
-    const from = parseInt(rangeFrom, 10);
-    const to = parseInt(rangeTo, 10);
-    if (!rangeChain || Number.isNaN(from) || Number.isNaN(to)) return null;
-    return (ref) => ref.chain === rangeChain && ref.seq >= from && ref.seq <= to;
-  }, [scopeMode, picked, rangeChain, rangeFrom, rangeTo]);
+    return out;
+  }, [aFile, ensembleInfo]);
+
+  // switch the visible member: Mol* scrubs the frame in place (setModelIndex), and the
+  // atom-table swap recomputes everything downstream — altlocs, lanes, metrics, the
+  // selection support table
+  const setMember = useCallback(
+    (i: number) => {
+      if (!memberTables.length) return;
+      const clamped = Math.max(0, Math.min(memberTables.length - 1, i));
+      setMemberIndex(clamped);
+      if (viewer) void viewer.setModelIndex(clamped);
+      setATable(memberTables[clamped]);
+    },
+    [memberTables, viewer],
+  );
+
+  // --- metric computation + projection onto the 2Fo-Fc surface ---
 
   const computeBaseTrack = useCallback(
     (id: MetricId): Track | null => {
-      const ctx = viewer?.ctx;
-      if (!ctx || !aTable) return null;
+      if (!aTable) return null;
+      const ctx = viewer?.ctx; // only the map metrics need the plugin (for the samplers)
       switch (id) {
+        case "conformer-count":
+          return conformerCount(aTable);
+        case "occupancy-entropy":
+          return occupancyEntropy(aTable);
+        case "b-iso-mean":
+          return bIsoMean(aTable);
+        case "ensemble-rmsf":
+          return memberTables.length >= 2 ? ensembleRmsf(memberTables) : null;
         case "model-rmsd":
           return bTable ? modelRmsd(aTable, bTable) : null;
         case "altloc-rmsf-delta":
           return bTable ? trackDelta(altlocRmsf(aTable), altlocRmsf(bTable), { metricId: "altloc-rmsf-delta" }) : null;
         case "fofc-mean":
         case "fofc-peak": {
+          if (!ctx) return null;
           const s = samplerForVolume(ctx, volsRef.current?.foFc ?? null, { relative: true });
           if (!s) return null;
           const tracks = mapValueTracks(aTable, s, { idPrefix: "fofc" });
           return id === "fofc-mean" ? tracks.mean : tracks.peak;
         }
         case "support-delta": {
+          if (!ctx) return null;
           const s = samplerForVolume(ctx, volsRef.current?.twoFoFc ?? null, { relative: true });
           return s && bTable ? mapSupportDelta(aTable, bTable, s) : null;
         }
       }
     },
-    [viewer, aTable, bTable],
+    [viewer, aTable, bTable, memberTables],
+  );
+
+  // Every metric whose inputs are ready, as a whole-model track keyed for the lanes;
+  // a string is the reason the metric cannot be computed yet (shown in the lanes drawer).
+  // The 3D projection below draws from the same map, so lane and surface always agree.
+  const laneMetrics = useMemo<Map<string, LaneMetric | string>>(() => {
+    const out = new Map<string, LaneMetric | string>();
+    if (!aTable) return out;
+    for (const id of METRIC_ORDER) {
+      const ui = METRIC_UI[id];
+      if (ui.pair && !bTable) {
+        out.set(id, "needs model B");
+        continue;
+      }
+      if (ui.ensemble && memberTables.length < 2) {
+        out.set(id, "needs a multi-model ensemble");
+        continue;
+      }
+      if (ui.map && densityState !== "ready") {
+        out.set(id, "enables with the density");
+        continue;
+      }
+      const track = computeBaseTrack(id);
+      if (!track) {
+        out.set(id, "unavailable");
+        continue;
+      }
+      out.set(id, {
+        id,
+        name: metricLabel(id),
+        unit: metricUnit(id) || null,
+        colors: ui.colors,
+        domain: ui.sequential ? [0, track.domain[1]] : track.domain,
+        track,
+      });
+    }
+    return out;
+    // densityVersion: the map samplers read volsRef, refreshed when the maps rebuild
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aTable, bTable, memberTables, densityState, densityVersion, computeBaseTrack]);
+
+  const metricLaneModules = useMemo(
+    () => METRIC_ORDER.map((id) => makeMetricLane(id, metricLabel(id), METRICS.get(id)?.description ?? "")),
+    [],
   );
 
   useEffect(() => {
@@ -733,7 +815,6 @@ export default function CompareLabPanel() {
     if (!ctx || !aTable) return;
     const r = reprsRef.current;
     if (metricId === "none") {
-      setActiveTrack(null);
       if (r?.twoFoFc && projectorRef.current.getVolumeRef()) {
         runProjection(async () => {
           await projectorRef.current.clear(ctx, new Map([[r.twoFoFc as string, TWO_FOFC_COLOR]]));
@@ -744,49 +825,29 @@ export default function CompareLabPanel() {
       }
       return;
     }
-    const ui = METRIC_UI[metricId];
     if (densityState !== "ready" || !r?.twoFoFc) return; // the projection target is the 2Fo-Fc surface
-    if (ui.pair && !bTable) return;
+    const m = laneMetrics.get(metricId);
+    if (!m || typeof m === "string") return;
+    const ui = METRIC_UI[metricId];
     const t = setTimeout(() => {
-      const base = computeBaseTrack(metricId);
-      if (!base) {
-        setActiveTrack(null);
-        return;
-      }
-      const pred = scopePredicate();
-      if (!pred) {
-        setActiveTrack(null);
-        setStatus(scopeMode === "residue" ? "click a residue in 3D to scope" : "fill in chain and range to scope");
-        return;
-      }
-      const scoped = scopeTrack(base, pred);
-      setActiveTrack({ id: metricId, track: scoped });
-      const domain: [number, number] = ui.sequential ? [0, base.domain[1]] : base.domain;
-      let points = trackToPoints(aTable, scoped);
-      if (ui.unionSplat && bTable) points = points.concat(trackToPoints(bTable, scoped));
-      if (!points.length) {
-        setStatus("scope selects nothing");
-        return;
-      }
+      let points = trackToPoints(aTable, m.track);
+      if (ui.unionSplat && bTable) points = points.concat(trackToPoints(bTable, m.track));
+      if (!points.length) return;
       runProjection(async () => {
         await projectorRef.current.project(ctx, {
           points,
           targets: [r.twoFoFc],
-          domain,
+          domain: m.domain,
           colors: ui.colors,
           label: metricLabel(metricId),
         });
-        setProjected({ id: metricId, domain });
+        setProjected({ id: metricId, domain: m.domain });
         setProjVersion((v) => v + 1);
         setStatus(`${metricLabel(metricId)}: projected from ${points.length} atoms`);
       });
     }, 120);
     return () => clearTimeout(t);
-  }, [
-    viewer, aTable, bTable, metricId, densityState, densityVersion,
-    scopeMode, picked, rangeChain, rangeFrom, rangeTo,
-    computeBaseTrack, scopePredicate, runProjection,
-  ]);
+  }, [viewer, aTable, bTable, metricId, densityState, densityVersion, laneMetrics, runProjection]);
 
   // --- samplers for the slice panel + support table ---
 
@@ -857,25 +918,62 @@ export default function CompareLabPanel() {
   const pickedConformerCount = pickedKey ? (pickedAltIds.length || 1) : null;
   const pickedShown = !!(pickedKey && shownConformers.has(pickedKey));
 
-  // aggregates of the current range selection: what the range-mode actions panel acts on
+  // aggregates of the current range selection: what the range-mode actions panel acts
+  // on, plus the occupancy/heterogeneity summary the selection flyout reports
   const rangeInfo = useMemo(() => {
     if (!aTable || !selRange) return null;
     const splitKeys: string[] = [];
     const letters = new Set<string>();
+    const histogram = new Map<number, number>();
     let residueCount = 0;
+    let bSum = 0, bN = 0, occSum = 0, occN = 0;
     for (const res of aTable.residues) {
       if (WATER_COMPS.has(res.compId)) continue;
       if (res.ref.chain !== selRange.chain || res.ref.seq < selRange.from || res.ref.seq > selRange.to) continue;
       residueCount++;
       const key = residueKey(res.ref);
       const alt = confPlan.byKey.get(key);
+      const nConf = alt?.altIds.length || 1;
+      histogram.set(nConf, (histogram.get(nConf) ?? 0) + 1);
       if (alt && alt.altIds.length > 1) {
         splitKeys.push(key);
         for (const l of alt.altIds) letters.add(l);
       }
+      for (const r of res.rows) {
+        const e = aTable.element[r];
+        if (e === "H" || e === "D") continue;
+        const b = aTable.bIso[r];
+        if (!Number.isNaN(b)) { bSum += b; bN++; }
+        if (aTable.altId[r]) { occSum += aTable.occupancy[r]; occN++; }
+      }
     }
-    return { residueCount, splitKeys, letters: [...letters].sort(), stats: rangeStats(aTable, selRange) };
+    return {
+      residueCount,
+      splitKeys,
+      letters: [...letters].sort(),
+      stats: rangeStats(aTable, selRange),
+      histogram: [...histogram.entries()].sort((a, b) => a[0] - b[0]) as [number, number][],
+      meanAltOcc: occN ? occSum / occN : null,
+      meanB: bN ? bSum / bN : null,
+    };
   }, [aTable, selRange, confPlan]);
+
+  const rangeSummary = useMemo<RangeSummary | null>(
+    () =>
+      selRange && rangeInfo
+        ? {
+            chain: selRange.chain,
+            from: selRange.from,
+            to: selRange.to,
+            residueCount: rangeInfo.residueCount,
+            splitCount: rangeInfo.splitKeys.length,
+            histogram: rangeInfo.histogram,
+            meanAltOcc: rangeInfo.meanAltOcc,
+            meanB: rangeInfo.meanB,
+          }
+        : null,
+    [selRange, rangeInfo],
+  );
 
   const popupIsRange = !!popup?.range && !!selRange && !!rangeInfo;
   const popupShown = popupIsRange
@@ -930,7 +1028,6 @@ export default function CompareLabPanel() {
     setSelRange(null);
     setClip(null);
     setPopup(null);
-    setScopeMode("all");
   }, []);
 
   // every altloc letter of model A, with how many residues carry it (the state buttons)
@@ -955,19 +1052,6 @@ export default function CompareLabPanel() {
     () => (seqModel && aFile ? readSecondaryStructure(bFile ?? aFile, seqModel) : null),
     [seqModel, aFile, bFile],
   );
-  const laneMetric = useMemo<LaneMetric | null>(
-    () =>
-      activeTrack
-        ? {
-            id: activeTrack.id,
-            name: metricLabel(activeTrack.id),
-            unit: metricUnit(activeTrack.id) ?? null,
-            colors: METRIC_UI[activeTrack.id].colors,
-            track: activeTrack.track,
-          }
-        : null,
-    [activeTrack],
-  );
   const laneHoverRef = useMemo<ResidueRef | null>(
     () => (hoverInfo ? { chain: hoverInfo.chainId, seq: hoverInfo.authSeqId, ins: hoverInfo.insCode } : null),
     [hoverInfo],
@@ -977,16 +1061,57 @@ export default function CompareLabPanel() {
     [selRange, picked],
   );
 
+  // entry-level facts from the deposited CIF header (model A's own header as fallback)
+  const entryDesc = useMemo(() => {
+    const f = bFile ?? aFile;
+    return f ? describeEntry(f) : null;
+  }, [aFile, bFile]);
+
+  // PDBe annotations, one fetch per entry with a real wwPDB id (direct: the API sends
+  // open CORS); conversion to lane coordinates waits for the sequence bridge
+  useEffect(() => {
+    const pdbId = entry?.pdbId;
+    if (!pdbId || !/^[0-9][A-Za-z0-9]{3}$/.test(pdbId)) {
+      setPdbeRaw(null);
+      return;
+    }
+    let stale = false;
+    setPdbeRaw("loading");
+    void fetchPdbeAnnotations(pdbId).then((raw) => {
+      if (!stale) setPdbeRaw(raw);
+    });
+    return () => {
+      stale = true;
+    };
+  }, [entry]);
+
+  const annotations = useMemo<AnnotationsBySource | "loading" | null>(() => {
+    if (pdbeRaw === null || pdbeRaw === "loading") return pdbeRaw;
+    if (!seqModel) return "loading";
+    return mapAnnotations(pdbeRaw, seqModel);
+  }, [pdbeRaw, seqModel]);
+
+  // an author-keyed lane residue as a PickInfo, centroid included (what a 3D pick carries)
+  const pickFromRef = useCallback(
+    (ref: ResidueRef): PickInfo | null => {
+      if (!aTable) return null;
+      const res = aTable.residues.find((r) => r.ref.chain === ref.chain && r.ref.seq === ref.seq);
+      if (!res) return null;
+      const info: PickInfo = { chainId: res.ref.chain, authSeqId: res.ref.seq, compId: res.compId, altId: "", insCode: res.ref.ins };
+      const c = residueCentroid(aTable, info);
+      return { ...info, position3d: c ?? undefined };
+    },
+    [aTable],
+  );
+
   // a single residue becomes the pick (3D selection marker + actions panel target); a
-  // range becomes the selection AND the metric scope in one gesture
+  // drag becomes the range selection
   const onLaneSelect = useCallback(
     (range: ResidueRange) => {
-      if (range.from === range.to && aTable) {
-        const res = aTable.residues.find((r) => r.ref.chain === range.chain && r.ref.seq === range.from);
-        if (res) {
-          const info: PickInfo = { chainId: res.ref.chain, authSeqId: res.ref.seq, compId: res.compId, altId: "", insCode: res.ref.ins };
-          const c = residueCentroid(aTable, info);
-          setPicked({ ...info, position3d: c ?? undefined });
+      if (range.from === range.to) {
+        const info = pickFromRef({ chain: range.chain, seq: range.from, ins: "" });
+        if (info) {
+          setPicked(info);
           setSelRange(null);
           setPopup(null);
           return;
@@ -995,30 +1120,73 @@ export default function CompareLabPanel() {
       setSelRange(range);
       setPicked(null);
       setPopup(null);
-      setScopeMode("range");
-      setRangeChain(range.chain);
-      setRangeFrom(String(range.from));
-      setRangeTo(String(range.to));
     },
-    [aTable],
+    [pickFromRef],
   );
 
+  // right click in the lanes opens the same actions popup as a right click in 3D
+  const onLaneContext = useCallback(
+    (target: LaneContextTarget, anchor: { x: number; y: number }) => {
+      if (target.kind === "range") {
+        // only emitted for the live multi-residue selection: selRange already holds it
+        setPopup({ x: anchor.x, y: anchor.y, range: true });
+        return;
+      }
+      const info = pickFromRef(target.ref);
+      if (!info) return;
+      setPicked(info);
+      setSelRange(null);
+      setPopup({ x: anchor.x, y: anchor.y, range: false });
+    },
+    [pickFromRef],
+  );
+
+  // rAF-throttled: lane hover arrives at pointer rate; Mol*'s mark + redraw should run
+  // at most once per frame, on the latest residue.
+  const laneHoverRafRef = useRef<number | null>(null);
+  const laneHoverPendingRef = useRef<ResidueRef | null>(null);
   const onLaneHover = useCallback(
     (ref: ResidueRef | null) => {
       if (!viewer) return;
-      if (!ref) {
-        viewer.highlightLoci(null);
-        return;
-      }
-      const structure = viewer.getCurrentStructure();
-      if (!structure) return;
-      viewer.highlightLoci(executeQuery(buildResidueQuery(ref.chain, ref.seq), structure));
+      laneHoverPendingRef.current = ref;
+      if (laneHoverRafRef.current !== null) return;
+      laneHoverRafRef.current = requestAnimationFrame(() => {
+        laneHoverRafRef.current = null;
+        const r = laneHoverPendingRef.current;
+        if (!r) {
+          viewer.highlightLoci(null);
+          return;
+        }
+        const structure = viewer.getCurrentStructure();
+        if (!structure) return;
+        viewer.highlightLoci(residueLoci(structure, r.chain, r.seq));
+      });
     },
     [viewer],
   );
 
   const onPrimaryLoaded = useCallback(() => setPrimaryLoaded(true), []);
   const ready = densityState === "ready";
+
+  // drag the divider above the lanes strip to trade viewer height for lane height
+  const startLanesResize = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startY = e.clientY;
+      const startH = lanesHeight;
+      const onMove = (ev: MouseEvent) => {
+        const h = startH + (startY - ev.clientY);
+        setLanesHeight(Math.round(Math.min(window.innerHeight * 0.6, Math.max(96, h))));
+      };
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    },
+    [lanesHeight],
+  );
 
   const popupTarget: ActionTarget | null = !popup
     ? null
@@ -1044,17 +1212,68 @@ export default function CompareLabPanel() {
       ? Math.min(40, Math.max(5, Math.ceil(rangeInfo.stats.fitRadius)))
       : DEFAULT_CLIP_RADIUS);
 
+  // the two parent-built tray flyouts (state stays here; StyleTray only positions them)
+  const densityFlyout = (
+    <DensityFlyout
+      metricId={metricId}
+      onMetricId={setMetricId}
+      densityReady={ready}
+      densityBusy={densityBusy}
+      hasB={!!bTable}
+      provenance={{
+        aUrl: pair?.a.url ?? "model A file",
+        bUrl: pair?.b?.url ?? "model B file",
+        sfUrl: entry?.sf?.url ?? "the entry's sf-cif",
+        aDesc: pair ? ROLE_LABELS[pair.a.role] : "model A",
+        bDesc: pair?.b ? ROLE_LABELS[pair.b.role] : "model B",
+      }}
+      projectedDomain={projected?.domain ?? null}
+      status={status}
+      hasEnsemble={memberTables.length >= 2}
+      show2fofc={show2fofc}
+      onShow2fofc={setShow2fofc}
+      sigma={sigma}
+      onSigma={setSigma}
+      showFofc={showFofc}
+      onShowFofc={setShowFofc}
+      opacity={densityOpacity}
+      onOpacity={setDensityOpacity}
+      densityQuality={densityQuality}
+      onDensityQuality={changeDensityQuality}
+      showSlice2d={showSlice2d}
+      onShowSlice2d={setShowSlice2d}
+    />
+  );
+  const selectionFlyout = (
+    <SelectionFlyout
+      aTable={aTable}
+      picked={picked}
+      conformerCount={pickedConformerCount}
+      conformersShown={pickedShown}
+      densitySampler={densitySampler}
+      fofcSampler={fofcSampler}
+      selRange={selRange}
+      rangeSummary={rangeSummary}
+      stateLetters={stateLetters}
+      globalAlt={globalAlt}
+      onGlobalAlt={setGlobalAlt}
+      primaryLoaded={primaryLoaded}
+      memberNums={ensembleInfo?.modelNums ?? []}
+      memberIndex={memberIndex}
+      onMember={setMember}
+    />
+  );
+
   return (
     <div className="flex h-screen min-h-0 flex-col bg-white text-[12px] text-ink-secondary">
       <div className="flex min-h-0 flex-1">
-        <aside className="flex w-64 shrink-0 flex-col gap-3 overflow-y-auto border-r border-line bg-surface-muted p-3">
-          <SelectionPanel
+        <aside className="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto border-r border-line bg-surface-muted p-3">
+          <EntryCard
+            entry={entry}
+            desc={entryDesc}
             aTable={aTable}
-            picked={picked}
-            conformerCount={pickedConformerCount}
-            conformersShown={pickedShown}
-            densitySampler={densitySampler}
-            fofcSampler={fofcSampler}
+            altSummary={altSummary}
+            memberCount={memberTables.length}
           />
         </aside>
 
@@ -1076,15 +1295,15 @@ export default function CompareLabPanel() {
             <StyleTray
               ready={primaryLoaded}
               densityReady={ready}
-              densityBusy={densityBusy}
               showDensity={showDensity}
               onShowDensity={setShowDensity}
               style={repStyle}
               onStyle={setRepStyle}
-              densityQuality={densityQuality}
-              onDensityQuality={changeDensityQuality}
-              showSlice2d={showSlice2d}
-              onShowSlice2d={setShowSlice2d}
+              showB={showB}
+              bAvailable={!!secondaryRef}
+              onShowB={setShowB}
+              densityFlyout={densityFlyout}
+              selectionFlyout={selectionFlyout}
             />
           </div>
           {hoverInfo && (
@@ -1103,79 +1322,35 @@ export default function CompareLabPanel() {
               clipRadius={popupClipRadius}
               onToggleConformers={togglePopupConformers}
               onClip={applyClip}
-              onSetScope={() => {
-                if (popupTarget.kind === "range") {
-                  setScopeMode("range");
-                  setRangeChain(popupTarget.chain);
-                  setRangeFrom(String(popupTarget.from));
-                  setRangeTo(String(popupTarget.to));
-                } else {
-                  setScopeMode("residue");
-                }
-                setPopup(null);
-              }}
               onClose={closePopup}
             />
           )}
         </div>
 
-        <aside className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-l border-line bg-surface-muted p-3">
-          <DensityControls
-            ready={ready}
-            show2fofc={show2fofc}
-            onShow2fofc={setShow2fofc}
-            sigma={sigma}
-            onSigma={setSigma}
-            showFofc={showFofc}
-            onShowFofc={setShowFofc}
-            opacity={densityOpacity}
-            onOpacity={setDensityOpacity}
-            showB={showB}
-            bAvailable={!!secondaryRef}
-            onShowB={setShowB}
-          />
-          <MetricsToolbar
-            metricId={metricId}
-            onMetricId={setMetricId}
-            densityReady={ready}
-            hasB={!!bTable}
-            provenance={{
-              aUrl: pair?.a.url ?? "model A file",
-              bUrl: pair?.b.url ?? "model B file",
-              sfUrl: entry?.sf.url ?? "the entry's sf-cif",
-              aDesc: pair ? ROLE_LABELS[pair.a.role] : "model A",
-              bDesc: pair ? ROLE_LABELS[pair.b.role] : "model B",
-            }}
-            scopeMode={scopeMode}
-            onScopeMode={setScopeMode}
-            picked={picked}
-            rangeChain={rangeChain}
-            rangeFrom={rangeFrom}
-            rangeTo={rangeTo}
-            onRangeChain={setRangeChain}
-            onRangeFrom={setRangeFrom}
-            onRangeTo={setRangeTo}
-            projectedDomain={projected?.domain ?? null}
-            status={status}
-          />
-        </aside>
       </div>
 
-      <div className="flex shrink-0 items-start gap-4 border-t border-line bg-white px-3 py-2">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <div
+        className="h-1.5 shrink-0 cursor-row-resize border-t border-line bg-surface-muted hover:bg-accent/30"
+        onMouseDown={startLanesResize}
+      />
+      <div className="flex shrink-0 items-start gap-4 overflow-hidden bg-white px-3 py-2" style={{ height: lanesHeight }}>
+        <div className="flex h-full min-w-0 flex-1 flex-col gap-1 overflow-y-auto">
           <SequenceLanes
             model={seqModel}
             aTable={aTable}
             confPlan={confPlan}
             secondaryByChain={secondaryByChain}
-            metric={laneMetric}
+            metrics={laneMetrics}
+            annotations={annotations}
+            metricLanes={metricLaneModules}
             hoverRef={laneHoverRef}
             selection={laneSelection}
             onHover={onLaneHover}
             onSelect={onLaneSelect}
+            onContext={onLaneContext}
             leading={
               <>
-                <SectionLabel>Sequence</SectionLabel>
+                <span className="text-[11px] font-medium text-ink-muted">Sequence</span>
                 {(picked || selRange) && (
                   <span className="flex items-center gap-1 rounded border border-accent/30 bg-accent-soft px-1.5 py-px text-[10.5px] tabular-nums text-accent">
                     {picked
@@ -1195,13 +1370,7 @@ export default function CompareLabPanel() {
             }
           />
         </div>
-        <div className="flex w-[380px] shrink-0 flex-col gap-1.5 border-l border-line pl-4">
-          <ConformerStatesPanel
-            letters={stateLetters}
-            active={globalAlt}
-            disabled={!primaryLoaded}
-            onChange={setGlobalAlt}
-          />
+        <div className="flex h-full w-[380px] shrink-0 flex-col gap-1.5 overflow-y-auto border-l border-line pl-4">
           <SliceControls
             ready={ready}
             slice3d={slice3d}

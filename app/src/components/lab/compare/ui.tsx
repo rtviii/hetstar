@@ -146,6 +146,101 @@ export function PinPopover({
   );
 }
 
+// Hover-open flyout for the icon tray: interactive content (unlike Tooltip, whose card
+// is pointer-events-none), fixed-positioned like PinPopover so it escapes the overflow
+// columns. Opens after a short hover delay, stays while the pointer is over the anchor
+// or the card (enter/leave ride the DOM hierarchy, so the fixed card still counts as
+// inside; one shared grace timer bridges the spatial gap between them). pinOnClick lets
+// the anchor click pin it open for anchors with no click action of their own; anchors
+// WITH a click action (the density toggle) keep it — the anchor's onClick is never
+// intercepted. Escape and outside-mousedown always close.
+export function HoverFlyout({
+  content,
+  children,
+  width = 288,
+  align = "end",
+  pinOnClick = false,
+}: {
+  content: ReactNode;
+  children: ReactNode;
+  width?: number;
+  align?: "start" | "end";
+  pinOnClick?: boolean;
+}) {
+  const rootRef = useRef<HTMLSpanElement>(null);
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pinnedRef = useRef(false);
+  const [pos, setPos] = useState<{ x: number; y: number; above: boolean } | null>(null);
+
+  const measure = useCallback(() => {
+    const rect = anchorRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    const left = align === "end" ? rect.right - width : rect.left;
+    const x = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+    const above = rect.bottom + 280 > window.innerHeight;
+    return { x, y: above ? rect.top - 6 : rect.bottom + 6, above };
+  }, [align, width]);
+
+  const cancelTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  const onEnter = useCallback(() => {
+    cancelTimer();
+    timerRef.current = setTimeout(() => setPos((prev) => prev ?? measure()), 200);
+  }, [cancelTimer, measure]);
+
+  const onLeave = useCallback(() => {
+    cancelTimer();
+    if (pinnedRef.current) return;
+    timerRef.current = setTimeout(() => setPos(null), 250);
+  }, [cancelTimer]);
+
+  const onAnchorClick = useCallback(() => {
+    if (!pinOnClick) return;
+    if (pinnedRef.current) {
+      pinnedRef.current = false;
+      setPos(null);
+    } else {
+      pinnedRef.current = true;
+      cancelTimer();
+      setPos((prev) => prev ?? measure());
+    }
+  }, [pinOnClick, cancelTimer, measure]);
+
+  const close = useCallback(() => {
+    pinnedRef.current = false;
+    setPos(null);
+  }, []);
+  useDismiss(rootRef, pos !== null, close);
+  useEffect(() => cancelTimer, [cancelTimer]);
+
+  return (
+    <span ref={rootRef} className="inline-flex" onMouseEnter={onEnter} onMouseLeave={onLeave}>
+      <span ref={anchorRef} className="inline-flex" onClick={onAnchorClick}>
+        {children}
+      </span>
+      {pos && (
+        <div
+          className="fixed z-50 max-h-[75vh] cursor-auto select-text overflow-y-auto rounded border border-line bg-white p-2.5 text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary shadow-md"
+          style={{
+            left: pos.x,
+            width,
+            top: pos.above ? undefined : pos.y,
+            bottom: pos.above ? window.innerHeight - pos.y : undefined,
+          }}
+        >
+          {content}
+        </div>
+      )}
+    </span>
+  );
+}
+
 export function SwitchButton({
   pressed,
   disabled,
