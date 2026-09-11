@@ -34,7 +34,7 @@ function Feature({
       className="absolute inset-y-0 cursor-pointer opacity-50 hover:opacity-80"
       style={{ ...spanStyle(span, chain.length), background: color, minWidth: 2 }}
       title={`${title} ${authRange(chain, span)}`}
-      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => {
         e.stopPropagation();
         onSelectSpan(span);
@@ -87,7 +87,7 @@ const UnobservedLaneView = memo(function UnobservedLaneView({ ctx, onSelectSpan 
 
 export const unobservedLane: LaneModule = {
   id: "unobserved",
-  label: "unobserved",
+  label: "Unobserved",
   description: "residues of the sequence the shown model has no atoms for",
   defaultOn: false,
   height: 12,

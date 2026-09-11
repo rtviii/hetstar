@@ -1,23 +1,39 @@
 "use client";
-import { memo } from "react";
+import { memo, useMemo } from "react";
 
 import { refAt } from "@dynamic-pdb/hetkit/model";
+import { rampCss } from "@/lib/lab/color";
+import { metricValues } from "./PlotLanes";
 import type { LaneModule, LaneProps } from "./types";
 
 // The residues themselves, with the level of detail the room per residue allows: a
 // letter where one is legible, otherwise one dot per residue, and once the dots would
 // touch a repeating background tile instead of thousands of elements. Residues the shown
 // model has no atoms for are drawn faint. (The scheme follows Dynamic PDB's viewer.)
+// The host's color-by choice paints each cell's background with that metric's ramp.
 
-const LETTERS_FROM = 8;
+const LETTERS_FROM = 5;
 const DOTS_FROM = 1.5;
 
 const SequenceLaneView = memo(function SequenceLaneView({ ctx, view }: LaneProps) {
-  const { chain } = ctx;
+  const { chain, colorBy } = ctx;
   const cell = view.cell;
   const mode = cell < DOTS_FROM ? "dense" : cell >= LETTERS_FROM ? "letters" : "dots";
   const dot = Math.max(1, Math.min(3, Math.round(cell / 2)));
-  const fontSize = Math.max(7, Math.min(Math.floor(cell) - 2, 12));
+  const fontSize = Math.max(6, Math.min(Math.round(cell * 1.15), 12));
+
+  // per-position cell background from the color-by metric, softened so letters stay legible
+  const shade = useMemo(() => {
+    if (!colorBy) return null;
+    const values = metricValues(chain, colorBy);
+    const [d0, d1] = colorBy.domain;
+    const span = d1 - d0;
+    return Array.from(values, (v) => {
+      if (Number.isNaN(v)) return undefined;
+      const t = span > 0 ? Math.max(0, Math.min(1, (v - d0) / span)) : 0.5;
+      return `color-mix(in srgb, ${rampCss(colorBy.colors, t)} 55%, white)`;
+    });
+  }, [chain, colorBy]);
 
   if (mode === "dense") {
     return (
@@ -37,10 +53,13 @@ const SequenceLaneView = memo(function SequenceLaneView({ ctx, view }: LaneProps
       {chain.positions.map((p) => (
         <span
           key={p.pos}
-          className={`min-w-0 flex-1 overflow-hidden text-center font-mono font-semibold uppercase leading-none ${
+          className={`flex h-full min-w-0 flex-1 items-center justify-center overflow-hidden text-center font-mono font-semibold uppercase leading-none ${
             p.observed ? "text-ink" : "text-ink-muted/40"
           }`}
-          style={mode === "letters" ? { fontSize } : undefined}
+          style={{
+            ...(mode === "letters" ? { fontSize } : null),
+            backgroundColor: shade?.[p.pos - 1],
+          }}
         >
           {mode === "letters" ? (
             p.letter
@@ -58,7 +77,7 @@ const SequenceLaneView = memo(function SequenceLaneView({ ctx, view }: LaneProps
 
 export const sequenceLane: LaneModule = {
   id: "sequence",
-  label: "sequence",
+  label: "Sequence",
   description: "one-letter residues of the chain; faint where the shown model has no atoms",
   defaultOn: true,
   height: 18,
