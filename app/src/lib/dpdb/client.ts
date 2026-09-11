@@ -5,7 +5,7 @@
 // and, once the files host allows that origin, NEXT_PUBLIC_DPDB_FILE_PROXY= (empty) so S3
 // artifacts are fetched directly.
 
-import type { EntryManifest, ManifestModel, MetricKey, ModelFormat, ModelRole } from "./types";
+import type { EntryCatalogueInfo, EntryManifest, ManifestModel, MetricKey, ModelFormat, ModelRole } from "./types";
 
 export const DPDB_API_BASE = process.env.NEXT_PUBLIC_DPDB_API_BASE ?? "/api/dpdb";
 export const DPDB_FILE_PROXY = process.env.NEXT_PUBLIC_DPDB_FILE_PROXY ?? "/api/dpdb-file";
@@ -28,8 +28,24 @@ interface Resource<A> {
 interface EntryAttrs {
   id: string;
   title: string;
+  details?: string | null;
+  method?: string | null;
+  space_group?: string | null;
   resolution?: number | null;
+  published_at?: string | null;
   external_refs?: { pdb?: string };
+  crystallography?: {
+    crystals?: {
+      growth?: { ph?: number | null; temperature_kelvin?: number | null } | null;
+      diffractions?: { temperature_kelvin?: number | null }[] | null;
+    }[] | null;
+  } | null;
+  polymer_entities?: {
+    label_entity_id?: string | null;
+    description?: string | null;
+    source_organisms?: { scientific_name?: string | null }[] | null;
+    uniprot_mappings?: { accession?: string | null; source?: string | null }[] | null;
+  }[] | null;
 }
 interface ModelAttrs {
   id: string;
@@ -96,6 +112,22 @@ export async function fetchEntryManifest(dpdbId: string): Promise<EntryManifest>
   ]);
   const entry = entryRes.data.attributes;
   const pdbId = (entry.external_refs?.pdb ?? "").toUpperCase();
+  // the entry response already carries the landing-page facts: no extra requests
+  const crystal = entry.crystallography?.crystals?.[0];
+  const catalogue: EntryCatalogueInfo = {
+    details: entry.details ?? null,
+    method: entry.method ?? null,
+    spaceGroup: entry.space_group ?? null,
+    publishedAt: entry.published_at ?? null,
+    growthPh: crystal?.growth?.ph ?? null,
+    growthTempK: crystal?.growth?.temperature_kelvin ?? crystal?.diffractions?.[0]?.temperature_kelvin ?? null,
+    entities: (entry.polymer_entities ?? []).map((e) => ({
+      entityId: e.label_entity_id ?? null,
+      description: e.description ?? null,
+      organism: e.source_organisms?.[0]?.scientific_name ?? null,
+      uniprot: e.uniprot_mappings?.[0]?.accession ?? null,
+    })),
+  };
 
   const summaries = modelsRes.data.map((m) => ({ ...m.attributes, role: deriveRole(m.attributes.title, m.attributes.metadata) }));
   const wanted = summaries.filter((m) => m.role === "deposited" || m.role === "qfit");
@@ -153,6 +185,7 @@ export async function fetchEntryManifest(dpdbId: string): Promise<EntryManifest>
     title: entry.title,
     resolution: entry.resolution ?? null,
     source: "dpdb",
+    catalogue,
     models,
     sf: sf ?? {
       url: `https://files.rcsb.org/download/${pdbId}-sf.cif`,

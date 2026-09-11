@@ -29,6 +29,22 @@ export interface ManifestModel {
 /** a model whose coordinate file is known */
 export type LoadableModel = ManifestModel & { format: ModelFormat; url: string };
 
+/** landing-page facts the catalogue's entry response already carries */
+export interface EntryCatalogueInfo {
+  details: string | null;
+  method: string | null;
+  spaceGroup: string | null;
+  publishedAt: string | null;
+  growthPh: number | null;
+  growthTempK: number | null;
+  entities: {
+    entityId: string | null;
+    description: string | null;
+    organism: string | null;
+    uniprot: string | null;
+  }[];
+}
+
 export interface EntryManifest {
   /** dpdb entry id, or the bundled id (7A1X) */
   id: string;
@@ -36,8 +52,11 @@ export interface EntryManifest {
   title: string;
   resolution: number | null;
   source: "local" | "dpdb";
+  /** only for source "dpdb"; local rows derive their facts from the CIF headers */
+  catalogue?: EntryCatalogueInfo;
   models: ManifestModel[];
-  sf: { url: string; sizeBytes: number | null; note: string };
+  /** null for entries without map coefficients (NMR ensembles): no density lab */
+  sf: { url: string; sizeBytes: number | null; note: string } | null;
 }
 
 export const ROLE_LABELS: Record<ModelRole, string> = {
@@ -54,11 +73,16 @@ function loadable(m: EntryManifest, x: ManifestModel): LoadableModel {
   return x as LoadableModel;
 }
 
-/** The A/B pair this pass renders: qFit as A, deposited as B. Both must be CIF. */
-export function pickPair(m: EntryManifest): { a: LoadableModel; b: LoadableModel } {
-  const a = m.models.find((x) => x.role === "qfit");
-  const b = m.models.find((x) => x.role === "deposited");
-  if (!a) throw new Error(`${m.pdbId} has no qFit model in the Dynamic PDB catalogue`);
-  if (!b) throw new Error(`${m.pdbId} has no deposited model in the Dynamic PDB catalogue`);
-  return { a: loadable(m, a), b: loadable(m, b) };
+/**
+ * The A/B pair this pass renders: qFit as A and deposited as B when both exist; an
+ * ensemble (or the deposited model alone) as A with no B otherwise. All CIF.
+ */
+export function pickPair(m: EntryManifest): { a: LoadableModel; b: LoadableModel | null } {
+  const a =
+    m.models.find((x) => x.role === "qfit") ??
+    m.models.find((x) => x.role === "ensemble") ??
+    m.models.find((x) => x.role === "deposited");
+  if (!a) throw new Error(`${m.pdbId} has no loadable model (qFit, ensemble or deposited)`);
+  const b = a.role === "deposited" ? null : (m.models.find((x) => x.role === "deposited") ?? null);
+  return { a: loadable(m, a), b: b ? loadable(m, b) : null };
 }

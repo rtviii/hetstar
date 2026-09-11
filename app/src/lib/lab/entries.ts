@@ -13,11 +13,11 @@ export interface EntryDef {
   id: string;
   label: string;
   /** model A: qFit multiconformer CIF (local copy of the corpus/fixture file) */
-  qfit: EntrySource;
-  /** model B: deposited mmCIF (local fixture copy or RCSB download) */
-  deposited: EntrySource;
-  /** structure factors (map coefficients) for the client-side FFT */
-  sf: EntrySource & { approxMB: number };
+  qfit?: EntrySource;
+  /** model B — or the ONLY model (an NMR/ensemble mmCIF, a local corpus drop) when qfit is absent */
+  deposited?: EntrySource;
+  /** structure factors (map coefficients) for the client-side FFT; absent = no density lab */
+  sf?: EntrySource & { approxMB: number };
 }
 
 export const ENTRIES: readonly EntryDef[] = [
@@ -55,12 +55,26 @@ export const ENTRIES: readonly EntryDef[] = [
       approxMB: 3,
     },
   },
+  {
+    // multi-MODEL exercise entry: ubiquitin NMR bundle, 10 members, no structure factors.
+    // A local ensemble-refinement file works the same way: drop it in app/public/corpus
+    // and add a row with deposited.url "/corpus/<file>.cif".
+    id: "1D3Z",
+    label: "1D3Z (NMR ensemble)",
+    deposited: {
+      url: "https://files.rcsb.org/download/1D3Z.cif",
+      note: "deposited NMR ensemble (ubiquitin, 10 MODEL frames), fetched from RCSB at load time",
+    },
+  },
 ];
 
 export function findEntry(id: string): EntryDef | null {
   const norm = id.trim().toUpperCase();
   return ENTRIES.find((e) => e.id === norm) ?? null;
 }
+
+/** water component ids, excluded from residue aggregates and ligand listings */
+export const WATER_COMPS = new Set(["HOH", "DOD", "WAT"]);
 
 // Loader pipeline stages, in order. Each renders as a status dot in the loader panel.
 export const STAGES = ["catalogue", "models", "tables", "sf-fetch", "fft", "carve", "iso"] as const;

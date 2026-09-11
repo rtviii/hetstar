@@ -3,7 +3,7 @@
 
 import { ENTRIES, findEntry, type EntryDef } from "@/lib/lab/entries";
 import { fetchEntryManifest } from "./client";
-import type { EntryManifest } from "./types";
+import type { EntryManifest, ManifestModel } from "./types";
 
 // Stopgap until the catalogue resolves PDB ids itself (no filter or alias endpoint yet, and
 // the site search ignores its query); these were looked up by hand on 2026-09-10.
@@ -19,17 +19,19 @@ export function knownEntryIds(): string[] {
 
 export function manifestFromLocalEntry(def: EntryDef): EntryManifest {
   const blank = { sizeBytes: null, sha256: null, software: null, metrics: {} };
+  const models: ManifestModel[] = [];
+  if (def.qfit)
+    models.push({ id: `${def.id}:qfit`, role: "qfit", title: "qFit model", format: "cif", url: def.qfit.url, note: def.qfit.note, ...blank });
+  if (def.deposited)
+    models.push({ id: `${def.id}:deposited`, role: "deposited", title: "Deposited model", format: "cif", url: def.deposited.url, note: def.deposited.note, ...blank });
   return {
     id: def.id,
     pdbId: def.id,
     title: def.label,
     resolution: null,
     source: "local",
-    models: [
-      { id: `${def.id}:qfit`, role: "qfit", title: "qFit model", format: "cif", url: def.qfit.url, note: def.qfit.note, ...blank },
-      { id: `${def.id}:deposited`, role: "deposited", title: "Deposited model", format: "cif", url: def.deposited.url, note: def.deposited.note, ...blank },
-    ],
-    sf: { url: def.sf.url, sizeBytes: Math.round(def.sf.approxMB * 1e6), note: def.sf.note },
+    models,
+    sf: def.sf ? { url: def.sf.url, sizeBytes: Math.round(def.sf.approxMB * 1e6), note: def.sf.note } : null,
   };
 }
 
@@ -41,7 +43,7 @@ export async function resolveEntry(input: string): Promise<EntryManifest> {
   const alias = PDB_ALIASES[id.toUpperCase()];
   if (alias) {
     const m = await fetchEntryManifest(alias.dpdb);
-    if (alias.sfBytesHint && m.sf.sizeBytes == null) m.sf.sizeBytes = alias.sfBytesHint;
+    if (alias.sfBytesHint && m.sf && m.sf.sizeBytes == null) m.sf.sizeBytes = alias.sfBytesHint;
     return m;
   }
   throw new Error(`unknown entry "${id}": use a dpdb_... id or one of ${knownEntryIds().join(", ")}`);

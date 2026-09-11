@@ -183,5 +183,28 @@ export const executeQuery = (query: any, structure: Structure): StructureElement
   return StructureSelection.toLociWithSourceUnits(selection);
 };
 
+// Residue/range loci with a compiled-query cache. Compilation is structure-independent
+// and drag/hover over the lanes asks for the same few keys at pointer rate, so the
+// MolScript compile (the expensive half of executeQuery) runs once per distinct range.
+const residueQueryCache = new Map<string, (ctx: QueryContext) => StructureSelection>();
+
+export const residueLoci = (
+  structure: Structure,
+  chainId: string,
+  from: number,
+  to: number = from,
+): StructureElement.Loci | null => {
+  const key = `${chainId}|${from}|${to}`;
+  let compiled = residueQueryCache.get(key);
+  if (!compiled) {
+    if (residueQueryCache.size >= 512) residueQueryCache.clear();
+    compiled = compile<StructureSelection>(buildResidueQuery(chainId, from, to === from ? undefined : to));
+    residueQueryCache.set(key, compiled);
+  }
+  const selection = compiled(new QueryContext(structure));
+  if (StructureSelection.isEmpty(selection)) return null;
+  return StructureSelection.toLociWithSourceUnits(selection);
+};
+
 export const structureToLoci = (structure: Structure): StructureElement.Loci =>
   Structure.toStructureElementLoci(structure);
