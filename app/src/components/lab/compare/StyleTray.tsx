@@ -1,8 +1,8 @@
 "use client";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
 import type { RepColorMode, RepQuality, RepStyle, RepType } from "@/lib/molstar/repstyle";
-import { HoverFlyout, SliderRow, SwitchButton, TinyText } from "./ui";
+import { GroupLabel, HoverFlyout, SliderRow, SwitchButton, TinyText } from "./ui";
 
 // The viewer's icon tray at the canvas's top-right (positioned by the parent wrapper,
 // next to the entry chip): three icons, each with a hover flyout. The density icon's
@@ -14,10 +14,17 @@ import { HoverFlyout, SliderRow, SwitchButton, TinyText } from "./ui";
 // which would clear the state tree.
 
 const REP_TYPES: { id: RepType; label: string }[] = [
-  { id: "ball-and-stick", label: "sticks" },
-  { id: "spacefill", label: "spheres" },
   { id: "cartoon", label: "cartoon" },
+  { id: "ball-and-stick", label: "sticks&balls" },
+  { id: "spacefill", label: "atoms" },
 ];
+
+// one "scale" slider per representation type
+const SCALE_RANGE: Record<RepType, { min: number; max: number; step: number }> = {
+  "ball-and-stick": { min: 0.05, max: 0.5, step: 0.01 },
+  spacefill: { min: 0.1, max: 2, step: 0.05 },
+  cartoon: { min: 0.05, max: 1, step: 0.05 },
+};
 
 const COLOR_MODES: { id: RepColorMode; label: string }[] = [
   { id: "model", label: "model" },
@@ -61,26 +68,33 @@ function StyleIcon() {
   );
 }
 
-function TrayButton({
+export function TrayButton({
   active,
   disabled,
   label,
+  title,
   onClick,
+  onContextMenu,
   children,
 }: {
   active: boolean;
   disabled?: boolean;
   /** aria-label only — no native title: the hover flyout is the explanation */
   label: string;
+  /** native tooltip, for buttons WITHOUT a hover flyout (the bookmark stack) */
+  title?: string;
   onClick?: () => void;
+  onContextMenu?: (e: MouseEvent) => void;
   children: ReactNode;
 }) {
   return (
     <button
       type="button"
       aria-label={label}
+      title={title}
       disabled={disabled}
       onClick={onClick}
+      onContextMenu={onContextMenu}
       className={`flex h-6 w-6 items-center justify-center rounded border transition-colors disabled:cursor-default disabled:opacity-40 ${
         active
           ? "border-accent bg-accent-soft text-accent"
@@ -121,11 +135,26 @@ export default function StyleTray({
   selectionFlyout: ReactNode;
 }) {
   const patch = (p: Partial<RepStyle>) => onStyle({ ...style, ...p });
+  const scale = SCALE_RANGE[style.type];
+  const scaleValue =
+    style.type === "ball-and-stick"
+      ? style.ballStick.sizeFactor
+      : style.type === "spacefill"
+        ? style.spacefill.sizeFactor
+        : style.cartoon.sizeFactor;
+  const setScale = (v: number) =>
+    patch(
+      style.type === "ball-and-stick"
+        ? { ballStick: { sizeFactor: v } }
+        : style.type === "spacefill"
+          ? { spacefill: { sizeFactor: v } }
+          : { cartoon: { sizeFactor: v } },
+    );
 
   const styleCard = (
     <div className="flex flex-col gap-2.5">
       <div className="flex flex-col gap-1">
-        <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">representation</span>
+        <GroupLabel>representation</GroupLabel>
         <div className="flex items-center gap-1">
           {REP_TYPES.map((t) => (
             <SwitchButton key={t.id} pressed={style.type === t.id} onClick={() => patch({ type: t.id })}>
@@ -133,61 +162,22 @@ export default function StyleTray({
             </SwitchButton>
           ))}
         </div>
-        {style.type === "ball-and-stick" && (
-          <>
-            <SliderRow
-              label={`stick thickness: ${style.ballStick.sizeFactor.toFixed(2)}`}
-              min={0.05}
-              max={0.5}
-              step={0.01}
-              value={style.ballStick.sizeFactor}
-              onChange={(v) => patch({ ballStick: { ...style.ballStick, sizeFactor: v } })}
-            />
-            <SliderRow
-              label={`stick vs ball: ${style.ballStick.sizeAspectRatio.toFixed(2)}`}
-              min={0.2}
-              max={1.5}
-              step={0.05}
-              value={style.ballStick.sizeAspectRatio}
-              onChange={(v) => patch({ ballStick: { ...style.ballStick, sizeAspectRatio: v } })}
-            />
-          </>
-        )}
-        {style.type === "spacefill" && (
-          <SliderRow
-            label={`atom radius scale: ${style.spacefill.sizeFactor.toFixed(2)}`}
-            min={0.3}
-            max={2}
-            step={0.05}
-            value={style.spacefill.sizeFactor}
-            onChange={(v) => patch({ spacefill: { sizeFactor: v } })}
-          />
-        )}
+        <SliderRow
+          label="scale"
+          min={scale.min}
+          max={scale.max}
+          step={scale.step}
+          value={scaleValue}
+          display={scaleValue.toFixed(2)}
+          onChange={setScale}
+        />
         {style.type === "cartoon" && (
-          <>
-            <SliderRow
-              label={`trace thickness: ${style.cartoon.sizeFactor.toFixed(2)}`}
-              min={0.05}
-              max={1}
-              step={0.05}
-              value={style.cartoon.sizeFactor}
-              onChange={(v) => patch({ cartoon: { ...style.cartoon, sizeFactor: v } })}
-            />
-            <SliderRow
-              label={`ribbon aspect: ${style.cartoon.aspectRatio.toFixed(1)}`}
-              min={1}
-              max={8}
-              step={0.5}
-              value={style.cartoon.aspectRatio}
-              onChange={(v) => patch({ cartoon: { ...style.cartoon, aspectRatio: v } })}
-            />
-            <TinyText>cartoon draws the polymer trace only: side chains, and with them the expanded conformers, are not visible; ligands and ions stay as sticks</TinyText>
-          </>
+          <TinyText>cartoon draws the polymer trace only: side chains, and with them the expanded conformers, are not visible; ligands and ions stay as sticks</TinyText>
         )}
       </div>
 
       <div className="flex flex-col gap-1 border-t border-line pt-1.5">
-        <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">layers</span>
+        <GroupLabel>layers</GroupLabel>
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={showB} disabled={!bAvailable} onChange={(e) => onShowB(e.target.checked)} />
           <span>model B: deposited (ghost)</span>
@@ -195,7 +185,7 @@ export default function StyleTray({
       </div>
 
       <div className="flex flex-col gap-1 border-t border-line pt-1.5">
-        <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">color</span>
+        <GroupLabel>color</GroupLabel>
         <div className="flex items-center gap-1">
           {COLOR_MODES.map((m) => (
             <SwitchButton key={m.id} pressed={style.colorMode === m.id} onClick={() => patch({ colorMode: m.id })}>
@@ -209,7 +199,7 @@ export default function StyleTray({
       </div>
 
       <div className="flex flex-col gap-1 border-t border-line pt-1.5">
-        <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">model quality</span>
+        <GroupLabel>model quality</GroupLabel>
         <div className="flex items-center gap-1">
           {REP_QUALITIES.map((q) => (
             <SwitchButton key={q} pressed={style.quality === q} onClick={() => patch({ quality: q })}>
@@ -227,7 +217,7 @@ export default function StyleTray({
         <TrayButton
           active={showDensity}
           disabled={!densityReady}
-          label="density: click toggles the maps; hover for metric painting and map controls"
+          label="density: maps compute in the background; click toggles them, hover for metric painting and map controls"
           onClick={() => onShowDensity(!showDensity)}
         >
           <DensityIcon />

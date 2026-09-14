@@ -20,7 +20,7 @@ import type { LaneContext, LaneMetric, LaneModule, LaneView, PositionSpan } from
 // speak), and every 3D pick arrives the same way and is placed by positionOf. Nothing
 // in the lanes knows about Mol*.
 
-const GUTTER_L = 140; // fits the longest metric label ("Density support delta") at the row-label style
+const GUTTER_L = 124; // fits the longest metric label ("Density support delta") at the row-label style
 const GUTTER_R = 12;
 const RULER_H = 20;
 const ZOOMS = [5, 8, 11, 14, 18, 24];
@@ -104,22 +104,29 @@ function rangeOfSpan(chain: ChainSequence, span: PositionSpan): ResidueRange | n
 
 function Row({
   label,
+  labelExtra,
   height,
   children,
   trackRef,
   plain,
+  className,
 }: {
   label: string;
+  /** rendered after the label text (the expand/collapse toggle) */
+  labelExtra?: ReactNode;
   height: number;
   children: ReactNode;
   trackRef?: (el: HTMLDivElement | null) => void;
   /** no lane ground (the ruler) */
   plain?: boolean;
+  /** extra classes on the grid row (the ruler's stickiness) */
+  className?: string;
 }) {
   return (
-    <div className="grid items-center" style={{ gridTemplateColumns: "var(--gl) var(--lane) var(--gr)" }}>
-      <span className="sticky left-0 z-10 flex h-full items-center justify-end whitespace-nowrap bg-white pr-2.5 font-mono text-[9.5px] font-semibold uppercase tracking-wider text-ink-secondary">
+    <div className={`grid items-center ${className ?? ""}`} style={{ gridTemplateColumns: "var(--gl) var(--lane) var(--gr)" }}>
+      <span className="sticky left-0 z-10 flex h-full items-center justify-end gap-1 whitespace-nowrap bg-white pr-2.5 font-mono text-[8.5px] font-semibold uppercase tracking-wider text-ink-secondary">
         {label}
+        {labelExtra}
       </span>
       <div ref={trackRef} className={`relative ${plain ? "" : "bg-surface-muted"}`} style={{ height }}>
         {children}
@@ -225,7 +232,7 @@ const ChainHeader = memo(function ChainHeader({
   }, [chain, aTable, confPlan]);
 
   return (
-    <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 text-[10.5px] tabular-nums text-ink-muted">
+    <div className="flex shrink-0 flex-wrap items-baseline gap-x-2.5 gap-y-0.5 text-[10.5px] tabular-nums text-ink-muted">
       <span className="font-medium text-ink-secondary">Chain {chain.chain}</span>
       {chain.entityDescription && <span className="text-ink-secondary">{chain.entityDescription}</span>}
       <span>
@@ -241,11 +248,6 @@ const ChainHeader = memo(function ChainHeader({
     </div>
   );
 });
-
-/** what a right click lands on: the live multi-residue selection, or one residue */
-export type LaneContextTarget =
-  | { kind: "residue"; ref: ResidueRef }
-  | { kind: "range"; range: ResidueRange };
 
 export default function SequenceLanes({
   model,
@@ -274,13 +276,15 @@ export default function SequenceLanes({
   metricLanes: readonly LaneModule[];
   /** residue hovered in 3D, mirrored as a column */
   hoverRef: ResidueRef | null;
-  /** the committed selection (a single residue is from === to) */
-  selection: ResidueRange | null;
+  /** the committed selection (normalized ranges; a single residue is from === to) */
+  selection: ResidueRange[];
   onHover: (ref: ResidueRef | null) => void;
-  /** a click gives from === to; a drag or a feature click gives the range */
-  onSelect: (range: ResidueRange) => void;
-  /** right click: the whole selection when inside it, else the residue under the cursor */
-  onContext?: (target: LaneContextTarget, anchor: { x: number; y: number }) => void;
+  /** a click gives from === to; a drag or a feature click gives the range; additive
+   * (shift held over a span) adds to the selection instead of replacing it; toggle
+   * (shift-click on one residue) flips that residue in or out */
+  onSelect: (range: ResidueRange, opts?: { additive?: boolean; toggle?: boolean }) => void;
+  /** right click, always fired: the residue under the cursor or null — the host decides */
+  onContext?: (anchor: { x: number; y: number }, ref: ResidueRef | null) => void;
   /** rendered at the left of the toolbar (the section label, the selection chip) */
   leading?: ReactNode;
 }) {
@@ -288,6 +292,7 @@ export default function SequenceLanes({
   const [zoom, setZoom] = useState<number | null>(null);
   const [fitWidth, setFitWidth] = useState(0);
   const [enabled, setEnabled] = useState<Set<string>>(defaultEnabledLanes);
+  const [expandedLanes, setExpandedLanes] = useState<ReadonlySet<string>>(new Set());
   const [colorById, setColorById] = useState<string>("none");
   const [localHover, setLocalHover] = useState<number | null>(null);
   const [drag, setDrag] = useState<[number, number] | null>(null);
@@ -313,7 +318,8 @@ export default function SequenceLanes({
     setActiveChain((prev) => (prev && model.byChain.has(prev) ? prev : model.chains[0].chain));
   }, [model]);
   useEffect(() => {
-    if (selection && model?.byChain.has(selection.chain)) setActiveChain(selection.chain);
+    const last = selection[selection.length - 1];
+    if (last && model?.byChain.has(last.chain)) setActiveChain(last.chain);
   }, [selection, model]);
 
   const chain = activeChain && model ? (model.byChain.get(activeChain) ?? null) : null;
@@ -324,10 +330,19 @@ export default function SequenceLanes({
   const ctx = useMemo<LaneContext | null>(
     () =>
       chain
-        ? { chain, aTable, confPlan, secondary: secondaryByChain?.get(chain.chain) ?? null, metrics, colorBy, annotations }
+        ? { chain, aTable, confPlan, secondary: secondaryByChain?.get(chain.chain) ?? null, metrics, colorBy, annotations, expandedLanes }
         : null,
-    [chain, aTable, confPlan, secondaryByChain, metrics, colorBy, annotations],
+    [chain, aTable, confPlan, secondaryByChain, metrics, colorBy, annotations, expandedLanes],
   );
+
+  const toggleExpand = useCallback((id: string) => {
+    setExpandedLanes((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   // fitted lane width: the scrollport less the two gutters. Keyed on the node, not the
   // model: the scrollport mounts a commit after the model lands (once activeChain
@@ -431,10 +446,10 @@ export default function SequenceLanes({
   );
 
   const selectSpan = useCallback(
-    (span: PositionSpan) => {
+    (span: PositionSpan, opts?: { additive?: boolean }) => {
       if (!chain) return;
       const range = rangeOfSpan(chain, span);
-      if (range) onSelect(range);
+      if (range) onSelect(range, opts);
     },
     [chain, onSelect],
   );
@@ -472,13 +487,14 @@ export default function SequenceLanes({
     const start = dragStartRef.current;
     endDrag();
     if (start === null || !chain) return;
+    const additive = e.shiftKey;
     const end = posAt(e.clientX, true) ?? start;
     if (end === start) {
       const p = chain.positions[start - 1];
-      if (p?.ref && p.observed) onSelect({ chain: chain.chain, from: p.ref.seq, to: p.ref.seq });
+      if (p?.ref && p.observed) onSelect({ chain: chain.chain, from: p.ref.seq, to: p.ref.seq }, { toggle: additive });
       return;
     }
-    selectSpan(start <= end ? { start, end } : { start: end, end: start });
+    selectSpan(start <= end ? { start, end } : { start: end, end: start }, { additive });
   };
   const onPointerCancel = () => endDrag();
   const onPointerLeave = () => {
@@ -488,26 +504,27 @@ export default function SequenceLanes({
 
   // --- what is painted ---
 
-  const selectionSpan = useMemo(() => (chain ? spanOfRange(chain, selection) : null), [chain, selection]);
+  const selectionSpans = useMemo(
+    () =>
+      chain
+        ? selection
+            .map((r) => spanOfRange(chain, r))
+            .filter((s): s is PositionSpan => s !== null)
+        : [],
+    [chain, selection],
+  );
   const hoverPos =
     localHover ?? (hoverRef && chain && hoverRef.chain === chain.chain && model ? positionOf(model, hoverRef) : null);
   const dragSpan: PositionSpan | null = drag ? { start: Math.min(drag[0], drag[1]), end: Math.max(drag[0], drag[1]) } : null;
 
-  // Right click mirrors the 3D canvas: inside the (multi-residue) selection it targets
-  // the whole range, elsewhere the residue under the cursor. A from === to selection is
-  // a pick, and re-picking it is the residue path — same as in 3D.
+  // Right click mirrors the 3D canvas: the host applies the shared policy (a live
+  // selection takes the popup anywhere; otherwise the residue under the cursor).
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault(); // never the browser menu over the lanes
     if (!onContext || !chain) return;
     const pos = posAt(e.clientX, false);
-    if (pos === null) return;
-    if (selection && selection.from !== selection.to && selectionSpan && pos >= selectionSpan.start && pos <= selectionSpan.end) {
-      onContext({ kind: "range", range: selection }, { x: e.clientX, y: e.clientY });
-      return;
-    }
-    const p = chain.positions[pos - 1];
-    if (!p?.ref || !p.observed) return;
-    onContext({ kind: "residue", ref: p.ref }, { x: e.clientX, y: e.clientY });
+    const p = pos !== null ? chain.positions[pos - 1] : null;
+    onContext({ x: e.clientX, y: e.clientY }, p?.ref && p.observed ? p.ref : null);
   };
 
   const allModules = useMemo(() => [...LANE_MODULES, ...metricLanes], [metricLanes]);
@@ -550,8 +567,8 @@ export default function SequenceLanes({
   } as CSSProperties;
 
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <div className="flex flex-wrap items-center gap-2 text-[11px]">
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-1">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 text-[11px]">
         {leading}
         {model && chain && (
           <>
@@ -625,7 +642,7 @@ export default function SequenceLanes({
       ) : (
         <div
           ref={setViewerNode}
-          className="select-none overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="min-h-0 flex-1 select-none overflow-auto overscroll-contain"
           style={{ touchAction: "pan-x pan-y" }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -634,8 +651,8 @@ export default function SequenceLanes({
           onPointerLeave={onPointerLeave}
           onContextMenu={onContextMenu}
         >
-          <div className="relative flex flex-col gap-[3px]" style={boardStyle}>
-            <Row label="" height={RULER_H} trackRef={setLaneNode} plain>
+          <div className="relative flex flex-col gap-[2px]" style={boardStyle}>
+            <Row label="" height={RULER_H} trackRef={setLaneNode} plain className="sticky top-0 z-20 bg-white">
               <div className="absolute inset-x-0 bottom-0 border-b border-line-strong" />
               {ticks.map((t) => (
                 <span
@@ -649,17 +666,33 @@ export default function SequenceLanes({
               ))}
             </Row>
             {lanes.map((m) => (
-              <Row key={m.id} label={m.label} height={typeof m.height === "function" ? m.height(ctx) : m.height}>
+              <Row
+                key={m.id}
+                label={m.label}
+                labelExtra={
+                  m.expandable?.(ctx) ? (
+                    <button
+                      type="button"
+                      title={expandedLanes.has(m.id) ? "collapse to one row" : "expand into per-item rows"}
+                      onClick={() => toggleExpand(m.id)}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      className="rounded border border-line-strong bg-white px-0.5 leading-none text-ink-secondary hover:bg-accent-soft"
+                    >
+                      {expandedLanes.has(m.id) ? "−" : "+"}
+                    </button>
+                  ) : undefined
+                }
+                height={typeof m.height === "function" ? m.height(ctx) : m.height}
+              >
                 <m.Component ctx={ctx} view={view} onSelectSpan={selectSpan} />
               </Row>
             ))}
-            {(dragSpan ?? selectionSpan) && (
-              <Column
-                span={(dragSpan ?? selectionSpan)!}
-                length={length}
-                color={COLOR_SELECTION}
-                minFrac={laneWidth > 0 ? 2 / laneWidth : 0}
-              />
+            {dragSpan ? (
+              <Column span={dragSpan} length={length} color={COLOR_SELECTION} minFrac={laneWidth > 0 ? 2 / laneWidth : 0} />
+            ) : (
+              selectionSpans.map((s, i) => (
+                <Column key={i} span={s} length={length} color={COLOR_SELECTION} minFrac={laneWidth > 0 ? 2 / laneWidth : 0} />
+              ))
             )}
             {hoverPos !== null && (
               <Column
@@ -673,7 +706,7 @@ export default function SequenceLanes({
         </div>
       )}
 
-      <div className="min-h-[1rem] text-[10.5px] tabular-nums text-ink-muted">
+      <div className="min-h-[1rem] shrink-0 text-[10.5px] tabular-nums text-ink-muted">
         {readout ??
           (chain
             ? `chain ${chain.chain}: ${chain.length} residues${chain.source === "atom_site" ? " (observed residues; no sequence record in the source file)" : ""} — click a residue to select, drag for a range, click a feature for its span; pinch or +/- to zoom`

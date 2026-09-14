@@ -23,7 +23,14 @@ import {
   type DensityVolumes,
 } from "@/lib/molstar/density";
 import { CARVE_RADIUS, carveDensityToStructure } from "@/lib/molstar/carve";
-import { applyRepStyle, DEFAULT_REP_STYLE, type RepStyle } from "@/lib/molstar/repstyle";
+import {
+  applyRepStyle,
+  compSplitFromTable,
+  DEFAULT_REP_STYLE,
+  ensureLabComponents,
+  type CompSplit,
+  type RepStyle,
+} from "@/lib/molstar/repstyle";
 import {
   applyConformerStyling,
   applySecondaryGhost,
@@ -33,16 +40,32 @@ import {
   type ResidueRange,
 } from "@/lib/molstar/conformers";
 import { MetricProjector, samplerForVolume, trackToPoints } from "@/lib/molstar/project";
-import { residueLoci } from "@/lib/molstar/queries";
+import { atomsLoci, residueLoci } from "@/lib/molstar/queries";
+import { computeBonds, type BondPair } from "@/lib/molstar/interactions";
+import {
+  addRange,
+  EMPTY_SELECTION,
+  formatRanges,
+  normalizeSelection,
+  rangesContain,
+  selectionIsEmpty,
+  selectionToRanges,
+  toggleAtoms,
+  toggleResidue,
+  type AtomSel,
+  type LabSelection,
+} from "@/lib/lab/selection";
+import { loadBookmarks, MAX_BOOKMARKS, sanitizeRepStyle, saveBookmarks, type SelectionBookmark } from "@/lib/lab/bookmarks";
 import SlicePanel, { slicePlaneFor, type SliceAxis, type SlicePlane } from "@/components/lab/SlicePanel";
 import DensityFlyout from "@/components/lab/compare/DensityFlyout";
 import EntryCard from "@/components/lab/compare/EntryCard";
 import EntryChip from "@/components/lab/compare/EntryChip";
 import SelectionActionsPopup, { type ActionTarget, type ClipMode } from "@/components/lab/compare/SelectionActionsPopup";
-import SelectionFlyout, { type RangeSummary } from "@/components/lab/compare/SelectionFlyout";
-import SliceControls from "@/components/lab/compare/SliceControls";
+import SelectionFlyout, { type SelectionSummary } from "@/components/lab/compare/SelectionFlyout";
 import StyleTray from "@/components/lab/compare/StyleTray";
-import SequenceLanes, { type LaneContextTarget } from "@/components/lab/lanes/SequenceLanes";
+import BookmarkTray from "@/components/lab/compare/BookmarkTray";
+import { CARD_SHELL } from "@/components/lab/compare/ui";
+import SequenceLanes from "@/components/lab/lanes/SequenceLanes";
 import { makeMetricLane } from "@/components/lab/lanes/PlotLanes";
 import type { LaneMetric } from "@/components/lab/lanes/types";
 import { fetchPdbeAnnotations, mapAnnotations, type AnnotationsBySource, type PdbeRaw } from "@/lib/annotations/pdbe";
@@ -77,6 +100,7 @@ import {
   trackDelta,
   type Track,
 } from "@dynamic-pdb/hetkit/metrics";
+import { StructureElement } from "molstar/lib/mol-model/structure";
 import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/state";
 
 // Compare lab: TWO models of one entry against their shared map. Model A is the qFit
@@ -118,16 +142,16 @@ function residueCentroid(table: AtomTable, picked: PickInfo): [number, number, n
   return n > 0 ? [x / n, y / n, z / n] : null;
 }
 
-// Heavy-atom centroid of a whole residue range plus the radius that encloses it — the
-// range popup's clip sphere starts at fitRadius instead of the single-residue default.
-function rangeStats(
+// Heavy-atom centroid of the whole selection plus the radius that encloses it — the
+// popup's clip sphere starts at fitRadius instead of the single-residue default.
+function selectionStats(
   table: AtomTable,
-  range: ResidueRange,
+  ranges: readonly ResidueRange[],
 ): { centroid: [number, number, number]; fitRadius: number } | null {
   const rows: number[] = [];
   let x = 0, y = 0, z = 0;
   table.residues.forEach((res) => {
-    if (res.ref.chain !== range.chain || res.ref.seq < range.from || res.ref.seq > range.to) return;
+    if (!rangesContain(ranges, res.ref.chain, res.ref.seq)) return;
     for (const r of res.rows) {
       const e = table.element[r];
       if (e === "H" || e === "D") continue;
@@ -192,15 +216,22 @@ export default function CompareLabPanel() {
 
   // --- density state ---
   const [densityState, setDensityState] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  const [showDensity, setShowDensity] = useState(true); // master switch over both maps
+  // maps compute in the background but stay hidden until the tray's density icon turns
+  // them on; show2fofc stays true so that one click reveals the 2Fo-Fc
+  const [showDensity, setShowDensity] = useState(false); // master switch over both maps
   const [show2fofc, setShow2fofc] = useState(true);
   const [showFofc, setShowFofc] = useState(false);
   const [sigma, setSigma] = useState(1.5);
   const [box, setBox] = useState<{ min: [number, number, number]; max: [number, number, number] } | null>(null);
 
   // --- selection / conformers / clip ---
-  const [picked, setPicked] = useState<PickInfo | null>(null);
-  const [selRange, setSelRange] = useState<ResidueRange | null>(null);
+  // the selection is normalized author-keyed ranges refined by individual atoms; a plain
+  // click replaces it, shift-click (3D and lanes) toggles the clicked element in/out.
+  // Residue-level consumers read the derived residueRanges below.
+  const [sel, setSel] = useState<LabSelection>(EMPTY_SELECTION);
+  // picking granularity: residue-wise (default) or atom/bond-wise (session preference,
+  // switched from the Selection Actions Panel; never cleared on entry switch)
+  const [pickMode, setPickMode] = useState<"residue" | "atom">("residue");
   const [hoverInfo, setHoverInfo] = useState<PickInfo | null>(null);
   const [shownConformers, setShownConformers] = useState<ReadonlySet<string>>(new Set());
   const [globalAlt, setGlobalAlt] = useState<string | null>(null);
@@ -209,9 +240,15 @@ export default function CompareLabPanel() {
     radius: number;
     includeModel: boolean;
   } | null>(null);
-  // range: true when the right click landed inside the current range selection, so the
-  // actions panel targets the whole range instead of one residue
-  const [popup, setPopup] = useState<{ x: number; y: number; range: boolean } | null>(null);
+  // the Selection Actions Panel's anchor; it always targets the whole selection
+  const [popup, setPopup] = useState<{ x: number; y: number } | null>(null);
+
+  // the residue-level view of the selection (atom parents included, adjacent parents
+  // merged) — what every residue-keyed consumer reads; sel stays the source of truth
+  const residueRanges = useMemo(() => selectionToRanges(sel), [sel]);
+
+  // --- selection bookmarks (selection + RepStyle snapshot, persisted per entry) ---
+  const [bookmarks, setBookmarks] = useState<SelectionBookmark[]>([]);
 
   // --- PDBe annotations (lanes) ---
   const [pdbeRaw, setPdbeRaw] = useState<PdbeRaw | "loading" | null>(null);
@@ -251,8 +288,20 @@ export default function CompareLabPanel() {
   const planeRef = useRef<SlicePlane | null>(null);
   const slice3dNodeRef = useRef<string | null>(null);
   const hoverKeyRef = useRef<string | null>(null);
-  const selRangeRef = useRef<ResidueRange | null>(null); // click handler reads the live range
+  const selectionRef = useRef<LabSelection>(EMPTY_SELECTION); // click handler reads the live selection
   const autoLoadRef = useRef(false);
+  // the components effect reads the style through a ref so style changes never rebuild
+  // components (applyRepStyle restyles them in place)
+  const repStyleRef = useRef(repStyle);
+  useEffect(() => {
+    repStyleRef.current = repStyle;
+  }, [repStyle]);
+  // the density load flow builds surfaces born hidden/visible from the CURRENT toggles
+  // without gaining them as deps
+  const visRef = useRef({ showDensity, show2fofc, showFofc });
+  useEffect(() => {
+    visRef.current = { showDensity, show2fofc, showFofc };
+  }, [showDensity, show2fofc, showFofc]);
 
   // Serialize async Mol* pipelines: nothing runs concurrently, and while busy the
   // latest request wins PER KEY — rapid updates of one concern (say, conformer styling
@@ -263,6 +312,9 @@ export default function CompareLabPanel() {
     const pending = new Map<string, () => Promise<void>>();
     const run = (key: string, fn: () => Promise<void>, onError: (e: unknown) => void) => {
       if (busy.current) {
+        // delete-then-set: a re-enqueued key moves to the tail, so pending order
+        // always matches the latest enqueue order (declaration order of the effects)
+        pending.delete(key);
         pending.set(key, fn);
         return;
       }
@@ -289,7 +341,10 @@ export default function CompareLabPanel() {
     );
   }, []);
   const runStyling = useCallback((key: string, fn: () => Promise<void>) => {
-    runStylingRef.current(key, fn, (e) => console.error("styling failed:", e));
+    runStylingRef.current(key, fn, (e) => {
+      console.error(`styling failed (${key}):`, e);
+      setStatus(`styling failed (${key}): ${e instanceof Error ? e.message : String(e)}`);
+    });
   }, []);
 
   const setStage = useCallback((id: StageId, s: StageState) => {
@@ -326,8 +381,7 @@ export default function CompareLabPanel() {
       projectorRef.current = new MetricProjector();
       setProjected(null);
       setBox(null);
-      setPicked(null);
-      setSelRange(null);
+      setSel(EMPTY_SELECTION);
       setHoverInfo(null);
       setShownConformers(new Set());
       setGlobalAlt(null);
@@ -390,16 +444,20 @@ export default function CompareLabPanel() {
   // --- second model into the same scene, once the primary is in ---
 
   useEffect(() => {
-    if (!viewer || !primaryLoaded || !bText || !entry || !pair?.b || secondaryRef || secondaryBusyRef.current) return;
+    if (!viewer || !primaryLoaded || !bText || !bTable || !entry || !pair?.b || secondaryRef || secondaryBusyRef.current) return;
     secondaryBusyRef.current = true;
     viewer
-      .loadSecondary(bText, { label: `${entry.pdbId} ${pair.b.title}`, color: GHOST_B_COLOR })
+      .loadSecondary(bText, {
+        label: `${entry.pdbId} ${pair.b.title}`,
+        color: GHOST_B_COLOR,
+        split: compSplitFromTable(bTable),
+      })
       .then((ref) => setSecondaryRef(ref))
       .catch((e) => setLoadError(`model B failed: ${e instanceof Error ? e.message : String(e)}`))
       .finally(() => {
         secondaryBusyRef.current = false;
       });
-  }, [viewer, primaryLoaded, bText, entry, pair, secondaryRef]);
+  }, [viewer, primaryLoaded, bText, bTable, entry, pair, secondaryRef]);
 
   useEffect(() => {
     const ctx = viewer?.ctx;
@@ -413,6 +471,43 @@ export default function CompareLabPanel() {
     setSubtreeVisibility(ctx.state.data, secondaryRef, !showB);
   }, [viewer, secondaryRef, showB]);
 
+  // --- chemistry components of model A (lab-polymer / lab-het / lab-ion) ---
+  // Declared FIRST among the styling effects: a component rebuild wipes the conformer
+  // layers, rep params and selection marks, and declaration order = serializer enqueue
+  // order, so everything downstream re-asserts onto the fresh components.
+
+  // referentially stable across tables with the same comp split (ensemble member
+  // scrubs), so a frame change never rebuilds the components — they survive the scrub
+  const aSplitRef = useRef<CompSplit | null>(null);
+  const aSplit = useMemo(() => {
+    const next = aTable ? compSplitFromTable(aTable) : null;
+    const prev = aSplitRef.current;
+    if (
+      next &&
+      prev &&
+      prev.polymer.join() === next.polymer.join() &&
+      prev.het.join() === next.het.join() &&
+      prev.ions.join() === next.ions.join()
+    ) {
+      return prev;
+    }
+    aSplitRef.current = next;
+    return next;
+  }, [aTable]);
+
+  useEffect(() => {
+    const ctx = viewer?.ctx;
+    if (!ctx || !viewer || !primaryLoaded || !aSplit) return;
+    const structureRef = viewer.getPrimaryStructureRef();
+    if (!structureRef) return;
+    runStyling("components-a", async () => {
+      // the task may run well after enqueue; if the tree was cleared/reloaded since,
+      // bail — the fresh effect run handles the new tree
+      if (viewer.getPrimaryStructureRef() !== structureRef) return;
+      await ensureLabComponents(ctx, structureRef, aSplit, repStyleRef.current, { uniformColor: MODEL_A_COLOR });
+    });
+  }, [viewer, primaryLoaded, aSplit, runStyling]);
+
   // --- single-conformer collapse (per-residue expansion + naive global letter state) ---
 
   const altSummary = useMemo(() => (aTable ? summarizeAltlocs(aTable) : null), [aTable]);
@@ -423,11 +518,18 @@ export default function CompareLabPanel() {
     if (!ctx || !primaryLoaded) return;
     const structureRef = viewer.getPrimaryStructureRef();
     if (!structureRef) return;
-    runStyling("conformers", () =>
-      applyConformerStyling(ctx, structureRef, confPlan, { shown: shownConformers, globalAlt }),
-    );
-    // memberIndex: a frame scrub rebuilds the structure in place, dropping the layers
-  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, memberIndex, runStyling]);
+    runStyling("conformers", async () => {
+      if (viewer.getPrimaryStructureRef() !== structureRef) return;
+      await applyConformerStyling(ctx, structureRef, confPlan, {
+        shown: shownConformers,
+        globalAlt,
+        polymerAsTrace: repStyle.type === "cartoon",
+      });
+    });
+    // memberIndex: a frame scrub rebuilds the structure in place, dropping the layers;
+    // aSplit: a component rebuild drops them too; repStyle.type: cartoon excludes the
+    // polymer from the collapse layers, so a type switch re-applies them
+  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, memberIndex, aSplit, repStyle.type, runStyling]);
 
   // --- representation style (tray): in-place state-tree updates on both models ---
 
@@ -436,7 +538,10 @@ export default function CompareLabPanel() {
     if (!ctx || !viewer || !primaryLoaded) return;
     const structureRef = viewer.getPrimaryStructureRef();
     if (!structureRef) return;
-    runStyling("rep-a", () => applyRepStyle(ctx, structureRef, repStyle, { uniformColor: MODEL_A_COLOR }));
+    runStyling("rep-a", async () => {
+      if (viewer.getPrimaryStructureRef() !== structureRef) return;
+      await applyRepStyle(ctx, structureRef, repStyle, { uniformColor: MODEL_A_COLOR });
+    });
   }, [viewer, primaryLoaded, repStyle, runStyling]);
 
   useEffect(() => {
@@ -445,61 +550,213 @@ export default function CompareLabPanel() {
     runStyling("rep-b", () => applyRepStyle(ctx, secondaryRef, repStyle, { uniformColor: GHOST_B_COLOR, ghost: true }));
   }, [viewer, secondaryRef, repStyle, runStyling]);
 
-  // --- selection marking: the picked residue / barplot range becomes a Mol* selection
-  // (the default green select tint), replacing the old navy overpaint. Declared AFTER
-  // the rep-style effects and keyed separately in the serializer, so on a representation
-  // rebuild (which drops marker state) the re-assert runs last; conformer restyles are
-  // deps for the same reason.
+  // --- clip composition: residue sphere on the density (and, when isolating, on the
+  // models too), slice plane on density + models. Serialized between the rep effects
+  // and the selection re-assert: setClipObjects snapshots the tree at build time, so
+  // running it concurrently with a style commit reverted the style wholesale (the old
+  // dead-rep-buttons race).
+
+  useEffect(() => {
+    const ctx = viewer?.ctx;
+    if (!ctx || !viewer) return;
+    runStyling("clip", async () => {
+      const plane = planeRef.current;
+      const planeObj = sliceModel && plane ? clipPlaneObject(plane.point, plane.normal) : null;
+      const sphereObj = clip ? clipSphereObject(clip.center, clip.radius) : null;
+      const r = reprsRef.current;
+      if (r && densityState === "ready") {
+        const densityObjs = [...(sphereObj ? [sphereObj] : []), ...(planeObj ? [planeObj] : [])];
+        const densityRefs = [r.twoFoFc, r.foFcPos, r.foFcNeg];
+        // re-assert after the update: a recreated isosurface visual comes back pickable
+        await setClipObjects(ctx, densityRefs, densityObjs);
+        setReprsPickable(ctx, densityRefs, false);
+      }
+      const primaryStructureRef = viewer.getPrimaryStructureRef();
+      const structReprs = [
+        ...(primaryStructureRef ? representationRefsForStructure(ctx, primaryStructureRef) : []),
+        ...(secondaryRef ? representationRefsForStructure(ctx, secondaryRef) : []),
+      ];
+      const structObjs = [
+        ...(clip?.includeModel && sphereObj ? [sphereObj] : []),
+        ...(planeObj ? [planeObj] : []),
+      ];
+      if (structReprs.length) await setClipObjects(ctx, structReprs, structObjs);
+    });
+    // repStyle: a full-params representation update wipes type.params.clip, so clip
+    // re-applies after every style change; densityVersion: same, for rebuilt surfaces;
+    // aSplit: rebuilt components carry fresh reprs.
+  }, [viewer, clip, sliceModel, planeVersion, densityState, secondaryRef, primaryLoaded, repStyle, aSplit, densityVersion, runStyling]);
+
+  // --- selection marking: the selected ranges become a Mol* selection (the default
+  // green select tint). Declared AFTER the rep-style and clip effects and keyed
+  // separately in the serializer, so on a representation rebuild (which drops marker
+  // state) the re-assert runs last; conformer restyles are deps for the same reason.
 
   useEffect(() => {
     if (!viewer || !primaryLoaded) return;
     runStyling("selection", async () => {
       const structure = viewer.getCurrentStructure();
       if (!structure) return;
-      const loci = selRange
-        ? residueLoci(structure, selRange.chain, selRange.from, selRange.to)
-        : picked
-          ? residueLoci(structure, picked.chainId, picked.authSeqId)
-          : null;
+      let loci: StructureElement.Loci | null = null;
+      for (const r of sel.ranges) {
+        const l = residueLoci(structure, r.chain, r.from, r.to);
+        if (!l) continue;
+        loci = loci ? StructureElement.Loci.union(loci, l) : l;
+      }
+      const atomLoci = atomsLoci(structure, sel.atoms);
+      if (atomLoci) loci = loci ? StructureElement.Loci.union(loci, atomLoci) : atomLoci;
       if (loci) viewer.setSelection(loci);
       else viewer.clearSelection();
     });
     // memberIndex: the selection marker must re-assert on the rebuilt frame
-  }, [viewer, primaryLoaded, picked, selRange, repStyle, shownConformers, globalAlt, confPlan, memberIndex, runStyling]);
+  }, [viewer, primaryLoaded, sel, repStyle, shownConformers, globalAlt, confPlan, memberIndex, aSplit, runStyling]);
 
-  // --- interaction: left click selects; right click opens the Selection Actions Panel —
-  // on the picked residue, or on the WHOLE range selection when the click lands inside
-  // it. Both ride Mol*'s click event, which fires for any button with a FRESH synchronous
-  // pick at the release point (hover is async/throttled and used to go stale here) and
-  // already rejects camera drags (no click when the pointer moved between down and up).
-  // contextmenu is only suppressed (it fires on mousedown on macOS).
+  // --- typed non-covalent bonds (Mol* interaction engine), computed once per loaded
+  // frame; the selection flyout filters them to the current selection. Pure compute —
+  // no state-tree writes, so it does not ride the styling serializer.
+
+  const [bonds, setBonds] = useState<BondPair[] | null>(null);
+  useEffect(() => {
+    setBonds(null);
+    const ctx = viewer?.ctx;
+    if (!ctx || !viewer || !primaryLoaded) return;
+    const structure = viewer.getCurrentStructure();
+    if (!structure) return;
+    let stale = false;
+    computeBonds(ctx, structure)
+      .then((b) => {
+        if (!stale) setBonds(b);
+      })
+      .catch((e) => console.error("interaction computation failed:", e));
+    return () => {
+      stale = true;
+    };
+    // memberIndex: a frame scrub swaps the structure under the same refs
+  }, [viewer, primaryLoaded, memberIndex]);
+
+  const selectionBonds = useMemo(() => {
+    if (!bonds || !residueRanges.length) return [];
+    return bonds.filter(
+      (p) => rangesContain(residueRanges, p.a.chain, p.a.seq) || rangesContain(residueRanges, p.b.chain, p.b.seq),
+    );
+  }, [bonds, residueRanges]);
+
+  const bondPairLoci = useCallback(
+    (pair: BondPair) => {
+      const structure = viewer?.getCurrentStructure();
+      if (!structure) return null;
+      const la = residueLoci(structure, pair.a.chain, pair.a.seq);
+      const lb = residueLoci(structure, pair.b.chain, pair.b.seq);
+      if (la && lb) return StructureElement.Loci.union(la, lb);
+      return la ?? lb ?? null;
+    },
+    [viewer],
+  );
+  const onBondHover = useCallback(
+    (pair: BondPair | null) => {
+      if (!viewer) return;
+      viewer.highlightLoci(pair ? bondPairLoci(pair) : null);
+    },
+    [viewer, bondPairLoci],
+  );
+  const onBondFocus = useCallback(
+    (pair: BondPair) => {
+      const loci = bondPairLoci(pair);
+      if (loci && viewer) viewer.focusLoci(loci);
+    },
+    [viewer, bondPairLoci],
+  );
+
+  // --- interaction: left click selects (shift toggles the clicked residue or atom in
+  // and out, file-browser style); right click always opens the Selection Actions Panel —
+  // on the whole selection when one exists, seeding the element under the cursor
+  // otherwise. Both ride Mol*'s click event, which fires for any
+  // button with a FRESH synchronous pick at the release point (hover is async/throttled
+  // and used to go stale here) and already rejects camera drags (no click when the
+  // pointer moved between down and up). contextmenu is only suppressed (it fires on
+  // mousedown on macOS).
 
   useEffect(() => {
-    selRangeRef.current = selRange;
-  }, [selRange]);
+    selectionRef.current = sel;
+  }, [sel]);
+
+  // hover-highlight granularity follows the pick mode; clicks arrive atom-precise
+  // either way (granularity only shapes what the mark managers light up)
+  useEffect(() => {
+    if (!viewer) return;
+    viewer.setGranularity(pickMode === "atom" ? "element" : "residue");
+  }, [viewer, pickMode, primaryLoaded]);
+
+  // distinct atom names per residue (altloc copies deduped, hydrogens kept — anything
+  // clickable must be togglable): the enumeration toggleAtoms needs to explode a
+  // range-covered residue into its remaining atoms
+  const residueAtomNamesMap = useMemo(() => {
+    const map = new Map<string, string[]>();
+    if (!aTable) return map;
+    for (const res of aTable.residues) {
+      const names = new Set<string>();
+      for (const r of res.rows) names.add(aTable.atomName[r]);
+      map.set(`${res.ref.chain}|${res.ref.seq}`, [...names]);
+    }
+    return map;
+  }, [aTable]);
+  const residueAtomNames = useCallback(
+    (chain: string, seq: number) => residueAtomNamesMap.get(`${chain}|${seq}`) ?? [],
+    [residueAtomNamesMap],
+  );
 
   useEffect(() => {
     if (!viewer) return;
     return viewer.subscribeToClick((info, meta) => {
-      if (meta.button === 2) {
-        if (info && meta.clientX != null && meta.clientY != null) {
-          const r = selRangeRef.current;
-          const inRange = !!r && info.chainId === r.chain && info.authSeqId >= r.from && info.authSeqId <= r.to;
-          if (!inRange) {
-            setPicked(info);
-            setSelRange(null);
-          }
-          setPopup({ x: meta.clientX, y: meta.clientY, range: inRange });
-        } else {
-          setPopup(null);
-        }
+      // middle click: reset the camera (and nothing else — without this it fell through
+      // to the left-click branch and cleared the selection)
+      if (meta.button === 4) {
+        void viewer.resetCamera();
         return;
       }
-      setPicked(info);
-      setSelRange(null); // a 3D click supersedes any barplot range selection
-      setPopup(null);
+      // an atom-mode pick takes the atom, and both end atoms when it landed on a bond
+      const pickedAtoms = (p: PickInfo): AtomSel[] => {
+        const end: AtomSel = { chain: p.chainId, seq: p.authSeqId, atom: p.atomId };
+        return p.bondPartner
+          ? [end, { chain: p.bondPartner.chainId, seq: p.bondPartner.authSeqId, atom: p.bondPartner.atomId }]
+          : [end];
+      };
+      if (meta.button === 2) {
+        const anchor = meta.clientX != null && meta.clientY != null ? { x: meta.clientX, y: meta.clientY } : null;
+        if (!anchor) return;
+        // the popup opens regardless — with neither selection nor pick it still offers
+        // the pick-mode toggles; a pick under the cursor seeds the selection first
+        if (selectionIsEmpty(selectionRef.current) && info) {
+          setSel(
+            pickMode === "atom"
+              ? normalizeSelection({ ranges: [], atoms: pickedAtoms(info) })
+              : { ranges: [{ chain: info.chainId, from: info.authSeqId, to: info.authSeqId }], atoms: [] },
+          );
+        }
+        setPopup(anchor);
+        return;
+      }
+      const shift = !!meta.modifiers?.shift;
+      if (info) {
+        if (pickMode === "atom") {
+          const picked = pickedAtoms(info);
+          setSel((prev) =>
+            shift ? toggleAtoms(prev, picked, residueAtomNames) : normalizeSelection({ ranges: [], atoms: picked }),
+          );
+        } else {
+          setSel((prev) =>
+            shift
+              ? toggleResidue(prev, info.chainId, info.authSeqId)
+              : { ranges: [{ chain: info.chainId, from: info.authSeqId, to: info.authSeqId }], atoms: [] },
+          );
+        }
+        if (!shift) setPopup(null);
+      } else if (!shift) {
+        setSel(EMPTY_SELECTION);
+        setPopup(null);
+      }
     });
-  }, [viewer]);
+  }, [viewer, pickMode, residueAtomNames]);
 
   useEffect(() => {
     if (!viewer) return;
@@ -554,13 +811,17 @@ export default function CompareLabPanel() {
         carveDensityToStructure(ctx, vols, structure);
         setStage("carve", "done");
         setStage("iso", "active");
-        const reprs = await buildIsosurfaces(ctx, vols);
+        const vis = visRef.current;
+        const reprs = await buildIsosurfaces(ctx, vols, {
+          hidden: {
+            twoFoFc: !(vis.show2fofc && vis.showDensity),
+            foFc: !(vis.showFofc && vis.showDensity),
+          },
+        });
         if (stale()) return;
         setStage("iso", "done");
         volsRef.current = vols;
         reprsRef.current = reprs;
-        const b = structure.boundary.box;
-        setBox({ min: [b.min[0], b.min[1], b.min[2]], max: [b.max[0], b.max[1], b.max[2]] });
         setProvenance((prev) => [
           ...prev,
           {
@@ -613,18 +874,18 @@ export default function CompareLabPanel() {
     const ctx = viewer?.ctx;
     const ref = reprsRef.current?.twoFoFc;
     if (!ctx || !ref || densityState !== "ready") return;
-    const t = setTimeout(() => void updateIsoSigma(ctx, ref, sigma), 80);
+    const t = setTimeout(() => runStyling("iso-sigma", () => updateIsoSigma(ctx, ref, sigma)), 80);
     return () => clearTimeout(t);
-  }, [viewer, sigma, densityState, densityVersion]);
+  }, [viewer, sigma, densityState, densityVersion, runStyling]);
 
   // opacity slider: factor over both maps' base alphas, debounced like the contour
   useEffect(() => {
     const ctx = viewer?.ctx;
     const r = reprsRef.current;
     if (!ctx || !r || densityState !== "ready") return;
-    const t = setTimeout(() => void setDensityAlpha(ctx, r, densityOpacity), 80);
+    const t = setTimeout(() => runStyling("density-alpha", () => setDensityAlpha(ctx, r, densityOpacity)), 80);
     return () => clearTimeout(t);
-  }, [viewer, densityOpacity, densityState, densityVersion]);
+  }, [viewer, densityOpacity, densityState, densityVersion, runStyling]);
 
   // --- density quality: re-carve from the pristine grids, tear down + rebuild surfaces ---
 
@@ -656,6 +917,10 @@ export default function CompareLabPanel() {
             sigma,
             alphaFactor: densityOpacity,
             gpuDataType: spec.gpuDataType,
+            hidden: {
+              twoFoFc: !(show2fofc && showDensity),
+              foFc: !(showFofc && showDensity),
+            },
           });
           if (slice3d && vols.twoFoFc && planeRef.current) {
             const p = planeRef.current;
@@ -669,38 +934,8 @@ export default function CompareLabPanel() {
         }
       })();
     },
-    [viewer, densityState, densityBusy, densityQuality, sigma, densityOpacity, slice3d],
+    [viewer, densityState, densityBusy, densityQuality, sigma, densityOpacity, slice3d, showDensity, show2fofc, showFofc],
   );
-
-  // --- clip composition: residue sphere on the density (and, when isolating, on the
-  // models too), slice plane on density + models ---
-
-  useEffect(() => {
-    const ctx = viewer?.ctx;
-    if (!ctx || !viewer) return;
-    const plane = planeRef.current;
-    const planeObj = sliceModel && plane ? clipPlaneObject(plane.point, plane.normal) : null;
-    const sphereObj = clip ? clipSphereObject(clip.center, clip.radius) : null;
-    const r = reprsRef.current;
-    if (r && densityState === "ready") {
-      const densityObjs = [...(sphereObj ? [sphereObj] : []), ...(planeObj ? [planeObj] : [])];
-      const densityRefs = [r.twoFoFc, r.foFcPos, r.foFcNeg];
-      // re-assert after the update: a recreated isosurface visual comes back pickable
-      void setClipObjects(ctx, densityRefs, densityObjs).then(() => setReprsPickable(ctx, densityRefs, false));
-    }
-    const primaryStructureRef = viewer.getPrimaryStructureRef();
-    const structReprs = [
-      ...(primaryStructureRef ? representationRefsForStructure(ctx, primaryStructureRef) : []),
-      ...(secondaryRef ? representationRefsForStructure(ctx, secondaryRef) : []),
-    ];
-    const structObjs = [
-      ...(clip?.includeModel && sphereObj ? [sphereObj] : []),
-      ...(planeObj ? [planeObj] : []),
-    ];
-    if (structReprs.length) void setClipObjects(ctx, structReprs, structObjs);
-    // repStyle: a full-params representation update wipes type.params.clip, so clip
-    // re-applies after every style change; densityVersion: same, for rebuilt surfaces.
-  }, [viewer, clip, sliceModel, planeVersion, densityState, secondaryRef, primaryLoaded, repStyle, densityVersion]);
 
   // --- ensemble members: one AtomTable per MODEL frame of model A ---
 
@@ -872,6 +1107,15 @@ export default function CompareLabPanel() {
 
   // --- slice plane wiring ---
 
+  // The model box frames the slice plane; taken from the structure itself so the plane
+  // (and slice-model clipping) works before any density is in.
+  useEffect(() => {
+    if (!viewer || !primaryLoaded) return;
+    const structure = viewer.getCurrentStructure();
+    const b = structure?.boundary.box;
+    if (b) setBox({ min: [b.min[0], b.min[1], b.min[2]], max: [b.max[0], b.max[1], b.max[2]] });
+  }, [viewer, primaryLoaded, memberIndex]);
+
   // The plane is parent state (normal axis + position through the model box), so it exists
   // whether or not the 2D map is shown. The ref is written synchronously for the effects
   // that read it in the same commit; the version bump and the in-scene slice update are
@@ -888,40 +1132,69 @@ export default function CompareLabPanel() {
       setPlaneVersion((v) => v + 1);
       const ctx = viewer?.ctx;
       if (ctx && slice3dNodeRef.current) {
-        void updateSlice(ctx, slice3dNodeRef.current, slicePlane.point, slicePlane.normal);
+        runStyling("slice-plane", async () => {
+          if (slice3dNodeRef.current) await updateSlice(ctx, slice3dNodeRef.current, slicePlane.point, slicePlane.normal);
+        });
       }
     }, 60);
     return () => clearTimeout(timer);
-  }, [slicePlane, viewer]);
+  }, [slicePlane, viewer, runStyling]);
 
+  // One reconciling task (its own key, so a queued plane update never displaces it):
+  // latest-wins per key means a rapid on/off leaves only the newest intent.
   useEffect(() => {
     const ctx = viewer?.ctx;
     const vol = volsRef.current?.twoFoFc;
     if (!ctx || !vol || densityState !== "ready") return;
-    if (slice3d && !slice3dNodeRef.current && planeRef.current) {
-      const p = planeRef.current;
-      void createSlice(ctx, vol, p.point, p.normal).then((ref) => {
-        slice3dNodeRef.current = ref;
-      });
-    } else if (!slice3d && slice3dNodeRef.current) {
-      void removeNode(ctx, slice3dNodeRef.current);
-      slice3dNodeRef.current = null;
-    }
+    const want = slice3d;
+    runStyling("slice-node", async () => {
+      if (want && !slice3dNodeRef.current && planeRef.current) {
+        const p = planeRef.current;
+        slice3dNodeRef.current = await createSlice(ctx, vol, p.point, p.normal);
+      } else if (!want && slice3dNodeRef.current) {
+        await removeNode(ctx, slice3dNodeRef.current);
+        slice3dNodeRef.current = null;
+      }
+    });
     // planeVersion: after an entry switch planeRef is null until the new box yields a plane;
     // the bump retries the create once a plane exists again.
-  }, [viewer, slice3d, densityState, planeVersion]);
+  }, [viewer, slice3d, densityState, planeVersion, runStyling]);
 
-  // --- selection helpers (popup + barplot) ---
+  // --- selection helpers (popup + flyout + lanes) ---
+
+  // an author-keyed lane residue as a PickInfo, centroid included (what a 3D pick carries)
+  const pickFromRef = useCallback(
+    (ref: ResidueRef): PickInfo | null => {
+      if (!aTable) return null;
+      const res = aTable.residues.find((r) => r.ref.chain === ref.chain && r.ref.seq === ref.seq);
+      if (!res) return null;
+      const info: PickInfo = { chainId: res.ref.chain, authSeqId: res.ref.seq, compId: res.compId, atomId: "", altId: "", insCode: res.ref.ins };
+      const c = residueCentroid(aTable, info);
+      return { ...info, position3d: c ?? undefined };
+    },
+    [aTable],
+  );
+
+  // a selection of exactly one residue behaves like the old single pick: it feeds the
+  // support table and the popup's comp header (the clicked atom's altId is not tracked)
+  const soleResidue = useMemo(
+    () => (residueRanges.length === 1 && residueRanges[0].from === residueRanges[0].to ? residueRanges[0] : null),
+    [residueRanges],
+  );
+  const picked = useMemo<PickInfo | null>(
+    () => (soleResidue ? pickFromRef({ chain: soleResidue.chain, seq: soleResidue.from, ins: "" }) : null),
+    [soleResidue, pickFromRef],
+  );
 
   const pickedKey = picked ? residueIdKey({ chain: picked.chainId, seq: picked.authSeqId, ins: picked.insCode }) : null;
   const pickedAltIds = pickedKey ? (confPlan.byKey.get(pickedKey)?.altIds ?? []) : [];
   const pickedConformerCount = pickedKey ? (pickedAltIds.length || 1) : null;
   const pickedShown = !!(pickedKey && shownConformers.has(pickedKey));
 
-  // aggregates of the current range selection: what the range-mode actions panel acts
-  // on, plus the occupancy/heterogeneity summary the selection flyout reports
-  const rangeInfo = useMemo(() => {
-    if (!aTable || !selRange) return null;
+  // aggregates over the whole selection: what the actions panel acts on, plus the
+  // occupancy/heterogeneity summary the selection flyout reports
+  const selectionInfo = useMemo(() => {
+    if (!aTable || !residueRanges.length) return null;
     const splitKeys: string[] = [];
     const letters = new Set<string>();
     const histogram = new Map<number, number>();
@@ -929,7 +1202,7 @@ export default function CompareLabPanel() {
     let bSum = 0, bN = 0, occSum = 0, occN = 0;
     for (const res of aTable.residues) {
       if (WATER_COMPS.has(res.compId)) continue;
-      if (res.ref.chain !== selRange.chain || res.ref.seq < selRange.from || res.ref.seq > selRange.to) continue;
+      if (!rangesContain(residueRanges, res.ref.chain, res.ref.seq)) continue;
       residueCount++;
       const key = residueKey(res.ref);
       const alt = confPlan.byKey.get(key);
@@ -951,60 +1224,48 @@ export default function CompareLabPanel() {
       residueCount,
       splitKeys,
       letters: [...letters].sort(),
-      stats: rangeStats(aTable, selRange),
+      stats: selectionStats(aTable, residueRanges),
       histogram: [...histogram.entries()].sort((a, b) => a[0] - b[0]) as [number, number][],
       meanAltOcc: occN ? occSum / occN : null,
       meanB: bN ? bSum / bN : null,
     };
-  }, [aTable, selRange, confPlan]);
+  }, [aTable, residueRanges, confPlan]);
 
-  const rangeSummary = useMemo<RangeSummary | null>(
+  const selectionSummary = useMemo<SelectionSummary | null>(
     () =>
-      selRange && rangeInfo
+      residueRanges.length && selectionInfo
         ? {
-            chain: selRange.chain,
-            from: selRange.from,
-            to: selRange.to,
-            residueCount: rangeInfo.residueCount,
-            splitCount: rangeInfo.splitKeys.length,
-            histogram: rangeInfo.histogram,
-            meanAltOcc: rangeInfo.meanAltOcc,
-            meanB: rangeInfo.meanB,
+            label: formatRanges(residueRanges, { maxSegments: 3 }),
+            residueCount: selectionInfo.residueCount,
+            splitCount: selectionInfo.splitKeys.length,
+            histogram: selectionInfo.histogram,
+            meanAltOcc: selectionInfo.meanAltOcc,
+            meanB: selectionInfo.meanB,
           }
         : null,
-    [selRange, rangeInfo],
+    [residueRanges, selectionInfo],
   );
 
-  const popupIsRange = !!popup?.range && !!selRange && !!rangeInfo;
-  const popupShown = popupIsRange
-    ? rangeInfo!.splitKeys.length > 0 && rangeInfo!.splitKeys.every((k) => shownConformers.has(k))
-    : pickedShown;
+  const popupShown =
+    !!selectionInfo &&
+    selectionInfo.splitKeys.length > 0 &&
+    selectionInfo.splitKeys.every((k) => shownConformers.has(k));
 
-  // residue mode toggles the picked residue; range mode toggles EVERY split residue of
-  // the range at once (all shown -> collapse all, otherwise expand all)
+  // toggles EVERY split residue of the selection at once (all shown -> collapse all,
+  // otherwise expand all)
   const togglePopupConformers = useCallback(() => {
-    if (popupIsRange) {
-      const keys = rangeInfo!.splitKeys;
-      if (!keys.length) return;
-      setShownConformers((prev) => {
-        const next = new Set(prev);
-        const allShown = keys.every((k) => next.has(k));
-        for (const k of keys) {
-          if (allShown) next.delete(k);
-          else next.add(k);
-        }
-        return next;
-      });
-      return;
-    }
-    if (!pickedKey) return;
+    const keys = selectionInfo?.splitKeys ?? [];
+    if (!keys.length) return;
     setShownConformers((prev) => {
       const next = new Set(prev);
-      if (next.has(pickedKey)) next.delete(pickedKey);
-      else next.add(pickedKey);
+      const allShown = keys.every((k) => next.has(k));
+      for (const k of keys) {
+        if (allShown) next.delete(k);
+        else next.add(k);
+      }
       return next;
     });
-  }, [popupIsRange, rangeInfo, pickedKey]);
+  }, [selectionInfo]);
 
   const applyClip = useCallback(
     (mode: ClipMode, radius: number) => {
@@ -1012,22 +1273,57 @@ export default function CompareLabPanel() {
         setClip(null);
         return;
       }
-      if (!aTable) return;
-      const c = popupIsRange
-        ? (rangeInfo!.stats?.centroid ?? null)
-        : picked
-          ? residueCentroid(aTable, picked)
-          : null;
+      const c = selectionInfo?.stats?.centroid ?? null;
       if (c) setClip({ center: c, radius, includeModel: mode === "all" });
     },
-    [popupIsRange, rangeInfo, picked, aTable],
+    [selectionInfo],
   );
 
   const clearSelection = useCallback(() => {
-    setPicked(null);
-    setSelRange(null);
+    setSel(EMPTY_SELECTION);
     setClip(null);
     setPopup(null);
+  }, []);
+
+  // --- bookmarks: load per entry; persist ONLY from the action callbacks (a
+  // save-on-change effect would clobber storage with [] during the entry switch) ---
+
+  useEffect(() => {
+    setBookmarks(entry ? loadBookmarks(entry.pdbId) : []);
+  }, [entry]);
+
+  const addBookmark = useCallback(() => {
+    const entryId = entry?.pdbId;
+    if (!entryId || selectionIsEmpty(sel)) return;
+    setBookmarks((prev) => {
+      if (prev.length >= MAX_BOOKMARKS) return prev;
+      const next = [
+        ...prev,
+        { id: `${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6)}`, createdAt: Date.now(), selection: sel, repStyle },
+      ];
+      saveBookmarks(entryId, next);
+      return next;
+    });
+  }, [entry, sel, repStyle]);
+
+  const deleteBookmark = useCallback(
+    (bookmarkId: string) => {
+      const entryId = entry?.pdbId;
+      if (!entryId) return;
+      setBookmarks((prev) => {
+        const next = prev.filter((b) => b.id !== bookmarkId);
+        saveBookmarks(entryId, next);
+        return next;
+      });
+    },
+    [entry],
+  );
+
+  // resurrect: the selection and the RepStyle it was saved with, both flowing through
+  // the existing effects/serializer (stale chain ids just yield empty loci)
+  const applyBookmark = useCallback((b: SelectionBookmark) => {
+    setSel(normalizeSelection(b.selection));
+    setRepStyle(sanitizeRepStyle(b.repStyle));
   }, []);
 
   // every altloc letter of model A, with how many residues carry it (the state buttons)
@@ -1055,10 +1351,6 @@ export default function CompareLabPanel() {
   const laneHoverRef = useMemo<ResidueRef | null>(
     () => (hoverInfo ? { chain: hoverInfo.chainId, seq: hoverInfo.authSeqId, ins: hoverInfo.insCode } : null),
     [hoverInfo],
-  );
-  const laneSelection = useMemo<ResidueRange | null>(
-    () => selRange ?? (picked ? { chain: picked.chainId, from: picked.authSeqId, to: picked.authSeqId } : null),
-    [selRange, picked],
   );
 
   // entry-level facts from the deposited CIF header (model A's own header as fallback)
@@ -1091,55 +1383,30 @@ export default function CompareLabPanel() {
     return mapAnnotations(pdbeRaw, seqModel);
   }, [pdbeRaw, seqModel]);
 
-  // an author-keyed lane residue as a PickInfo, centroid included (what a 3D pick carries)
-  const pickFromRef = useCallback(
-    (ref: ResidueRef): PickInfo | null => {
-      if (!aTable) return null;
-      const res = aTable.residues.find((r) => r.ref.chain === ref.chain && r.ref.seq === ref.seq);
-      if (!res) return null;
-      const info: PickInfo = { chainId: res.ref.chain, authSeqId: res.ref.seq, compId: res.compId, altId: "", insCode: res.ref.ins };
-      const c = residueCentroid(aTable, info);
-      return { ...info, position3d: c ?? undefined };
-    },
-    [aTable],
-  );
+  // a lane click or drag lands here as an author-keyed range; a shift-drag stays purely
+  // additive (a sweep means "make sure this is selected"), a shift-click on one residue
+  // toggles it like a 3D shift-click
+  const onLaneSelect = useCallback((range: ResidueRange, opts?: { additive?: boolean; toggle?: boolean }) => {
+    if (opts?.toggle) {
+      setSel((prev) => toggleResidue(prev, range.chain, range.from));
+      return;
+    }
+    setSel((prev) =>
+      opts?.additive
+        ? normalizeSelection({ ranges: addRange(prev.ranges, range), atoms: prev.atoms })
+        : { ranges: [range], atoms: [] },
+    );
+    if (!opts?.additive) setPopup(null);
+  }, []);
 
-  // a single residue becomes the pick (3D selection marker + actions panel target); a
-  // drag becomes the range selection
-  const onLaneSelect = useCallback(
-    (range: ResidueRange) => {
-      if (range.from === range.to) {
-        const info = pickFromRef({ chain: range.chain, seq: range.from, ins: "" });
-        if (info) {
-          setPicked(info);
-          setSelRange(null);
-          setPopup(null);
-          return;
-        }
-      }
-      setSelRange(range);
-      setPicked(null);
-      setPopup(null);
-    },
-    [pickFromRef],
-  );
-
-  // right click in the lanes opens the same actions popup as a right click in 3D
-  const onLaneContext = useCallback(
-    (target: LaneContextTarget, anchor: { x: number; y: number }) => {
-      if (target.kind === "range") {
-        // only emitted for the live multi-residue selection: selRange already holds it
-        setPopup({ x: anchor.x, y: anchor.y, range: true });
-        return;
-      }
-      const info = pickFromRef(target.ref);
-      if (!info) return;
-      setPicked(info);
-      setSelRange(null);
-      setPopup({ x: anchor.x, y: anchor.y, range: false });
-    },
-    [pickFromRef],
-  );
+  // right click in the lanes follows the same policy as a right click in 3D: the popup
+  // always opens; with no live selection the residue under the cursor seeds it first
+  const onLaneContext = useCallback((anchor: { x: number; y: number }, ref: ResidueRef | null) => {
+    if (selectionIsEmpty(selectionRef.current) && ref) {
+      setSel({ ranges: [{ chain: ref.chain, from: ref.seq, to: ref.seq }], atoms: [] });
+    }
+    setPopup(anchor);
+  }, []);
 
   // rAF-throttled: lane hover arrives at pointer rate; Mol*'s mark + redraw should run
   // at most once per frame, on the latest residue.
@@ -1188,28 +1455,23 @@ export default function CompareLabPanel() {
     [lanesHeight],
   );
 
-  const popupTarget: ActionTarget | null = !popup
-    ? null
-    : popup.range
-      ? selRange && rangeInfo
-        ? {
-            kind: "range",
-            chain: selRange.chain,
-            from: selRange.from,
-            to: selRange.to,
-            residueCount: rangeInfo.residueCount,
-            splitCount: rangeInfo.splitKeys.length,
-            letters: rangeInfo.letters,
-          }
-        : null
-      : picked
-        ? { kind: "residue", pick: picked, altIds: pickedAltIds }
-        : null;
-  // a fresh range popup opens with the sphere that just encloses the range
+  // null with an empty selection — the popup still renders (mode toggles) without it
+  const popupTarget: ActionTarget | null =
+    residueRanges.length && selectionInfo
+      ? {
+          ranges: residueRanges,
+          label: formatRanges(residueRanges, { maxSegments: 3 }),
+          residueCount: selectionInfo.residueCount,
+          splitCount: selectionInfo.splitKeys.length,
+          letters: selectionInfo.letters,
+          compId: picked?.compId,
+        }
+      : null;
+  // a fresh popup opens with the sphere that just encloses the selection
   const popupClipRadius =
     clip?.radius ??
-    (popupIsRange && rangeInfo?.stats
-      ? Math.min(40, Math.max(5, Math.ceil(rangeInfo.stats.fitRadius)))
+    (selectionInfo?.stats
+      ? Math.min(40, Math.max(5, Math.ceil(selectionInfo.stats.fitRadius)))
       : DEFAULT_CLIP_RADIUS);
 
   // the two parent-built tray flyouts (state stays here; StyleTray only positions them)
@@ -1242,6 +1504,16 @@ export default function CompareLabPanel() {
       onDensityQuality={changeDensityQuality}
       showSlice2d={showSlice2d}
       onShowSlice2d={setShowSlice2d}
+      boxReady={!!box}
+      slice3d={slice3d}
+      onSlice3d={setSlice3d}
+      sliceModel={sliceModel}
+      onSliceModel={setSliceModel}
+      sliceAxis={sliceAxis}
+      onSliceAxis={setSliceAxis}
+      sliceFrac={sliceFrac}
+      onSliceFrac={setSliceFrac}
+      sliceCoord={slicePlane?.point[sliceAxis] ?? null}
     />
   );
   const selectionFlyout = (
@@ -1252,8 +1524,8 @@ export default function CompareLabPanel() {
       conformersShown={pickedShown}
       densitySampler={densitySampler}
       fofcSampler={fofcSampler}
-      selRange={selRange}
-      rangeSummary={rangeSummary}
+      selection={residueRanges}
+      summary={selectionSummary}
       stateLetters={stateLetters}
       globalAlt={globalAlt}
       onGlobalAlt={setGlobalAlt}
@@ -1261,6 +1533,10 @@ export default function CompareLabPanel() {
       memberNums={ensembleInfo?.modelNums ?? []}
       memberIndex={memberIndex}
       onMember={setMember}
+      selectionBonds={selectionBonds}
+      bondsReady={bonds !== null}
+      onBondHover={onBondHover}
+      onBondFocus={onBondFocus}
     />
   );
 
@@ -1268,6 +1544,18 @@ export default function CompareLabPanel() {
     <div className="flex h-screen min-h-0 flex-col bg-white text-[12px] text-ink-secondary">
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto border-r border-line bg-surface-muted p-3">
+          <EntryChip
+            entry={entry}
+            entryInput={entryInput}
+            onEntryInput={setEntryInput}
+            onLoad={() => startLoad(entryInput)}
+            loading={loading}
+            stages={stages}
+            provenance={provenance}
+            error={loadError}
+            showRetryDensity={densityState === "error"}
+            onRetryDensity={retryDensity}
+          />
           <EntryCard
             entry={entry}
             desc={entryDesc}
@@ -1280,18 +1568,7 @@ export default function CompareLabPanel() {
         <div className="relative min-w-0 flex-1" onContextMenu={(e) => e.preventDefault()}>
           <MolstarViewer data={aText} binary={false} view={VIEW} variant="lab" onReady={setViewer} onLoaded={onPrimaryLoaded} />
           <div className="absolute right-2 top-2 z-10 flex items-start gap-1.5">
-            <EntryChip
-              entry={entry}
-              entryInput={entryInput}
-              onEntryInput={setEntryInput}
-              onLoad={() => startLoad(entryInput)}
-              loading={loading}
-              stages={stages}
-              provenance={provenance}
-              error={loadError}
-              showRetryDensity={densityState === "error"}
-              onRetryDensity={retryDensity}
-            />
+            <BookmarkTray bookmarks={bookmarks} onApply={applyBookmark} onDelete={deleteBookmark} />
             <StyleTray
               ready={primaryLoaded}
               densityReady={ready}
@@ -1307,15 +1584,20 @@ export default function CompareLabPanel() {
             />
           </div>
           {hoverInfo && (
-            <div className="pointer-events-none absolute bottom-2 left-2 rounded border border-line bg-white/85 px-1.5 py-0.5 text-[11px] text-ink-secondary">
+            <div className={`pointer-events-none absolute bottom-2 left-2 px-1.5 py-0.5 text-[11px] text-ink-secondary ${CARD_SHELL}`}>
               {hoverInfo.compId} {hoverInfo.chainId}/{hoverInfo.authSeqId}
+              {pickMode === "atom" && hoverInfo.atomId ? ` ${hoverInfo.atomId}` : ""}
               {hoverInfo.altId ? ` alt ${hoverInfo.altId}` : ""}
             </div>
           )}
-          {popup && popupTarget && (
+          {popup && (
             <SelectionActionsPopup
               anchor={popup}
               target={popupTarget}
+              pickMode={pickMode}
+              onPickMode={setPickMode}
+              onBookmark={popupTarget && entry && bookmarks.length < MAX_BOOKMARKS ? addBookmark : null}
+              bookmarkCount={bookmarks.length}
               conformersShown={popupShown}
               densityReady={ready}
               clipMode={clip ? (clip.includeModel ? "all" : "density") : "off"}
@@ -1325,6 +1607,28 @@ export default function CompareLabPanel() {
               onClose={closePopup}
             />
           )}
+          {showSlice2d && (
+            <div className={`absolute bottom-2 right-2 z-10 w-[300px] p-1.5 ${CARD_SHELL}`}>
+              <button
+                type="button"
+                title="close the 2D slice"
+                onClick={() => setShowSlice2d(false)}
+                className="absolute right-1.5 top-1 z-10 leading-none text-ink-muted hover:text-ink-secondary"
+              >
+                {"×"}
+              </button>
+              <SlicePanel
+                box={box}
+                axis={sliceAxis}
+                frac={sliceFrac}
+                densitySampler={densitySampler}
+                metricSampler={metricSampler}
+                metricDomain={projected?.domain ?? null}
+                metricColors={projected ? METRIC_UI[projected.id].colors : null}
+                metricLabel={projected ? metricLabel(projected.id) : null}
+              />
+            </div>
+          )}
         </div>
 
       </div>
@@ -1333,8 +1637,8 @@ export default function CompareLabPanel() {
         className="h-1.5 shrink-0 cursor-row-resize border-t border-line bg-surface-muted hover:bg-accent/30"
         onMouseDown={startLanesResize}
       />
-      <div className="flex shrink-0 items-start gap-4 overflow-hidden bg-white px-3 py-2" style={{ height: lanesHeight }}>
-        <div className="flex h-full min-w-0 flex-1 flex-col gap-1 overflow-y-auto">
+      <div className="flex shrink-0 items-start bg-white px-3 py-2" style={{ height: lanesHeight }}>
+        <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-1 overflow-hidden">
           <SequenceLanes
             model={seqModel}
             aTable={aTable}
@@ -1344,18 +1648,16 @@ export default function CompareLabPanel() {
             annotations={annotations}
             metricLanes={metricLaneModules}
             hoverRef={laneHoverRef}
-            selection={laneSelection}
+            selection={residueRanges}
             onHover={onLaneHover}
             onSelect={onLaneSelect}
             onContext={onLaneContext}
             leading={
               <>
                 <span className="text-[11px] font-medium text-ink-muted">Sequence</span>
-                {(picked || selRange) && (
+                {residueRanges.length > 0 && (
                   <span className="flex items-center gap-1 rounded border border-accent/30 bg-accent-soft px-1.5 py-px text-[10.5px] tabular-nums text-accent">
-                    {picked
-                      ? `${picked.compId} ${picked.chainId}/${picked.authSeqId}`
-                      : `${selRange!.chain} ${selRange!.from}–${selRange!.to}`}
+                    {picked ? `${picked.compId} ${picked.chainId}/${picked.authSeqId}` : formatRanges(residueRanges, { maxSegments: 3 })}
                     <button
                       type="button"
                       title="clear selection"
@@ -1369,32 +1671,6 @@ export default function CompareLabPanel() {
               </>
             }
           />
-        </div>
-        <div className="flex h-full w-[380px] shrink-0 flex-col gap-1.5 overflow-y-auto border-l border-line pl-4">
-          <SliceControls
-            ready={ready}
-            slice3d={slice3d}
-            onSlice3d={setSlice3d}
-            sliceModel={sliceModel}
-            onSliceModel={setSliceModel}
-            axis={sliceAxis}
-            onAxis={setSliceAxis}
-            frac={sliceFrac}
-            onFrac={setSliceFrac}
-            coord={slicePlane?.point[sliceAxis] ?? null}
-          />
-          {showSlice2d && (
-            <SlicePanel
-              box={box}
-              axis={sliceAxis}
-              frac={sliceFrac}
-              densitySampler={densitySampler}
-              metricSampler={metricSampler}
-              metricDomain={projected?.domain ?? null}
-              metricColors={projected ? METRIC_UI[projected.id].colors : null}
-              metricLabel={projected ? metricLabel(projected.id) : null}
-            />
-          )}
         </div>
       </div>
     </div>
