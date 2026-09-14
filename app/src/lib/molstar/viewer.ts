@@ -39,9 +39,12 @@ import {
   type BondEnd,
   buildAltGroupExpression,
   buildBondAtomsExpression,
+  buildComponentQuery,
   buildTlsGroupExpression,
   executeQuery,
+  mergeExpressions,
 } from "./queries";
+import type { CompSplit } from "./repstyle";
 import { setSelectionWiggleFalloff } from "./wiggle-falloff";
 import { labViewerSpec, proposalViewerSpec, viewerSpec } from "./spec";
 import {
@@ -78,10 +81,14 @@ export interface PickInfo {
   chainId: string;
   authSeqId: number;
   compId: string;
+  /** label_atom_id of the picked atom */
+  atomId: string;
   /** alternate-location letter of the picked atom; "" for shared atoms */
   altId: string;
   /** insertion code, "" when absent */
   insCode: string;
+  /** the other end atom when the pick landed on a bond (mid-stick) */
+  bondPartner?: { chainId: string; authSeqId: number; atomId: string };
   position3d?: [number, number, number];
 }
 
@@ -91,6 +98,8 @@ export interface ClickMeta {
   /** viewport (client) coordinates of the click, when the event carries a page position */
   clientX?: number;
   clientY?: number;
+  /** modifier keys held at release (Mol*'s ModifiersKeys), when the event carries them */
+  modifiers?: { shift: boolean; alt: boolean; control: boolean; meta: boolean };
 }
 
 /**
@@ -207,13 +216,15 @@ export class MolstarViewer {
   /**
    * Add a SECOND structure to the existing state tree without touching the primary
    * load/clear lifecycle or the frame-scrubbing refs. Rendered ball-and-stick in one
-   * uniform color so the two models read apart. Returns the structure's state ref
+   * uniform color so the two models read apart. With `split` the components are the
+   * lab's tagged expression components (lab-polymer/het/ion — what applyRepStyle
+   * expects) instead of Mol*'s static kinds. Returns the structure's state ref
    * (toggle it with setSubtreeVisibility; a viewer.clear() removes it with everything
    * else). Format defaults to mmCIF; "pdb" covers the re-refined corpus files.
    */
   async loadSecondary(
     data: string | Uint8Array,
-    opts: { label?: string; format?: "mmcif" | "pdb"; color?: number } = {},
+    opts: { label?: string; format?: "mmcif" | "pdb"; color?: number; split?: CompSplit } = {},
   ): Promise<string | null> {
     const ctx = this.ctx;
     if (!ctx) throw new Error("Viewer not initialized");
@@ -228,17 +239,38 @@ export class MolstarViewer {
     if (!this.ctx) return null;
     const structure = await ctx.builders.structure.createStructure(model);
     if (!this.ctx) return null;
+    const reprProps = {
+      type: "ball-and-stick" as const,
+      typeParams: { ignoreLight: true },
+      color: "uniform" as const,
+      colorParams: { value: Color(opts.color ?? 0x8a97a5) },
+    };
     const reprRefs: string[] = [];
-    for (const kind of BALL_AND_STICK_COMPONENTS) {
-      const comp = await ctx.builders.structure.tryCreateComponentStatic(structure, kind);
-      if (!comp || !this.ctx) continue;
-      const repr = await ctx.builders.structure.representation.addRepresentation(comp, {
-        type: "ball-and-stick",
-        typeParams: { ignoreLight: true },
-        color: "uniform",
-        colorParams: { value: Color(opts.color ?? 0x8a97a5) },
-      });
-      reprRefs.push(repr.ref);
+    if (opts.split) {
+      const groups = [
+        { comps: opts.split.polymer, tag: "lab-polymer" },
+        { comps: opts.split.het, tag: "lab-het" },
+        { comps: opts.split.ions, tag: "lab-ion" },
+      ];
+      for (const g of groups) {
+        if (!g.comps.length) continue;
+        const comp = await ctx.builders.structure.tryCreateComponentFromExpression(
+          structure,
+          mergeExpressions(g.comps.map(buildComponentQuery)),
+          g.tag,
+          { label: g.comps.join(", "), tags: [g.tag] },
+        );
+        if (!comp || !this.ctx) continue;
+        const repr = await ctx.builders.structure.representation.addRepresentation(comp, reprProps);
+        if (repr) reprRefs.push(repr.ref);
+      }
+    } else {
+      for (const kind of BALL_AND_STICK_COMPONENTS) {
+        const comp = await ctx.builders.structure.tryCreateComponentStatic(structure, kind);
+        if (!comp || !this.ctx) continue;
+        const repr = await ctx.builders.structure.representation.addRepresentation(comp, reprProps);
+        if (repr) reprRefs.push(repr.ref);
+      }
     }
     // The secondary model is a reference silhouette: its translucent geometry must never
     // intercept picks meant for the primary (PickInfo carries no structure identity, so a
@@ -635,13 +667,17 @@ export class MolstarViewer {
 
   // Routed through lociSelects (not structure.selection.fromLoci) so the SelectLoci
   // behavior's mark provider runs: the selection gets Mol*'s default green marker tint
-  // in the canvas, and re-marks itself when representations rebuild.
+  // in the canvas, and re-marks itself when representations rebuild. applyGranularity
+  // must be false: the default (true) expands atom loci to whole residues under
+  // "residue" granularity, silently erasing atom-precise selections.
   setSelection(loci: StructureElement.Loci): void {
-    this.ctx?.managers.interactivity.lociSelects.selectOnly({ loci });
+    this.ctx?.managers.interactivity.lociSelects.selectOnly({ loci }, false);
   }
 
-  addToSelection(loci: StructureElement.Loci): void {
-    this.ctx?.managers.structure.selection.fromLoci("add", loci);
+  // Pick/hover granularity of the interactivity manager (what the hover highlight marks).
+  // Clicks are unaffected — the click event carries the raw atom-precise loci either way.
+  setGranularity(granularity: "residue" | "element"): void {
+    this.ctx?.managers.interactivity.setProps({ granularity });
   }
 
   // --- in-scene labels (tethered text anchored to a loci) ---
@@ -690,6 +726,14 @@ export class MolstarViewer {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ev = e as any;
       const meta: ClickMeta = { button: typeof ev.button === "number" ? ev.button : 1 };
+      if (ev.modifiers) {
+        meta.modifiers = {
+          shift: !!ev.modifiers.shift,
+          alt: !!ev.modifiers.alt,
+          control: !!ev.modifiers.control,
+          meta: !!ev.modifiers.meta,
+        };
+      }
       // e.page is element-relative CSS pixels (clientXY minus the canvas rect)
       if (ev.page) {
         const canvasEl = this.ctx?.canvas3d?.webgl.gl.canvas;
@@ -749,17 +793,29 @@ function pickFromLoci(e: any): PickInfo | null {
   // A pick on a STICK is a Bond.Loci, not an atom. Mol* only converts bond -> atom when
   // the cursor is within the first atom's radius; mid-stick picks arrive here as bonds
   // and used to be dropped (most of the clickable area in a ball-and-stick scene).
-  // Resolve to the bond's first atom — altloc preserved, both bond ends share it.
-  if (Bond.isLoci(loci) && loci.bonds.length > 0) loci = Bond.toFirstStructureElementLoci(loci);
+  // Resolve to BOTH end atoms — the first fills the pick, the second becomes bondPartner
+  // so atom-mode selection can take the whole bond.
+  const isBond = Bond.isLoci(loci) && loci.bonds.length > 0;
+  if (isBond) loci = Bond.toStructureElementLoci(loci);
   if (!StructureElement.Loci.is(loci) || StructureElement.Loci.isEmpty(loci)) return null;
   let info: PickInfo | null = null;
   StructureElement.Loci.forEachLocation(loci, (location) => {
-    if (info) return;
+    if (info) {
+      if (isBond && !info.bondPartner) {
+        info.bondPartner = {
+          chainId: StructureProperties.chain.auth_asym_id(location),
+          authSeqId: StructureProperties.residue.auth_seq_id(location),
+          atomId: StructureProperties.atom.label_atom_id(location),
+        };
+      }
+      return;
+    }
     const rawIns = StructureProperties.residue.pdbx_PDB_ins_code(location);
     info = {
       chainId: StructureProperties.chain.auth_asym_id(location),
       authSeqId: StructureProperties.residue.auth_seq_id(location),
       compId: StructureProperties.atom.label_comp_id(location),
+      atomId: StructureProperties.atom.label_atom_id(location),
       altId: StructureProperties.atom.label_alt_id(location) ?? "",
       insCode: rawIns === "?" || rawIns === "." ? "" : (rawIns ?? ""),
       position3d: e.position

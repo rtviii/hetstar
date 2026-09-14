@@ -206,5 +206,18 @@ export const residueLoci = (
   return StructureSelection.toLociWithSourceUnits(selection);
 };
 
+// Union loci of individual atoms (altloc-agnostic: every conformer copy of each atom).
+// Uncached — selections hold few atoms and only recompile on marker re-asserts.
+export const atomsLoci = (
+  structure: Structure,
+  atoms: readonly { chain: string; seq: number; atom: string }[],
+): StructureElement.Loci | null => {
+  if (atoms.length === 0) return null;
+  return executeQuery(
+    mergeExpressions(atoms.map((a) => buildAtomQuery(a.chain, a.seq, a.atom))),
+    structure,
+  );
+};
+
 export const structureToLoci = (structure: Structure): StructureElement.Loci =>
   Structure.toStructureElementLoci(structure);
