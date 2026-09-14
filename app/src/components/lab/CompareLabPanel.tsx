@@ -680,6 +680,27 @@ export default function CompareLabPanel() {
     selectionRef.current = sel;
   }, [sel]);
 
+  // The click that dismisses the Selection Actions Panel must not ALSO act as a
+  // selection click (it used to clear or replace the selection — most visibly right
+  // after switching pick modes in the panel). useDismiss closes the card on mousedown,
+  // so by the time Mol*'s click lands at mouseup the popup state is already null; the
+  // "this press began outside an open popup" fact is captured here at mousedown time
+  // and the handlers below swallow that one click. Every mousedown overwrites the flag,
+  // so a dismissal that turns into a camera drag (no click event) cannot go stale.
+  const popupOpenRef = useRef(false);
+  useEffect(() => {
+    popupOpenRef.current = popup !== null;
+  }, [popup]);
+  const dismissClickRef = useRef(false);
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      dismissClickRef.current =
+        popupOpenRef.current && !(e.target as Element | null)?.closest?.("[data-selection-popup]");
+    };
+    document.addEventListener("mousedown", onDown, true);
+    return () => document.removeEventListener("mousedown", onDown, true);
+  }, []);
+
   // hover-highlight granularity follows the pick mode; clicks arrive atom-precise
   // either way (granularity only shapes what the mark managers light up)
   useEffect(() => {
@@ -708,6 +729,8 @@ export default function CompareLabPanel() {
   useEffect(() => {
     if (!viewer) return;
     return viewer.subscribeToClick((info, meta) => {
+      const dismissedPopup = dismissClickRef.current;
+      dismissClickRef.current = false;
       // middle click: reset the camera (and nothing else — without this it fell through
       // to the left-click branch and cleared the selection)
       if (meta.button === 4) {
@@ -736,6 +759,9 @@ export default function CompareLabPanel() {
         setPopup(anchor);
         return;
       }
+      // a left click whose press dismissed the popup is consumed, OS-menu style — it
+      // neither clears nor replaces the selection (right click above re-anchors instead)
+      if (dismissedPopup) return;
       const shift = !!meta.modifiers?.shift;
       if (info) {
         if (pickMode === "atom") {
@@ -1387,6 +1413,11 @@ export default function CompareLabPanel() {
   // additive (a sweep means "make sure this is selected"), a shift-click on one residue
   // toggles it like a 3D shift-click
   const onLaneSelect = useCallback((range: ResidueRange, opts?: { additive?: boolean; toggle?: boolean }) => {
+    // same policy as the 3D canvas: the click that dismissed the popup is consumed
+    if (dismissClickRef.current) {
+      dismissClickRef.current = false;
+      return;
+    }
     if (opts?.toggle) {
       setSel((prev) => toggleResidue(prev, range.chain, range.from));
       return;

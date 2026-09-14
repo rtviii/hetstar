@@ -141,6 +141,7 @@ export default function SelectionActionsPopup({
   return (
     <div
       ref={cardRef}
+      data-selection-popup
       className={`fixed z-50 flex flex-col gap-1.5 p-2 text-[11.5px] text-ink-secondary ${CARD_SHELL}`}
       style={{ left, top, width: WIDTH }}
       onContextMenu={(e) => e.preventDefault()}
