@@ -92,12 +92,13 @@ export default function EntryCard({
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex flex-col gap-1.5">
-        <div className="flex flex-wrap items-center gap-1">
-          <Chip>PDB {entry.pdbId || "?"}</Chip>
-          {entry.source === "dpdb" && <Chip>{entry.id}</Chip>}
-          {memberCount > 1 && <Chip>{memberCount} members</Chip>}
-        </div>
+        {/* the ids live in the EntryChip right above this card — no chips repeated here */}
         {title && <div className="text-[11.5px] leading-snug text-ink-secondary">{title}</div>}
+        {memberCount > 1 && (
+          <div className="flex flex-wrap items-center gap-1">
+            <Chip>{memberCount} members</Chip>
+          </div>
+        )}
         {cat?.details && <TinyText>{cat.details}</TinyText>}
       </div>
 

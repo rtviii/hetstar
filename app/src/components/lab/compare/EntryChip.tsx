@@ -4,11 +4,11 @@ import { knownEntryIds, PDB_ALIASES } from "@/lib/dpdb/resolve";
 import type { EntryManifest } from "@/lib/dpdb/types";
 import { PinPopover, TinyText, Tooltip } from "./ui";
 
-// The entry chip at the canvas's top-right. Prints the loaded entry the way dynamicpdb.com
-// does ("PDB 7APT | dpdb_kytgultv": the code a reader scans for emphasized, the id a link
-// needs muted), shows one spinner while the pipeline runs — its hover card lists the
-// stages — and opens, on click, the loader popover: id input, known ids, errors, retry,
-// and the per-file provenance. Replaces the sidebar loader panel and its stage list.
+// The entry chip at the top of the sidebar, above the entry card. Prints the loaded
+// entry the way dynamicpdb.com does ("PDB 7APT | dpdb_kytgultv": the code a reader scans
+// for emphasized, the source/id muted), shows one spinner while the pipeline runs — its
+// hover card lists the stages — and opens, on click, the loader popover: id input, known
+// ids, errors, retry, and the per-file provenance.
 
 const DOT_CLASS: Record<StageState, string> = {
   pending: "bg-line-strong",
@@ -180,8 +180,8 @@ export default function EntryChip({
   );
 
   return (
-    <div className="flex h-6 items-center gap-1.5 rounded border border-line bg-white/85 px-2 font-mono text-[11px]">
-      <PinPopover content={popover} align="end" closeKey={entry?.id}>
+    <div className="flex h-6 items-center gap-1.5 self-start rounded border border-line bg-white/85 px-2 font-mono text-[11px]">
+      <PinPopover content={popover} align="start" closeKey={entry?.id}>
         <span
           className="flex items-center whitespace-nowrap"
           title={entry ? `${entry.title} (click to load another entry)` : "click to load an entry"}
