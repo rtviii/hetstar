@@ -3,9 +3,8 @@ import type { MolCifFile } from "./cif";
 import { normValue } from "./cif";
 
 // Continuous-motion parameterizations: TLS rigid-body groups, anisotropic B, isotropic B.
-// The TLS parse is ported from app/src/lib/molstar/tls.ts (parse only; the libration
-// animation stays app-side). Vectors are plain tuples so the model layer stays free of
-// Mol* runtime imports.
+// Parse only; nothing here animates. Vectors are plain tuples so the model layer stays
+// free of Mol* runtime imports.
 
 export type Vec3Like = [number, number, number];
 

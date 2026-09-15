@@ -9,8 +9,8 @@ import { normValue } from "./cif";
 //   _pdbx_het_state               -- the joint: combinations that occur, with their occupancies
 //   _pdbx_het_state_members       -- which networks make up each state
 //   _pdbx_state_coexistence       -- optional NOT exclusions between networks
-// Ported from app/src/lib/molstar/het.ts, with the occupancy assignment rewritten to use
-// a one-pass atom index instead of a full atom_site rescan per membership row.
+// Occupancy assignment uses a one-pass atom index instead of an atom_site rescan per
+// membership row.
 // These categories are OPTIONAL: qFit output does not carry them today, so extensions
 // is null for the entire Dynamic PDB corpus until the proposal lands.
 

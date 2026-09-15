@@ -1,7 +1,6 @@
 // Minimal typed surface over Mol*'s parsed CifFile, exposing only the field-access
 // methods this package uses. Mirrors molstar/lib/mol-io/reader/cif/data-model
 // (CifFile / CifBlock / CifCategory / CifField) without coupling to its export paths.
-// (Same shape as app/src/lib/cif-source/types.ts in mmcif-browser.)
 
 export interface MolCifField {
   readonly isDefined: boolean;
