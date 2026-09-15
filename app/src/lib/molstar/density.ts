@@ -94,6 +94,9 @@ export interface IsosurfaceOpts {
   alphaFactor?: number;
   /** GPU isosurface texture type; "float" renders smoother than the quantized "byte" default */
   gpuDataType?: "byte" | "float" | "halfFloat";
+  /** build the flagged surfaces born hidden (isHidden state), so background-computed
+   * maps never flash before the visibility effects assert the toggles */
+  hidden?: { twoFoFc?: boolean; foFc?: boolean };
 }
 
 export async function buildIsosurfaces(
@@ -106,6 +109,7 @@ export async function buildIsosurfaces(
   const factor = opts.alphaFactor ?? 1;
   const alpha = (base: number) => Math.max(0.02, Math.min(1, base * factor));
   const extra = opts.gpuDataType ? { gpuDataType: opts.gpuDataType } : {};
+  const hiddenState = (hidden?: boolean) => (hidden ? { state: { isHidden: true } } : undefined);
 
   if (vols.twoFoFc) {
     refs.twoFoFc = tree
@@ -119,6 +123,7 @@ export async function buildIsosurfaces(
           "uniform",
           { value: Color(TWO_FOFC_COLOR) },
         ),
+        hiddenState(opts.hidden?.twoFoFc),
       ).selector.ref;
   }
   if (vols.foFc) {
@@ -133,6 +138,7 @@ export async function buildIsosurfaces(
           "uniform",
           { value: Color(FOFC_POS_COLOR) },
         ),
+        hiddenState(opts.hidden?.foFc),
       ).selector.ref;
     refs.foFcNeg = tree
       .to(vols.foFc)
@@ -145,6 +151,7 @@ export async function buildIsosurfaces(
           "uniform",
           { value: Color(FOFC_NEG_COLOR) },
         ),
+        hiddenState(opts.hidden?.foFc),
       ).selector.ref;
   }
   await tree.commit();

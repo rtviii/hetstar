@@ -10,7 +10,8 @@ import { Color } from "molstar/lib/mol-util/color";
 // no built-in alt-loc theme. Atoms with no altloc are grey; A/B/C/D/E get distinct colours so the
 // split conformers in a structure read apart at a glance. Registered on the plugin at init and used
 // by the "Alternate conformations" examples via `color: 'alt-loc'`.
-const NoAlt = Color(0xcfd8dc);
+export const ALT_SHARED_COLOR = 0xcfd8dc;
+const NoAlt = Color(ALT_SHARED_COLOR);
 const OtherAlt = Color(0x8c564b);
 export const ALT_FALLBACK_COLOR = 0x8c564b;
 export const AltColors: Record<string, number> = {
@@ -32,6 +33,10 @@ function altColor(unit: Unit, element: ElementIndex): Color {
   if (!alt) return NoAlt;
   const c = AltColors[alt];
   return c === undefined ? OtherAlt : Color(c);
+}
+
+function altOf(unit: Unit, element: ElementIndex): string {
+  return Unit.isAtomic(unit) ? unit.model.atomicHierarchy.atoms.label_alt_id.value(element) : "";
 }
 
 export const AltLocColorThemeParams = {};

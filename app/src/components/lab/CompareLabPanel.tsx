@@ -18,6 +18,7 @@ import {
   TWO_FOFC_COLOR,
   updateIsoSigma,
   updateSlice,
+  type ClipObjectSpec,
   type DensityQuality,
   type DensityReprs,
   type DensityVolumes,
@@ -28,20 +29,37 @@ import {
   compSplitFromTable,
   DEFAULT_REP_STYLE,
   ensureLabComponents,
+  reprSpecForRole,
+  SELREP_BALLSTICK_SIZE,
+  SELREP_SPACEFILL_SIZE,
   type CompSplit,
   type RepStyle,
+  type RepType,
 } from "@/lib/molstar/repstyle";
 import {
   applyConformerStyling,
   applySecondaryGhost,
+  hiddenConformerSelectors,
   planConformers,
   representationRefsForStructure,
   residueIdKey,
   type ResidueRange,
 } from "@/lib/molstar/conformers";
 import { MetricProjector, samplerForVolume, trackToPoints } from "@/lib/molstar/project";
-import { atomsLoci, residueLoci } from "@/lib/molstar/queries";
-import { computeBonds, type BondPair } from "@/lib/molstar/interactions";
+import {
+  buildAltGroupExpression,
+  buildAtomQuery,
+  buildResidueQuery,
+  buildWatersQuery,
+  exceptExpression,
+  executeQuery,
+  mergeExpressions,
+  residueLoci,
+} from "@/lib/molstar/queries";
+import { addDistanceMeasurement, clearMeasurements, measurementCount } from "@/lib/molstar/measurements";
+import { bondKey, computeBonds, isWaterEnd, type BondEndInfo, type BondPair } from "@/lib/molstar/interactions";
+import { ensureBondDashes, setBondDashesClip, type BondDash, type BondDashRefs } from "@/lib/molstar/bond-dashes";
+import { ALT_FALLBACK_COLOR, ALT_SHARED_COLOR, AltColors } from "@/lib/molstar/altloc-theme";
 import {
   addRange,
   EMPTY_SELECTION,
@@ -60,16 +78,17 @@ import SlicePanel, { slicePlaneFor, type SliceAxis, type SlicePlane } from "@/co
 import DensityFlyout from "@/components/lab/compare/DensityFlyout";
 import EntryCard from "@/components/lab/compare/EntryCard";
 import EntryChip from "@/components/lab/compare/EntryChip";
-import SelectionActionsPopup, { type ActionTarget, type ClipMode } from "@/components/lab/compare/SelectionActionsPopup";
+import SelectionActionsPopup, { type ActionTarget, type ClipMode, type PickMode } from "@/components/lab/compare/SelectionActionsPopup";
 import SelectionFlyout, { type SelectionSummary } from "@/components/lab/compare/SelectionFlyout";
+import type { BondRow } from "@/components/lab/compare/BondList";
 import StyleTray from "@/components/lab/compare/StyleTray";
 import BookmarkTray from "@/components/lab/compare/BookmarkTray";
-import { CARD_SHELL } from "@/components/lab/compare/ui";
+import { CARD_SHELL, Spinner } from "@/components/lab/compare/ui";
 import SequenceLanes from "@/components/lab/lanes/SequenceLanes";
 import { makeMetricLane } from "@/components/lab/lanes/PlotLanes";
 import type { LaneMetric } from "@/components/lab/lanes/types";
 import { fetchPdbeAnnotations, mapAnnotations, type AnnotationsBySource, type PdbeRaw } from "@/lib/annotations/pdbe";
-import { METRIC_ORDER, METRIC_UI, metricLabel, metricUnit, type MetricId } from "@/components/lab/compare/metrics";
+import { METRIC_ORDER, METRIC_UI, metricDescription, metricLabel, metricUnit, type MetricId } from "@/components/lab/compare/metrics";
 import { WATER_COMPS, type ProvenanceRecord, type StageId, type StageState } from "@/lib/lab/entries";
 import { pickPair, ROLE_LABELS, type EntryManifest, type ManifestModel } from "@/lib/dpdb/types";
 import { resolveEntry } from "@/lib/dpdb/resolve";
@@ -92,15 +111,15 @@ import {
   bIsoMean,
   conformerCount,
   ensembleRmsf,
+  makeTrack,
   mapSupportDelta,
   mapValueTracks,
-  METRICS,
   modelRmsd,
   occupancyEntropy,
   trackDelta,
   type Track,
 } from "@dynamic-pdb/hetkit/metrics";
-import { StructureElement } from "molstar/lib/mol-model/structure";
+import { Structure, StructureElement } from "molstar/lib/mol-model/structure";
 import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/state";
 
 // Compare lab: TWO models of one entry against their shared map. Model A is the qFit
@@ -111,11 +130,65 @@ import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/sta
 // toggled on. Density + metric projection + slice ride on top. Decisions and progress:
 // docs/roadmap.md.
 
+// Bonds touching any of the ranges. Only non-water ends count: a water's auth seq must not
+// accidentally match a polymer range.
+function bondsForRanges(bonds: readonly BondPair[], ranges: readonly ResidueRange[]): BondPair[] {
+  const touches = (e: BondEndInfo) => !isWaterEnd(e) && rangesContain(ranges, e.chain, e.seq);
+  return bonds.filter((p) => touches(p.a) || touches(p.b));
+}
+
+// The dashes (and partner waters) of every bond overlay, drawn from exactly the segments the
+// bond list was computed from. A segment is dropped when either end's conformer letter is
+// hidden on its residue (hiddenAltKeys: `chain|seq|letter`); shared "" segments always draw.
+function dashesForOverlays(
+  bonds: readonly BondPair[],
+  overlays: readonly { key: string; ranges: ResidueRange[] }[],
+  hiddenAltKeys: ReadonlySet<string>,
+): { dashes: BondDash[]; waters: { chain: string; seq: number; alts: string[] }[] } {
+  const pairs = new Map<string, BondPair>(); // overlapping overlays share pairs
+  for (const ov of overlays) for (const p of bondsForRanges(bonds, ov.ranges)) pairs.set(bondKey(p), p);
+  const dashes: BondDash[] = [];
+  // partner waters come from SURVIVING segments only, with the letters those segments use,
+  // so a water (or a water altloc copy) whose every dash is hidden renders no sphere either
+  const waters = new Map<string, { chain: string; seq: number; alts: Set<string> }>();
+  const addWater = (e: BondEndInfo, alt: string) => {
+    if (!isWaterEnd(e)) return;
+    const k = `${e.chain}|${e.seq}`;
+    let w = waters.get(k);
+    if (!w) waters.set(k, (w = { chain: e.chain, seq: e.seq, alts: new Set() }));
+    w.alts.add(alt);
+  };
+  for (const p of pairs.values()) {
+    for (const s of p.segments) {
+      if (s.altA && hiddenAltKeys.has(`${p.a.chain}|${p.a.seq}|${s.altA}`)) continue;
+      if (s.altB && hiddenAltKeys.has(`${p.b.chain}|${p.b.seq}|${s.altB}`)) continue;
+      addWater(p.a, s.altA);
+      addWater(p.b, s.altB);
+      const letter = s.altA || s.altB;
+      dashes.push({
+        start: s.a,
+        end: s.b,
+        color: letter ? (AltColors[letter] ?? ALT_FALLBACK_COLOR) : ALT_SHARED_COLOR,
+        label: `${p.a.comp}${p.a.seq} — ${p.type} — ${p.b.comp}${p.b.seq}${letter ? ` (conformer ${letter})` : ""}`,
+      });
+    }
+  }
+  return { dashes, waters: [...waters.values()].map((w) => ({ ...w, alts: [...w.alts] })) };
+}
+
 const VIEW: StructureView = { representation: "ball-and-stick", colorTheme: "uniform", uniformColor: MODEL_A_COLOR };
 const DEFAULT_ENTRY = "7A1X";
 const DEFAULT_CLIP_RADIUS = 5;
 // structure-factor downloads above this ask before fetching (PanDDA deposits run to hundreds of MB)
 const SF_CONFIRM_MB = 50;
+
+/** stable identity of a residue-range set — the key persistent overlays live under */
+function rangesKey(ranges: ResidueRange[]): string {
+  return ranges
+    .map((r) => `${r.chain}:${r.from}-${r.to}`)
+    .sort()
+    .join(",");
+}
 
 function initialStages(): Record<StageId, StageState> {
   return {
@@ -213,6 +286,9 @@ export default function CompareLabPanel() {
   const [showB, setShowB] = useState(false);
   // which MODEL frame of a multi-model (ensemble) model A is on screen
   const [memberIndex, setMemberIndex] = useState(0);
+  // bumps once a member scrub's Mol* commit has landed: memberIndex changes first, while
+  // getCurrentStructure() still returns the previous frame
+  const [frameVersion, setFrameVersion] = useState(0);
 
   // --- density state ---
   const [densityState, setDensityState] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -229,12 +305,15 @@ export default function CompareLabPanel() {
   // click replaces it, shift-click (3D and lanes) toggles the clicked element in/out.
   // Residue-level consumers read the derived residueRanges below.
   const [sel, setSel] = useState<LabSelection>(EMPTY_SELECTION);
-  // picking granularity: residue-wise (default) or atom/bond-wise (session preference,
-  // switched from the Selection Actions Panel; never cleared on entry switch)
-  const [pickMode, setPickMode] = useState<"residue" | "atom">("residue");
+  // picking granularity: residue-wise (default), atom/bond-wise, or measure (two atom
+  // clicks add a distance). Session preference; never cleared on entry switch.
+  const [pickMode, setPickMode] = useState<PickMode>("residue");
   const [hoverInfo, setHoverInfo] = useState<PickInfo | null>(null);
   const [shownConformers, setShownConformers] = useState<ReadonlySet<string>>(new Set());
   const [globalAlt, setGlobalAlt] = useState<string | null>(null);
+  // individually toggled-off conformers of expanded residues (`${residueKey}|${letter}`);
+  // the structure layers, the selection marker and the bonds overlay all subtract them
+  const [mutedAlts, setMutedAlts] = useState<ReadonlySet<string>>(new Set());
   const [clip, setClip] = useState<{
     center: [number, number, number];
     radius: number;
@@ -242,6 +321,32 @@ export default function CompareLabPanel() {
   } | null>(null);
   // the Selection Actions Panel's anchor; it always targets the whole selection
   const [popup, setPopup] = useState<{ x: number; y: number } | null>(null);
+
+  // --- persistent per-selection overlays ---
+  // Both kinds are keyed by the serialized residue ranges they were created from and
+  // OUTLIVE the selection: they stay until toggled off on the same ranges, or reset.
+  // bondOverlays: app-drawn bond dashes (one shared node) + a lab-bonds waters component.
+  // selRepOverlays: a representation override (atoms/sticks) on a lab-selrep component.
+  const [bondOverlays, setBondOverlays] = useState<{ key: string; ranges: ResidueRange[] }[]>([]);
+  const bondWatersRef = useRef<string | null>(null);
+  const bondWatersReprRef = useRef<string | null>(null);
+  const bondDashRef = useRef<BondDashRefs | null>(null);
+  // model clip objects in force (isolate sphere / slice plane), kept by the clip task so
+  // the bond overlay's freshly rebuilt nodes start out cut the same way
+  const modelClipRef = useRef<ClipObjectSpec[]>([]);
+  const [selRepOverlays, setSelRepOverlays] = useState<{ key: string; ranges: ResidueRange[]; type: RepType }[]>([]);
+  const selRepRefs = useRef(new Map<string, string>());
+
+  // --- distance measurements ---
+  // the armed first atom of a two-click measure; version bumps refresh the count readout
+  const [measureArm, setMeasureArm] = useState<{ chain: string; seq: number; atom: string; alt: string; comp: string } | null>(null);
+  const measureArmRef = useRef<typeof measureArm>(null);
+  useEffect(() => {
+    measureArmRef.current = measureArm;
+  }, [measureArm]);
+  const [measureVersion, setMeasureVersion] = useState(0);
+  // unique serializer keys so queued measurement writes never displace each other
+  const measureSeqRef = useRef(0);
 
   // the residue-level view of the selection (atom parents included, adjacent parents
   // merged) — what every residue-keyed consumer reads; sel stays the source of truth
@@ -385,8 +490,19 @@ export default function CompareLabPanel() {
       setHoverInfo(null);
       setShownConformers(new Set());
       setGlobalAlt(null);
+      setMutedAlts(new Set());
       setClip(null);
       setPopup(null);
+      // the Mol* tree is about to be cleared: the overlays and every measurement die
+      // with it, so the local handles must not outlive them
+      setBondOverlays([]);
+      bondWatersRef.current = null;
+      bondWatersReprRef.current = null;
+      bondDashRef.current = null;
+      setSelRepOverlays([]);
+      selRepRefs.current.clear();
+      setMeasureArm(null);
+      setMeasureVersion((v) => v + 1);
       setStatus(null);
       setProvenance([]);
       setStages({ ...initialStages(), catalogue: "active" });
@@ -508,6 +624,53 @@ export default function CompareLabPanel() {
     });
   }, [viewer, primaryLoaded, aSplit, runStyling]);
 
+  // --- per-selection representation overrides (lab-selrep) ---
+  // Declared BEFORE the conformer-layer effect (which depends on selRepOverlays), so a
+  // fresh override component exists when the collapse/accent layers are (re)applied to
+  // it — hidden conformers stay hidden and expanded letters stay colored inside the
+  // override. The rep-style pass and the chemistry rebuild skip lab-selrep components.
+
+  useEffect(() => {
+    const ctx = viewer?.ctx;
+    if (!ctx || !viewer || !primaryLoaded) return;
+    const structureRef = viewer.getPrimaryStructureRef();
+    if (!structureRef) return;
+    runStyling("selrep", async () => {
+      if (viewer.getPrimaryStructureRef() !== structureRef) return;
+      for (const ref of selRepRefs.current.values()) {
+        try {
+          await removeNode(ctx, ref);
+        } catch {
+          // died with a tree rebuild
+        }
+      }
+      selRepRefs.current.clear();
+      for (const ov of selRepOverlays) {
+        const exprs = ov.ranges.map((r) => buildResidueQuery(r.chain, r.from, r.to === r.from ? undefined : r.to));
+        const comp = await ctx.builders.structure.tryCreateComponentFromExpression(
+          structureRef,
+          mergeExpressions(exprs),
+          `lab-selrep-${ov.key}`,
+          { label: "selection representation", tags: ["lab-selrep"] },
+        );
+        if (!comp) continue;
+        selRepRefs.current.set(ov.key, comp.ref);
+        // fixed override sizes — the global spacefill default (vdW 1.0) swallows the scene
+        const styleForOverlay: RepStyle = {
+          ...repStyleRef.current,
+          type: ov.type,
+          spacefill: { sizeFactor: SELREP_SPACEFILL_SIZE },
+          ballStick: { sizeFactor: SELREP_BALLSTICK_SIZE },
+        };
+        await ctx.builders.structure.representation.addRepresentation(
+          comp,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          reprSpecForRole("polymer", styleForOverlay, { uniformColor: MODEL_A_COLOR }) as any,
+        );
+      }
+    });
+  }, [viewer, primaryLoaded, selRepOverlays, runStyling]);
+
   // --- single-conformer collapse (per-residue expansion + naive global letter state) ---
 
   const altSummary = useMemo(() => (aTable ? summarizeAltlocs(aTable) : null), [aTable]);
@@ -523,13 +686,15 @@ export default function CompareLabPanel() {
       await applyConformerStyling(ctx, structureRef, confPlan, {
         shown: shownConformers,
         globalAlt,
+        muted: mutedAlts,
         polymerAsTrace: repStyle.type === "cartoon",
       });
     });
     // memberIndex: a frame scrub rebuilds the structure in place, dropping the layers;
     // aSplit: a component rebuild drops them too; repStyle.type: cartoon excludes the
-    // polymer from the collapse layers, so a type switch re-applies them
-  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, memberIndex, aSplit, repStyle.type, runStyling]);
+    // polymer from the collapse layers, so a type switch re-applies them;
+    // selRepOverlays: a fresh override component needs the layers applied to it
+  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, mutedAlts, memberIndex, aSplit, repStyle.type, selRepOverlays, runStyling]);
 
   // --- representation style (tray): in-place state-tree updates on both models ---
 
@@ -580,12 +745,51 @@ export default function CompareLabPanel() {
         ...(clip?.includeModel && sphereObj ? [sphereObj] : []),
         ...(planeObj ? [planeObj] : []),
       ];
+      modelClipRef.current = structObjs;
       if (structReprs.length) await setClipObjects(ctx, structReprs, structObjs);
+      // the bond overlay: its root-level dash shape is outside the structure hierarchy, and
+      // its waters repr (inside it, clipped above) must stay non-pickable after the update
+      await setBondDashesClip(ctx, bondDashRef.current, structObjs);
+      setReprsPickable(ctx, [bondWatersReprRef.current], false);
     });
     // repStyle: a full-params representation update wipes type.params.clip, so clip
     // re-applies after every style change; densityVersion: same, for rebuilt surfaces;
     // aSplit: rebuilt components carry fresh reprs.
   }, [viewer, clip, sliceModel, planeVersion, densityState, secondaryRef, primaryLoaded, repStyle, aSplit, densityVersion, runStyling]);
+
+  // --- visibility-filtered loci: the collapse hides non-kept conformer letters with
+  // transparency 1, but the outline postprocessing traces transparent geometry too —
+  // so every MARKING path (selection, hover, lane hover, bond hover) subtracts the
+  // hidden altloc atoms. The hidden loci are cached per structure + collapse state:
+  // hover asks at pointer rate.
+
+  const hiddenSelectors = useMemo(
+    () => hiddenConformerSelectors(confPlan, { shown: shownConformers, globalAlt, muted: mutedAlts }),
+    [confPlan, shownConformers, globalAlt, mutedAlts],
+  );
+  const hiddenLociCacheRef = useRef<{
+    structure: Structure;
+    selectors: typeof hiddenSelectors;
+    loci: StructureElement.Loci | null;
+  } | null>(null);
+  const visibleLoci = useCallback(
+    (structure: Structure, loci: StructureElement.Loci | null): StructureElement.Loci | null => {
+      if (!loci) return null;
+      if (!hiddenSelectors.length) return loci;
+      const c = hiddenLociCacheRef.current;
+      let hidden: StructureElement.Loci | null;
+      if (c && c.structure === structure && c.selectors === hiddenSelectors) {
+        hidden = c.loci;
+      } else {
+        hidden = executeQuery(buildAltGroupExpression(hiddenSelectors), structure);
+        hiddenLociCacheRef.current = { structure, selectors: hiddenSelectors, loci: hidden };
+      }
+      if (!hidden) return loci;
+      const sub = StructureElement.Loci.subtract(loci, hidden);
+      return StructureElement.Loci.isEmpty(sub) ? null : sub;
+    },
+    [hiddenSelectors],
+  );
 
   // --- selection marking: the selected ranges become a Mol* selection (the default
   // green select tint). Declared AFTER the rep-style and clip effects and keyed
@@ -597,19 +801,27 @@ export default function CompareLabPanel() {
     runStyling("selection", async () => {
       const structure = viewer.getCurrentStructure();
       if (!structure) return;
-      let loci: StructureElement.Loci | null = null;
-      for (const r of sel.ranges) {
-        const l = residueLoci(structure, r.chain, r.from, r.to);
-        if (!l) continue;
-        loci = loci ? StructureElement.Loci.union(loci, l) : l;
+      const exprs = [
+        ...sel.ranges.map((r) => buildResidueQuery(r.chain, r.from, r.to === r.from ? undefined : r.to)),
+        ...sel.atoms.map((a) => buildAtomQuery(a.chain, a.seq, a.atom)),
+      ];
+      if (!exprs.length) {
+        viewer.clearSelection();
+        return;
       }
-      const atomLoci = atomsLoci(structure, sel.atoms);
-      if (atomLoci) loci = loci ? StructureElement.Loci.union(loci, atomLoci) : atomLoci;
+      // The marker shows only what is on screen: the altloc atoms the collapse hides
+      // (transparency 1, but still outlined by the includeTransparent postprocessing)
+      // are subtracted, so the green outline never traces an invisible ghost conformer.
+      // The selection MODEL stays altloc-agnostic — every action still generalizes to
+      // all conformer copies.
+      let expr = mergeExpressions(exprs);
+      if (hiddenSelectors.length) expr = exceptExpression(expr, buildAltGroupExpression(hiddenSelectors));
+      const loci = executeQuery(expr, structure);
       if (loci) viewer.setSelection(loci);
       else viewer.clearSelection();
     });
     // memberIndex: the selection marker must re-assert on the rebuilt frame
-  }, [viewer, primaryLoaded, sel, repStyle, shownConformers, globalAlt, confPlan, memberIndex, aSplit, runStyling]);
+  }, [viewer, primaryLoaded, sel, repStyle, hiddenSelectors, memberIndex, aSplit, runStyling]);
 
   // --- typed non-covalent bonds (Mol* interaction engine), computed once per loaded
   // frame; the selection flyout filters them to the current selection. Pure compute —
@@ -631,15 +843,38 @@ export default function CompareLabPanel() {
     return () => {
       stale = true;
     };
-    // memberIndex: a frame scrub swaps the structure under the same refs
-  }, [viewer, primaryLoaded, memberIndex]);
+    // frameVersion, not memberIndex: a scrub swaps the structure under the same refs, and
+    // reading it before the commit lands would bake the previous frame's coordinates into
+    // the bond dashes
+  }, [viewer, primaryLoaded, frameVersion]);
 
   const selectionBonds = useMemo(() => {
     if (!bonds || !residueRanges.length) return [];
-    return bonds.filter(
-      (p) => rangesContain(residueRanges, p.a.chain, p.a.seq) || rangesContain(residueRanges, p.b.chain, p.b.seq),
-    );
+    return bondsForRanges(bonds, residueRanges);
   }, [bonds, residueRanges]);
+
+  // chain|seq -> altloc letters of that residue when split (insertion codes collapsed;
+  // bond ends carry no ins)
+  const lettersByResidue = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const alt of confPlan.byKey.values()) {
+      if (alt.altIds.length > 1) m.set(`${alt.ref.chain}|${alt.ref.seq}`, alt.altIds);
+    }
+    return m;
+  }, [confPlan]);
+
+  // a bond exists under some but not all conformers of its end residues
+  const confDependent = useCallback(
+    (pair: BondPair) => {
+      if (!pair.alts.length) return false;
+      const expected = new Set<string>([
+        ...(lettersByResidue.get(`${pair.a.chain}|${pair.a.seq}`) ?? []),
+        ...(lettersByResidue.get(`${pair.b.chain}|${pair.b.seq}`) ?? []),
+      ]);
+      return [...expected].some((l) => !pair.alts.includes(l));
+    },
+    [lettersByResidue],
+  );
 
   const bondPairLoci = useCallback(
     (pair: BondPair) => {
@@ -655,9 +890,15 @@ export default function CompareLabPanel() {
   const onBondHover = useCallback(
     (pair: BondPair | null) => {
       if (!viewer) return;
-      viewer.highlightLoci(pair ? bondPairLoci(pair) : null);
+      if (!pair) {
+        viewer.highlightLoci(null);
+        return;
+      }
+      const structure = viewer.getCurrentStructure();
+      const loci = bondPairLoci(pair);
+      viewer.highlightLoci(structure && loci ? visibleLoci(structure, loci) : loci);
     },
-    [viewer, bondPairLoci],
+    [viewer, bondPairLoci, visibleLoci],
   );
   const onBondFocus = useCallback(
     (pair: BondPair) => {
@@ -666,6 +907,65 @@ export default function CompareLabPanel() {
     },
     [viewer, bondPairLoci],
   );
+
+  // --- 3D painting of bonds: PERSISTENT overlays (each holds the residue ranges it was
+  // activated on) outlive the selection until toggled off on the same ranges or reset.
+  // The dashes are our own shape built from the same `bonds` the list shows (Mol*'s
+  // interactions repr drew contacts to unrendered waters and dropped most intra-chain
+  // ones), so scene and list agree by construction; `bonds` recomputes per frame scrub,
+  // so dashes follow the frame. Water partners render as small spheres on a "lab-bonds"
+  // component, exempt from the style pass and chemistry rebuild (repstyle filters the
+  // tag); this effect owns both nodes' lifecycle.
+
+  // `chain|seq|letter` of every conformer the collapse/mute state hides (entries are
+  // single-residue); a dash under a hidden letter disappears with its atoms
+  const hiddenAltKeys = useMemo(() => {
+    const out = new Set<string>();
+    for (const h of hiddenSelectors) out.add(`${h.chain}|${h.seqStart}|${h.altId}`);
+    return out;
+  }, [hiddenSelectors]);
+
+  useEffect(() => {
+    const ctx = viewer?.ctx;
+    if (!ctx || !viewer || !primaryLoaded) return;
+    const structureRef = viewer.getPrimaryStructureRef();
+    if (!structureRef) return;
+    // mid-recompute (frame scrub): keep the previous overlay until this frame's bonds land
+    if (!bonds) return;
+    runStyling("bonds3d", async () => {
+      if (viewer.getPrimaryStructureRef() !== structureRef) return;
+      if (bondWatersRef.current) {
+        try {
+          await removeNode(ctx, bondWatersRef.current);
+        } catch {
+          // the component died with a tree rebuild; nothing to remove
+        }
+        bondWatersRef.current = null;
+        bondWatersReprRef.current = null;
+      }
+      const { dashes, waters } = dashesForOverlays(bonds, bondOverlays, hiddenAltKeys);
+      const clipObjects = modelClipRef.current;
+      bondDashRef.current = await ensureBondDashes(ctx, bondDashRef.current, dashes, clipObjects);
+      if (!waters.length) return;
+      const comp = await ctx.builders.structure.tryCreateComponentFromExpression(
+        structureRef,
+        buildWatersQuery(waters, [...WATER_COMPS]),
+        "lab-bonds-waters",
+        { label: "bond waters", tags: ["lab-bonds"] },
+      );
+      if (!comp) return;
+      bondWatersRef.current = comp.ref;
+      const repr = await ctx.builders.structure.representation.addRepresentation(comp, {
+        type: "spacefill",
+        typeParams: { sizeFactor: 0.25, ignoreLight: true, clip: { variant: "pixel", objects: clipObjects } },
+        color: "element-symbol",
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+      // picking a water would select a residue the rest of the panel treats as empty
+      bondWatersReprRef.current = repr?.ref ?? null;
+      setReprsPickable(ctx, [bondWatersReprRef.current], false);
+    });
+  }, [viewer, primaryLoaded, bonds, bondOverlays, hiddenAltKeys, aSplit, runStyling]);
 
   // --- interaction: left click selects (shift toggles the clicked residue or atom in
   // and out, file-browser style); right click always opens the Selection Actions Panel —
@@ -705,8 +1005,13 @@ export default function CompareLabPanel() {
   // either way (granularity only shapes what the mark managers light up)
   useEffect(() => {
     if (!viewer) return;
-    viewer.setGranularity(pickMode === "atom" ? "element" : "residue");
+    viewer.setGranularity(pickMode === "residue" ? "residue" : "element");
   }, [viewer, pickMode, primaryLoaded]);
+
+  // leaving measure mode drops a half-finished measurement
+  useEffect(() => {
+    if (pickMode !== "measure") setMeasureArm(null);
+  }, [pickMode]);
 
   // distinct atom names per residue (altloc copies deduped, hydrogens kept — anything
   // clickable must be togglable): the enumeration toggleAtoms needs to explode a
@@ -762,6 +1067,33 @@ export default function CompareLabPanel() {
       // a left click whose press dismissed the popup is consumed, OS-menu style — it
       // neither clears nor replaces the selection (right click above re-anchors instead)
       if (dismissedPopup) return;
+      // measure mode: two atom clicks add a distance; a miss (or re-clicking the armed
+      // atom) disarms. The selection is untouched.
+      if (pickMode === "measure") {
+        if (!info || !info.atomId) {
+          setMeasureArm(null);
+          return;
+        }
+        const cur = { chain: info.chainId, seq: info.authSeqId, atom: info.atomId, alt: info.altId, comp: info.compId };
+        const prev = measureArmRef.current;
+        if (!prev) {
+          setMeasureArm(cur);
+          return;
+        }
+        setMeasureArm(null);
+        if (prev.chain === cur.chain && prev.seq === cur.seq && prev.atom === cur.atom && prev.alt === cur.alt) return;
+        const ctx = viewer.ctx;
+        if (!ctx) return;
+        runStyling(`measure-${++measureSeqRef.current}`, async () => {
+          const structure = viewer.getCurrentStructure();
+          if (!structure) return;
+          const la = executeQuery(buildAtomQuery(prev.chain, prev.seq, prev.atom, prev.alt || undefined), structure);
+          const lb = executeQuery(buildAtomQuery(cur.chain, cur.seq, cur.atom, cur.alt || undefined), structure);
+          if (la && lb) await addDistanceMeasurement(ctx, la, lb);
+          setMeasureVersion((v) => v + 1);
+        });
+        return;
+      }
       const shift = !!meta.modifiers?.shift;
       if (info) {
         if (pickMode === "atom") {
@@ -782,18 +1114,38 @@ export default function CompareLabPanel() {
         setPopup(null);
       }
     });
-  }, [viewer, pickMode, residueAtomNames]);
+  }, [viewer, pickMode, residueAtomNames, runStyling]);
 
+  // The HighlightLoci behavior runs with mark: false (spec.ts): the raw pick loci
+  // include transparency-hidden ghost conformers, which the outline postprocessing
+  // would trace. The canvas hover mark is drawn here instead, visibility-filtered.
   useEffect(() => {
     if (!viewer) return;
     return viewer.subscribeToHover((info) => {
-      const key = info ? `${info.chainId}|${info.authSeqId}|${info.insCode}` : null;
-      if (key !== hoverKeyRef.current) {
-        hoverKeyRef.current = key;
-        setHoverInfo(info);
+      const key = info
+        ? pickMode === "residue"
+          ? `${info.chainId}|${info.authSeqId}|${info.insCode}`
+          : `${info.chainId}|${info.authSeqId}|${info.insCode}|${info.atomId}|${info.altId}`
+        : null;
+      if (key === hoverKeyRef.current) return;
+      hoverKeyRef.current = key;
+      setHoverInfo(info);
+      if (!info) {
+        viewer.highlightLoci(null);
+        return;
+      }
+      const structure = viewer.getCurrentStructure();
+      if (!structure) return;
+      if (pickMode === "residue") {
+        viewer.highlightLoci(visibleLoci(structure, residueLoci(structure, info.chainId, info.authSeqId)));
+      } else {
+        // atom-precise (hidden atoms are unpickable, so no subtraction needed)
+        viewer.highlightLoci(
+          executeQuery(buildAtomQuery(info.chainId, info.authSeqId, info.atomId, info.altId || undefined), structure),
+        );
       }
     });
-  }, [viewer]);
+  }, [viewer, pickMode, visibleLoci]);
 
   // --- density: chains automatically once both models are in the scene ---
 
@@ -984,11 +1336,46 @@ export default function CompareLabPanel() {
       if (!memberTables.length) return;
       const clamped = Math.max(0, Math.min(memberTables.length - 1, i));
       setMemberIndex(clamped);
-      if (viewer) void viewer.setModelIndex(clamped);
+      if (viewer) void viewer.setModelIndex(clamped).then(() => setFrameVersion((v) => v + 1));
       setATable(memberTables[clamped]);
     },
     [memberTables, viewer],
   );
+
+  // --- cross-member bond presence: compute every member's bond set off-tree (each
+  // trajectory frame -> Structure.ofModel -> the same interaction pass the current-frame
+  // list uses), so the UI can say a bond exists in some ensemble states but not others.
+  // One sequential background pass per loaded entry; scrubbing does not re-run it.
+  const [memberBonds, setMemberBonds] = useState<Map<string, { pair: BondPair; members: number[] }> | null>(null);
+  const [memberBondsDone, setMemberBondsDone] = useState(0);
+  useEffect(() => {
+    setMemberBonds(null);
+    setMemberBondsDone(0);
+    const ctx = viewer?.ctx;
+    if (!ctx || !viewer || !primaryLoaded || memberTables.length < 2) return;
+    let stale = false;
+    (async () => {
+      const acc = new Map<string, { pair: BondPair; members: number[] }>();
+      for (let i = 0; i < memberTables.length; i++) {
+        const model = await viewer.getFrameModel(i);
+        if (stale) return;
+        if (!model) continue;
+        const frameBonds = await computeBonds(ctx, Structure.ofModel(model));
+        if (stale) return;
+        for (const pair of frameBonds) {
+          const k = bondKey(pair);
+          const rec = acc.get(k);
+          if (rec) rec.members.push(i);
+          else acc.set(k, { pair, members: [i] });
+        }
+        setMemberBondsDone(i + 1);
+      }
+      setMemberBonds(acc);
+    })().catch((e) => console.error("member bond computation failed:", e));
+    return () => {
+      stale = true;
+    };
+  }, [viewer, primaryLoaded, memberTables]);
 
   // --- metric computation + projection onto the 2Fo-Fc surface ---
 
@@ -1003,6 +1390,40 @@ export default function CompareLabPanel() {
           return occupancyEntropy(aTable);
         case "b-iso-mean":
           return bIsoMean(aTable);
+        case "bond-variability": {
+          if (!bonds) return null;
+          // per residue: bonds touching it that are NOT invariant — missing under at
+          // least one conformer of their residues, or absent in some ensemble members
+          // (ghost bonds of other members included once the member pass is in)
+          const diff = new Map<string, BondPair>();
+          for (const pair of bonds) if (confDependent(pair)) diff.set(bondKey(pair), pair);
+          if (memberBonds) {
+            for (const [k, rec] of memberBonds) {
+              if (rec.members.length < memberTables.length && !diff.has(k)) diff.set(k, rec.pair);
+            }
+          }
+          const counts = new Map<string, number>();
+          // water contacts count on their polymer partner only: a water's chain|seq key could
+          // collide with a polymer residue's auth numbering
+          for (const pair of diff.values()) {
+            for (const e of [pair.a, pair.b]) {
+              if (isWaterEnd(e)) continue;
+              const k = `${e.chain}|${e.seq}`;
+              counts.set(k, (counts.get(k) ?? 0) + 1);
+            }
+          }
+          const values = new Float32Array(aTable.residues.length);
+          aTable.residues.forEach((res, i) => {
+            values[i] = counts.get(`${res.ref.chain}|${res.ref.seq}`) ?? 0;
+          });
+          return makeTrack(
+            "bond-variability",
+            "residue",
+            aTable.residues.map((r) => r.ref),
+            values,
+            { unit: "bonds" },
+          );
+        }
         case "ensemble-rmsf":
           return memberTables.length >= 2 ? ensembleRmsf(memberTables) : null;
         case "model-rmsd":
@@ -1024,7 +1445,7 @@ export default function CompareLabPanel() {
         }
       }
     },
-    [viewer, aTable, bTable, memberTables],
+    [viewer, aTable, bTable, memberTables, bonds, memberBonds, confDependent],
   );
 
   // Every metric whose inputs are ready, as a whole-model track keyed for the lanes;
@@ -1047,6 +1468,10 @@ export default function CompareLabPanel() {
         out.set(id, "enables with the density");
         continue;
       }
+      if (id === "bond-variability" && bonds === null) {
+        out.set(id, "computing interactions");
+        continue;
+      }
       const track = computeBaseTrack(id);
       if (!track) {
         out.set(id, "unavailable");
@@ -1064,10 +1489,10 @@ export default function CompareLabPanel() {
     return out;
     // densityVersion: the map samplers read volsRef, refreshed when the maps rebuild
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aTable, bTable, memberTables, densityState, densityVersion, computeBaseTrack]);
+  }, [aTable, bTable, memberTables, densityState, densityVersion, bonds, computeBaseTrack]);
 
   const metricLaneModules = useMemo(
-    () => METRIC_ORDER.map((id) => makeMetricLane(id, metricLabel(id), METRICS.get(id)?.description ?? "")),
+    () => METRIC_ORDER.map((id) => makeMetricLane(id, metricLabel(id), metricDescription(id))),
     [],
   );
 
@@ -1257,6 +1682,54 @@ export default function CompareLabPanel() {
     };
   }, [aTable, residueRanges, confPlan]);
 
+  // --- annotated bond rows: which conformers form each selection bond, whether it is
+  // missing under some conformer of its residues, in how many ensemble members it
+  // exists, plus grayed "ghost" bonds formed only in OTHER members.
+
+  const bondRows = useMemo<BondRow[]>(() => {
+    const memberCount = memberBonds ? memberTables.length : null;
+    const rows: BondRow[] = [];
+    const currentKeys = new Set<string>();
+    for (const pair of selectionBonds) {
+      const k = bondKey(pair);
+      currentKeys.add(k);
+      rows.push({
+        pair,
+        dependent: confDependent(pair),
+        presentIn: memberBonds ? (memberBonds.get(k)?.members.length ?? 0) : null,
+        memberCount,
+        ghost: false,
+      });
+    }
+    if (memberBonds && residueRanges.length) {
+      for (const { pair, members } of memberBonds.values()) {
+        if (members.includes(memberIndex) || currentKeys.has(bondKey(pair))) continue;
+        if (
+          !rangesContain(residueRanges, pair.a.chain, pair.a.seq) &&
+          !rangesContain(residueRanges, pair.b.chain, pair.b.seq)
+        )
+          continue;
+        rows.push({ pair, dependent: false, presentIn: members.length, memberCount, ghost: true });
+      }
+    }
+    return rows;
+  }, [selectionBonds, memberBonds, memberTables.length, confDependent, residueRanges, memberIndex]);
+
+  const bondSummary = useMemo<string | null>(() => {
+    const parts: string[] = [];
+    const confDiff = bondRows.filter((r) => !r.ghost && r.dependent).length;
+    if (confDiff) parts.push(`${confDiff} bond${confDiff === 1 ? " differs" : "s differ"} across conformers`);
+    if (memberBonds) {
+      const partial = bondRows.filter((r) => !r.ghost && r.presentIn != null && r.presentIn < memberTables.length).length;
+      const ghosts = bondRows.filter((r) => r.ghost).length;
+      if (partial) parts.push(`${partial} vary across members`);
+      if (ghosts) parts.push(`${ghosts} only in other members`);
+    } else if (memberTables.length >= 2 && primaryLoaded) {
+      parts.push(`mapping member bonds ${memberBondsDone}/${memberTables.length}…`);
+    }
+    return parts.length ? parts.join(" · ") : null;
+  }, [bondRows, memberBonds, memberBondsDone, memberTables.length, primaryLoaded]);
+
   const selectionSummary = useMemo<SelectionSummary | null>(
     () =>
       residueRanges.length && selectionInfo
@@ -1292,6 +1765,169 @@ export default function CompareLabPanel() {
       return next;
     });
   }, [selectionInfo]);
+
+  // --- distance measurements: conformer spread + clear (the two-click measure mode
+  // lives in the click handler above) ---
+
+  // every split atom of the selection with its altloc letters: explicit atom picks
+  // measure just those atoms, range-selected residues measure all their split atoms
+  const spreadTargets = useMemo(() => {
+    if (!aTable) return [];
+    const targets: { chain: string; seq: number; atom: string; letters: string[] }[] = [];
+    const seen = new Set<string>();
+    const pushResidueAtoms = (res: (typeof aTable.residues)[number], onlyAtom?: string) => {
+      const byName = new Map<string, Set<string>>();
+      for (const r of res.rows) {
+        const name = aTable.atomName[r];
+        if (onlyAtom && name !== onlyAtom) continue;
+        const alt = aTable.altId[r];
+        if (!alt) continue;
+        let letters = byName.get(name);
+        if (!letters) {
+          letters = new Set();
+          byName.set(name, letters);
+        }
+        letters.add(alt);
+      }
+      for (const [name, letters] of byName) {
+        if (letters.size < 2) continue;
+        const key = `${res.ref.chain}|${res.ref.seq}|${name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        targets.push({ chain: res.ref.chain, seq: res.ref.seq, atom: name, letters: [...letters].sort() });
+      }
+    };
+    for (const res of aTable.residues) {
+      if (WATER_COMPS.has(res.compId)) continue;
+      if (rangesContain(sel.ranges, res.ref.chain, res.ref.seq)) {
+        pushResidueAtoms(res);
+        continue;
+      }
+      for (const a of sel.atoms) {
+        if (a.chain === res.ref.chain && a.seq === res.ref.seq) pushResidueAtoms(res, a.atom);
+      }
+    }
+    return targets;
+  }, [aTable, sel]);
+
+  const MEASURE_SPREAD_CAP = 30;
+  const addConformerSpread = useCallback(() => {
+    const ctx = viewer?.ctx;
+    if (!ctx || !viewer || !spreadTargets.length) return;
+    runStyling(`measure-${++measureSeqRef.current}`, async () => {
+      const structure = viewer.getCurrentStructure();
+      if (!structure) return;
+      let added = 0;
+      let capped = false;
+      outer: for (const t of spreadTargets) {
+        for (let i = 0; i < t.letters.length; i++) {
+          for (let j = i + 1; j < t.letters.length; j++) {
+            if (added >= MEASURE_SPREAD_CAP) {
+              capped = true;
+              break outer;
+            }
+            const la = executeQuery(buildAtomQuery(t.chain, t.seq, t.atom, t.letters[i]), structure);
+            const lb = executeQuery(buildAtomQuery(t.chain, t.seq, t.atom, t.letters[j]), structure);
+            if (!la || !lb) continue;
+            await addDistanceMeasurement(ctx, la, lb);
+            added++;
+          }
+        }
+      }
+      setMeasureVersion((v) => v + 1);
+      setStatus(
+        added
+          ? `${added} conformer distance${added === 1 ? "" : "s"} added${capped ? ` (capped at ${MEASURE_SPREAD_CAP})` : ""}`
+          : "no split atoms in the selection",
+      );
+    });
+  }, [viewer, spreadTargets, runStyling]);
+
+  const clearAllMeasurements = useCallback(() => {
+    const ctx = viewer?.ctx;
+    if (!ctx) return;
+    runStyling(`measure-${++measureSeqRef.current}`, async () => {
+      await clearMeasurements(ctx);
+      setMeasureVersion((v) => v + 1);
+    });
+  }, [viewer, runStyling]);
+
+  // --- persistent overlay toggles + whole-view reset ---
+
+  const currentRangesKey = useMemo(() => rangesKey(residueRanges), [residueRanges]);
+
+  const bondsOverlayActive = bondOverlays.some((o) => o.key === currentRangesKey);
+  const toggleBondsOverlay = useCallback(() => {
+    if (!residueRanges.length) return;
+    const key = rangesKey(residueRanges);
+    setBondOverlays((prev) =>
+      prev.some((o) => o.key === key) ? prev.filter((o) => o.key !== key) : [...prev, { key, ranges: residueRanges }],
+    );
+  }, [residueRanges]);
+
+  const selRepActive = selRepOverlays.find((o) => o.key === currentRangesKey)?.type ?? null;
+  const setSelRep = useCallback(
+    (type: RepType | null) => {
+      if (!residueRanges.length) return;
+      const key = rangesKey(residueRanges);
+      setSelRepOverlays((prev) => {
+        const rest = prev.filter((o) => o.key !== key);
+        return type ? [...rest, { key, ranges: residueRanges, type }] : rest;
+      });
+    },
+    [residueRanges],
+  );
+
+  // per-letter conformer toggles for the CURRENT selection's expanded residues: a letter
+  // is "off" when every selection residue carrying it is muted; toggling flips them all
+  const selectionMutedLetters = useMemo<string[]>(() => {
+    const keys = selectionInfo?.splitKeys ?? [];
+    if (!keys.length) return [];
+    return (selectionInfo?.letters ?? []).filter((letter) => {
+      const carriers = keys.filter((k) => confPlan.byKey.get(k)?.altIds.includes(letter));
+      return carriers.length > 0 && carriers.every((k) => mutedAlts.has(`${k}|${letter}`));
+    });
+  }, [selectionInfo, confPlan, mutedAlts]);
+
+  const toggleConformerLetter = useCallback(
+    (letter: string) => {
+      const keys = selectionInfo?.splitKeys ?? [];
+      const carriers = keys.filter((k) => confPlan.byKey.get(k)?.altIds.includes(letter));
+      if (!carriers.length) return;
+      setMutedAlts((prev) => {
+        const next = new Set(prev);
+        const allMuted = carriers.every((k) => prev.has(`${k}|${letter}`));
+        for (const k of carriers) {
+          if (allMuted) next.delete(`${k}|${letter}`);
+          else next.add(`${k}|${letter}`);
+        }
+        return next;
+      });
+    },
+    [selectionInfo, confPlan],
+  );
+
+  // back to the freshly-loaded look: conformers collapsed, default style, no overlays,
+  // no clip, no measurements, empty selection. Bookmarks and density settings persist.
+  const resetAll = useCallback(() => {
+    setSel(EMPTY_SELECTION);
+    setPopup(null);
+    setShownConformers(new Set());
+    setGlobalAlt(null);
+    setMutedAlts(new Set());
+    setRepStyle(sanitizeRepStyle(null));
+    setClip(null);
+    setBondOverlays([]);
+    setSelRepOverlays([]);
+    clearAllMeasurements();
+  }, [clearAllMeasurements]);
+
+  const measureCount = useMemo(
+    () => (viewer?.ctx ? measurementCount(viewer.ctx) : 0),
+    // measureVersion/primaryLoaded are the change signals: the manager's state is read imperatively
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [viewer, measureVersion, primaryLoaded],
+  );
 
   const applyClip = useCallback(
     (mode: ClipMode, radius: number) => {
@@ -1345,11 +1981,11 @@ export default function CompareLabPanel() {
     [entry],
   );
 
-  // resurrect: the selection and the RepStyle it was saved with, both flowing through
-  // the existing effects/serializer (stale chain ids just yield empty loci)
+  // resurrect the SELECTION only. Bookmarks still store the RepStyle they were saved
+  // with (schema unchanged), but applying one no longer touches the global style — a
+  // bookmark saved under "atoms" used to silently switch the whole structure.
   const applyBookmark = useCallback((b: SelectionBookmark) => {
     setSel(normalizeSelection(b.selection));
-    setRepStyle(sanitizeRepStyle(b.repStyle));
   }, []);
 
   // every altloc letter of model A, with how many residues carry it (the state buttons)
@@ -1457,10 +2093,10 @@ export default function CompareLabPanel() {
         }
         const structure = viewer.getCurrentStructure();
         if (!structure) return;
-        viewer.highlightLoci(residueLoci(structure, r.chain, r.seq));
+        viewer.highlightLoci(visibleLoci(structure, residueLoci(structure, r.chain, r.seq)));
       });
     },
-    [viewer],
+    [viewer, visibleLoci],
   );
 
   const onPrimaryLoaded = useCallback(() => setPrimaryLoaded(true), []);
@@ -1564,10 +2200,12 @@ export default function CompareLabPanel() {
       memberNums={ensembleInfo?.modelNums ?? []}
       memberIndex={memberIndex}
       onMember={setMember}
-      selectionBonds={selectionBonds}
+      bondRows={bondRows}
       bondsReady={bonds !== null}
+      bondSummary={bondSummary}
       onBondHover={onBondHover}
       onBondFocus={onBondFocus}
+      onResetAll={resetAll}
     />
   );
 
@@ -1598,6 +2236,24 @@ export default function CompareLabPanel() {
 
         <div className="relative min-w-0 flex-1" onContextMenu={(e) => e.preventDefault()}>
           <MolstarViewer data={aText} binary={false} view={VIEW} variant="lab" onReady={setViewer} onLoaded={onPrimaryLoaded} />
+          {/* faint scrim while the bundle loads: covers the fetch/table phase AND the
+              window where Mol* is still parsing/building (loading is already false,
+              primaryLoaded not yet true — the slow part for big ensembles) */}
+          {!loadError && (loading || (!!aText && !primaryLoaded)) && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/40 backdrop-blur-[1px]">
+              <div className={`flex items-center gap-2 px-2.5 py-1.5 text-[11px] text-ink-muted ${CARD_SHELL}`}>
+                <Spinner className="h-3.5 w-3.5" />
+                loading model
+              </div>
+            </div>
+          )}
+          {pickMode === "measure" && (
+            <div className={`pointer-events-none absolute left-2 top-2 z-10 px-1.5 py-0.5 text-[10.5px] text-ink-secondary ${CARD_SHELL}`}>
+              {measureArm
+                ? `measuring from ${measureArm.comp} ${measureArm.chain}/${measureArm.seq} ${measureArm.atom}${measureArm.alt ? ` alt ${measureArm.alt}` : ""} — click the second atom`
+                : "measure: click two atoms"}
+            </div>
+          )}
           <div className="absolute right-2 top-2 z-10 flex items-start gap-1.5">
             <BookmarkTray bookmarks={bookmarks} onApply={applyBookmark} onDelete={deleteBookmark} />
             <StyleTray
@@ -1617,7 +2273,7 @@ export default function CompareLabPanel() {
           {hoverInfo && (
             <div className={`pointer-events-none absolute bottom-2 left-2 px-1.5 py-0.5 text-[11px] text-ink-secondary ${CARD_SHELL}`}>
               {hoverInfo.compId} {hoverInfo.chainId}/{hoverInfo.authSeqId}
-              {pickMode === "atom" && hoverInfo.atomId ? ` ${hoverInfo.atomId}` : ""}
+              {pickMode !== "residue" && hoverInfo.atomId ? ` ${hoverInfo.atomId}` : ""}
               {hoverInfo.altId ? ` alt ${hoverInfo.altId}` : ""}
             </div>
           )}
@@ -1630,12 +2286,24 @@ export default function CompareLabPanel() {
               onBookmark={popupTarget && entry && bookmarks.length < MAX_BOOKMARKS ? addBookmark : null}
               bookmarkCount={bookmarks.length}
               conformersShown={popupShown}
+              mutedLetters={selectionMutedLetters}
+              onToggleLetter={toggleConformerLetter}
               densityReady={ready}
               clipMode={clip ? (clip.includeModel ? "all" : "density") : "off"}
               clipRadius={popupClipRadius}
               onToggleConformers={togglePopupConformers}
               onClip={applyClip}
               onClose={closePopup}
+              onConformerSpread={spreadTargets.length ? addConformerSpread : null}
+              bondsReady={bonds !== null}
+              bondCount={selectionBonds.length}
+              showBonds3d={bondsOverlayActive}
+              onShowBonds3d={toggleBondsOverlay}
+              selRep={selRepActive}
+              onSelRep={setSelRep}
+              measureCount={measureCount}
+              onClearMeasurements={clearAllMeasurements}
+              onResetAll={resetAll}
             />
           )}
           {showSlice2d && (

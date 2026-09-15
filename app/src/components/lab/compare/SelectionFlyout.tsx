@@ -5,8 +5,10 @@ import type { ResidueRange } from "@/lib/molstar/conformers";
 import { altColorCss } from "@/lib/molstar/altloc-theme";
 import { conformerSupport, type ConformerSupportRow, type MapSampler } from "@dynamic-pdb/hetkit/metrics";
 import type { AtomTable } from "@dynamic-pdb/hetkit/model";
+import type { BondPair } from "@/lib/molstar/interactions";
+import BondList, { type BondRow } from "./BondList";
 import ConformerStatesPanel, { type StateLetter } from "./ConformerStatesPanel";
-import { SliderRow, TinyText } from "./ui";
+import { GroupLabel, SliderRow, TinyText } from "./ui";
 
 // The conformers/selection flyout on the icon tray: reports WHATEVER is selected — a
 // single residue gets the per-conformer density-support table with its display knobs, a
@@ -14,23 +16,18 @@ import { SliderRow, TinyText } from "./ui";
 // buttons. All selection state lives in CompareLabPanel; only the two table-display
 // knobs are local.
 
-/** aggregates of the current range selection, computed by the host from the atom table */
-export interface RangeSummary {
-  chain: string;
-  from: number;
-  to: number;
+/** aggregates of the current selection, computed by the host from the atom table */
+export interface SelectionSummary {
+  /** formatted range label ("A 15-22, 41") */
+  label: string;
   residueCount: number;
   splitCount: number;
   /** [conformer count, residues with it], ascending */
   histogram: [number, number][];
-  /** mean occupancy of alternate-conformer heavy atoms, null when the range has none */
+  /** mean occupancy of alternate-conformer heavy atoms, null when the selection has none */
   meanAltOcc: number | null;
   /** mean B over heavy atoms, null when B is absent */
   meanB: number | null;
-}
-
-function GroupLabel({ children }: { children: React.ReactNode }) {
-  return <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">{children}</span>;
 }
 
 function Fact({ label, value }: { label: string; value: string }) {
@@ -49,8 +46,8 @@ export default function SelectionFlyout({
   conformersShown,
   densitySampler,
   fofcSampler,
-  selRange,
-  rangeSummary,
+  selection,
+  summary,
   stateLetters,
   globalAlt,
   onGlobalAlt,
@@ -58,8 +55,15 @@ export default function SelectionFlyout({
   memberNums,
   memberIndex,
   onMember,
+  bondRows,
+  bondsReady,
+  bondSummary,
+  onBondHover,
+  onBondFocus,
+  onResetAll,
 }: {
   aTable: AtomTable | null;
+  /** the sole selected residue, host-derived; null when the selection is not a single residue */
   picked: PickInfo | null;
   /** conformers of the picked residue (1 when unsplit); null when nothing is picked */
   conformerCount: number | null;
@@ -67,8 +71,8 @@ export default function SelectionFlyout({
   /** 2Fo-Fc sampler in sigma units; null until density is ready */
   densitySampler: MapSampler | null;
   fofcSampler: MapSampler | null;
-  selRange: ResidueRange | null;
-  rangeSummary: RangeSummary | null;
+  selection: ResidueRange[];
+  summary: SelectionSummary | null;
   stateLetters: StateLetter[];
   globalAlt: string | null;
   onGlobalAlt: (letter: string | null) => void;
@@ -77,6 +81,16 @@ export default function SelectionFlyout({
   memberNums: number[];
   memberIndex: number;
   onMember: (i: number) => void;
+  /** non-covalent bonds touching the selection (host-filtered, annotated) */
+  bondRows: BondRow[];
+  /** false while the interaction computation is still running */
+  bondsReady: boolean;
+  /** conformer/ensemble differences one-liner, null when there is nothing to say */
+  bondSummary: string | null;
+  onBondHover: (pair: BondPair | null) => void;
+  onBondFocus: (pair: BondPair) => void;
+  /** reset every structure change (conformers, style, overlays, clip, measurements) */
+  onResetAll: () => void;
 }) {
   const [occNormalize, setOccNormalize] = useState(false);
   const [occFloor, setOccFloor] = useState(0.2);
@@ -96,9 +110,19 @@ export default function SelectionFlyout({
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex flex-col gap-2">
-        <GroupLabel>Selection</GroupLabel>
-        {!picked && !selRange && (
-          <TinyText>left click (3D or lanes) selects a residue; drag over the lanes for a range; right click opens the actions panel</TinyText>
+        <div className="flex items-center justify-between">
+          <GroupLabel>Selection</GroupLabel>
+          <button
+            type="button"
+            title="back to the freshly-loaded look: collapse conformers, default style, remove bond/representation overlays, clip and measurements. Bookmarks persist."
+            className="rounded border border-line-strong bg-white/70 px-1.5 py-px text-[10px] text-ink-secondary transition-colors hover:border-danger/50 hover:text-danger"
+            onClick={onResetAll}
+          >
+            reset all
+          </button>
+        </div>
+        {selection.length === 0 && (
+          <TinyText>left click (3D or lanes) selects a residue, shift-click adds to the selection; drag over the lanes for a range; right click opens the actions panel</TinyText>
         )}
 
         {picked && (
@@ -162,39 +186,55 @@ export default function SelectionFlyout({
               <span>per unit occupancy (value / occ)</span>
             </label>
             <SliderRow
-              label={`occupancy floor: ${occFloor.toFixed(2)} (grayed below: too little occupancy to test)`}
+              label="occupancy floor"
               min={0}
               max={0.5}
               step={0.05}
               value={occFloor}
+              display={occFloor.toFixed(2)}
               onChange={setOccFloor}
             />
+            <TinyText>rows grayed below the floor: too little occupancy to test</TinyText>
           </>
         )}
         {picked && !supportRows && <TinyText>conformer support appears once density is loaded</TinyText>}
 
-        {selRange && rangeSummary && (
+        {!picked && summary && (
           <div className="flex flex-col gap-1">
             <div className="text-[12px] text-ink-secondary">
-              {rangeSummary.chain} {rangeSummary.from}–{rangeSummary.to}
-              <span className="text-ink-muted/75"> — {rangeSummary.residueCount} residues</span>
+              {summary.label}
+              <span className="text-ink-muted/75"> — {summary.residueCount} residues</span>
             </div>
             <Fact
               label="residues with alternates"
-              value={`${rangeSummary.splitCount} (${
-                rangeSummary.residueCount ? Math.round((100 * rangeSummary.splitCount) / rangeSummary.residueCount) : 0
+              value={`${summary.splitCount} (${
+                summary.residueCount ? Math.round((100 * summary.splitCount) / summary.residueCount) : 0
               }%)`}
             />
-            {rangeSummary.histogram.map(([n, count]) => (
+            {summary.histogram.map(([n, count]) => (
               <Fact key={n} label={`${n} conformer${n === 1 ? "" : "s"}`} value={`${count} residues`} />
             ))}
-            {rangeSummary.meanAltOcc != null && (
-              <Fact label="mean occupancy (alt atoms)" value={rangeSummary.meanAltOcc.toFixed(2)} />
+            {summary.meanAltOcc != null && (
+              <Fact label="mean occupancy (alt atoms)" value={summary.meanAltOcc.toFixed(2)} />
             )}
-            {rangeSummary.meanB != null && <Fact label="mean B (heavy atoms)" value={rangeSummary.meanB.toFixed(1)} />}
+            {summary.meanB != null && <Fact label="mean B (heavy atoms)" value={summary.meanB.toFixed(1)} />}
           </div>
         )}
       </div>
+
+      {selection.length > 0 && (
+        <div className="flex flex-col gap-1.5 border-t border-line pt-1.5">
+          <GroupLabel>Bonds</GroupLabel>
+          {!bondsReady ? (
+            <TinyText>computing interactions…</TinyText>
+          ) : (
+            <>
+              <BondList rows={bondRows} onHover={onBondHover} onFocus={onBondFocus} />
+              {bondSummary && <TinyText>{bondSummary}</TinyText>}
+            </>
+          )}
+        </div>
+      )}
 
       {memberNums.length > 1 && (
         <div className="flex flex-col gap-1.5 border-t border-line pt-1.5">

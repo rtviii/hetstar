@@ -23,8 +23,8 @@ const config: Config = {
         "ring-accent": "0 0 0 3px rgba(102, 59, 228, 0.2)",
       },
       fontFamily: {
-        sans: ["var(--font-geist-sans)", "system-ui", "sans-serif"],
-        mono: ["var(--font-geist-mono)", "monospace"],
+        sans: ["var(--font-plex-sans)", "system-ui", "sans-serif"],
+        mono: ["var(--font-plex-mono)", "ui-monospace", "monospace"],
       },
     },
   },

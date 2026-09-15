@@ -3,6 +3,7 @@ import type { MouseEvent, ReactNode } from "react";
 
 import type { RepColorMode, RepQuality, RepStyle, RepType } from "@/lib/molstar/repstyle";
 import { GroupLabel, HoverFlyout, SliderRow, SwitchButton, TinyText } from "./ui";
+import { ConformersIcon, DensityIcon, StyleIcon } from "./icons";
 
 // The viewer's icon tray at the canvas's top-right (positioned by the parent wrapper,
 // next to the entry chip): three icons, each with a hover flyout. The density icon's
@@ -33,40 +34,6 @@ const COLOR_MODES: { id: RepColorMode; label: string }[] = [
 ];
 
 const REP_QUALITIES: RepQuality[] = ["auto", "high", "medium", "low"];
-
-function DensityIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <circle cx="8" cy="8" r="2.6" />
-      <circle cx="8" cy="8" r="6" opacity="0.5" />
-    </svg>
-  );
-}
-
-// two offset stick traces sharing endpoints: a residue split into alternate conformers
-function ConformersIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <path d="M2 12 L6 8 L10 10 L14 5" />
-      <path d="M2 12 L6 12.5 L10 14 L14 5" opacity="0.45" />
-      <circle cx="2" cy="12" r="1.3" fill="currentColor" stroke="none" />
-      <circle cx="14" cy="5" r="1.3" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-function StyleIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <line x1="2" y1="4" x2="14" y2="4" />
-      <line x1="2" y1="8" x2="14" y2="8" />
-      <line x1="2" y1="12" x2="14" y2="12" />
-      <circle cx="6" cy="4" r="1.6" fill="currentColor" stroke="none" />
-      <circle cx="11" cy="8" r="1.6" fill="currentColor" stroke="none" />
-      <circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
 
 export function TrayButton({
   active,

@@ -80,7 +80,7 @@ export const sequenceLane: LaneModule = {
   label: "Sequence",
   description: "one-letter residues of the chain; faint where the shown model has no atoms",
   defaultOn: true,
-  height: 18,
+  height: 16,
   unavailable: () => null,
   Component: SequenceLaneView,
   readout: (ctx, pos) => {

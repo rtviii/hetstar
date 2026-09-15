@@ -1,5 +1,7 @@
 "use client";
 import type { DensityQuality } from "@/lib/molstar/density";
+import type { SliceAxis } from "../SlicePanel";
+import SliceControls from "./SliceControls";
 import {
   METRIC_ORDER,
   METRIC_UI,
@@ -9,12 +11,13 @@ import {
   type MetricId,
   type MetricProvenance,
 } from "./metrics";
-import { SliderRow, SwitchButton, TinyText, Tooltip } from "./ui";
+import { GroupLabel, SliderRow, SwitchButton, TinyText, Tooltip } from "./ui";
 
-// Everything density: the metric painted on the 2Fo-Fc surface, the map toggles and
-// their knobs, the density quality and the 2D slice map switch. Rendered inside the
-// tray's hover flyout on the density icon (whose CLICK toggles the maps themselves);
-// all state lives in CompareLabPanel.
+// Everything density: the map toggles and their knobs (top — the everyday controls),
+// the metric painted on the 2Fo-Fc surface, the density quality and the 2D slice map
+// (plane controls + the floating image switch). Rendered inside the tray's hover
+// flyout on the density icon (whose CLICK toggles the maps themselves); all state
+// lives in CompareLabPanel.
 
 const DENSITY_QUALITIES: DensityQuality[] = ["low", "auto", "high"];
 
@@ -33,10 +36,6 @@ const METRIC_GROUPS: { title: string; ids: MetricId[] }[] = (() => {
     { title: "Map", ids: map },
   ];
 })();
-
-function GroupLabel({ children }: { children: React.ReactNode }) {
-  return <span className="text-[10.5px] uppercase tracking-wide text-ink-muted/75">{children}</span>;
-}
 
 export default function DensityFlyout({
   metricId,
@@ -60,6 +59,16 @@ export default function DensityFlyout({
   onDensityQuality,
   showSlice2d,
   onShowSlice2d,
+  boxReady,
+  slice3d,
+  onSlice3d,
+  sliceModel,
+  onSliceModel,
+  sliceAxis,
+  onSliceAxis,
+  sliceFrac,
+  onSliceFrac,
+  sliceCoord,
 }: {
   metricId: MetricId | "none";
   onMetricId: (id: MetricId | "none") => void;
@@ -84,6 +93,17 @@ export default function DensityFlyout({
   onDensityQuality: (q: DensityQuality) => void;
   showSlice2d: boolean;
   onShowSlice2d: (v: boolean) => void;
+  /** the model box exists (slice plane controls enable) */
+  boxReady: boolean;
+  slice3d: boolean;
+  onSlice3d: (v: boolean) => void;
+  sliceModel: boolean;
+  onSliceModel: (v: boolean) => void;
+  sliceAxis: SliceAxis;
+  onSliceAxis: (a: SliceAxis) => void;
+  sliceFrac: number;
+  onSliceFrac: (v: number) => void;
+  sliceCoord: number | null;
 }) {
   const metricSwitch = (id: MetricId) => {
     const ui = METRIC_UI[id];
@@ -115,7 +135,54 @@ export default function DensityFlyout({
 
   return (
     <div className="flex flex-col gap-2.5">
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1.5">
+        <GroupLabel>Maps</GroupLabel>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={show2fofc} disabled={!densityReady} onChange={(e) => onShow2fofc(e.target.checked)} />
+          <span>2Fo-Fc</span>
+        </label>
+        <SliderRow
+          label="2Fo-Fc contour"
+          min={0.5}
+          max={4}
+          step={0.1}
+          value={sigma}
+          display={`${sigma.toFixed(1)} sigma`}
+          disabled={!densityReady || !show2fofc}
+          onChange={onSigma}
+        />
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={showFofc} disabled={!densityReady} onChange={(e) => onShowFofc(e.target.checked)} />
+          <Tooltip
+            content={
+              <div className="flex flex-col gap-1">
+                <div className="font-medium">Fo-Fc difference map</div>
+                <div>
+                  Isosurfaces at +3 sigma (green: density the model does not explain) and -3 sigma (red: modeled matter
+                  the data lack). Levels fixed; from the same client-side FFT as 2Fo-Fc.
+                </div>
+              </div>
+            }
+          >
+            <span>Fo-Fc (+3 green / -3 red)</span>
+          </Tooltip>
+        </label>
+        <SliderRow
+          label="map opacity"
+          min={0.15}
+          max={1}
+          step={0.05}
+          value={opacity}
+          display={`${Math.round(opacity * 100)}%`}
+          disabled={!densityReady}
+          onChange={onOpacity}
+        />
+        {!densityReady && (
+          <TinyText>maps compute in the background; the density button turns them on once they are in</TinyText>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1 border-t border-line pt-1.5">
         <GroupLabel>Paint metric on the density</GroupLabel>
         {provenance.aDesc && provenance.bDesc && (
           <TinyText>
@@ -147,49 +214,6 @@ export default function DensityFlyout({
         {status && <TinyText>{status}</TinyText>}
       </div>
 
-      <div className="flex flex-col gap-2 border-t border-line pt-1.5">
-        <GroupLabel>Maps</GroupLabel>
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={show2fofc} disabled={!densityReady} onChange={(e) => onShow2fofc(e.target.checked)} />
-          <span>2Fo-Fc</span>
-        </label>
-        <SliderRow
-          label={`2Fo-Fc contour: ${sigma.toFixed(1)} sigma`}
-          min={0.5}
-          max={4}
-          step={0.1}
-          value={sigma}
-          disabled={!densityReady || !show2fofc}
-          onChange={onSigma}
-        />
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={showFofc} disabled={!densityReady} onChange={(e) => onShowFofc(e.target.checked)} />
-          <Tooltip
-            content={
-              <div className="flex flex-col gap-1">
-                <div className="font-medium">Fo-Fc difference map</div>
-                <div>
-                  Isosurfaces at +3 sigma (green: density the model does not explain) and -3 sigma (red: modeled matter
-                  the data lack). Levels fixed; from the same client-side FFT as 2Fo-Fc.
-                </div>
-              </div>
-            }
-          >
-            <span>Fo-Fc (+3 green / -3 red)</span>
-          </Tooltip>
-        </label>
-        <SliderRow
-          label={`map opacity: ${Math.round(opacity * 100)}%`}
-          min={0.15}
-          max={1}
-          step={0.05}
-          value={opacity}
-          disabled={!densityReady}
-          onChange={onOpacity}
-        />
-        {!densityReady && <TinyText>density loads with the entry; toggles enable when the maps are in</TinyText>}
-      </div>
-
       <div className={`flex flex-col gap-1 border-t border-line pt-1.5 ${densityReady ? "" : "opacity-40"}`}>
         <GroupLabel>Density quality{densityBusy ? " — rebuilding..." : ""}</GroupLabel>
         <div className="flex items-center gap-1">
@@ -209,6 +233,19 @@ export default function DensityFlyout({
 
       <div className="flex flex-col gap-1 border-t border-line pt-1.5">
         <GroupLabel>2D slice map</GroupLabel>
+        <SliceControls
+          boxReady={boxReady}
+          densityReady={densityReady}
+          slice3d={slice3d}
+          onSlice3d={onSlice3d}
+          sliceModel={sliceModel}
+          onSliceModel={onSliceModel}
+          axis={sliceAxis}
+          onAxis={onSliceAxis}
+          frac={sliceFrac}
+          onFrac={onSliceFrac}
+          coord={sliceCoord}
+        />
         <div className="flex items-center gap-1">
           <SwitchButton pressed={!showSlice2d} onClick={() => onShowSlice2d(false)}>
             off
@@ -217,9 +254,7 @@ export default function DensityFlyout({
             on
           </SwitchButton>
         </div>
-        <TinyText>
-          images the slice plane in the bottom panel; the plane itself (normal, position, what it cuts) is set there
-        </TinyText>
+        <TinyText>images the slice plane as a floating panel over the 3D canvas</TinyText>
       </div>
     </div>
   );

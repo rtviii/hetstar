@@ -6,11 +6,58 @@ import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useStat
 // component library.
 
 export function SectionLabel({ children }: { children: ReactNode }) {
-  return <span className="block text-[11px] font-medium uppercase tracking-wide text-ink-muted">{children}</span>;
+  return <span className="block text-[11px] font-medium uppercase tracking-wider text-ink-muted">{children}</span>;
 }
+
+/** the flyout/popup section heading (one shared definition; was copied per panel) */
+export function GroupLabel({ children }: { children: ReactNode }) {
+  return <span className="text-[10px] font-medium uppercase tracking-wider text-ink-muted/80">{children}</span>;
+}
+
+// The one card shell for every ephemeral surface (tooltip, popover, flyout, popup):
+// translucent white over a backdrop blur, soft border, small shadow — the tubulinxyz
+// treatment on the DPDB grays.
+export const CARD_SHELL =
+  "rounded-lg border border-line-strong/60 bg-white/85 backdrop-blur-sm shadow-sm";
 
 export function TinyText({ children, className }: { children: ReactNode; className?: string }) {
   return <div className={`text-[10.5px] leading-snug text-ink-muted/75 ${className ?? ""}`}>{children}</div>;
+}
+
+/** The one loading spinner (entry chip, viewer overlay). Size via className (default 12px). */
+export function Spinner({ className }: { className?: string }) {
+  return (
+    <span
+      className={`inline-block animate-spin rounded-full border-2 border-line border-t-accent ${className ?? "h-3 w-3"}`}
+      aria-label="loading"
+    />
+  );
+}
+
+/** Compact square icon button for the actions popup (no pressed state — see SwitchButton). */
+export function IconButton({
+  disabled,
+  onClick,
+  label,
+  children,
+}: {
+  disabled?: boolean;
+  onClick: () => void;
+  /** aria-label; the explanation belongs in a wrapping Tooltip */
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-5 w-5 items-center justify-center rounded border border-line-strong bg-white/70 text-ink-secondary transition-colors hover:bg-line/70 disabled:cursor-default disabled:opacity-40"
+    >
+      {children}
+    </button>
+  );
 }
 
 // Escape and a capture-phase mousedown outside `ref` close a floating card; the listeners
@@ -66,7 +113,7 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
       {children}
       {pos && (
         <div
-          className="pointer-events-none fixed z-50 w-72 rounded border border-line bg-white p-2 text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary shadow-md"
+          className={`pointer-events-none fixed z-50 w-72 p-2 text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary ${CARD_SHELL}`}
           style={{ left: pos.x, top: pos.above ? undefined : pos.y, bottom: pos.above ? window.innerHeight - pos.y : undefined }}
         >
           {content}
@@ -131,7 +178,7 @@ export function PinPopover({
       </span>
       {pos && (
         <div
-          className="fixed z-50 max-h-[70vh] cursor-auto select-text overflow-y-auto rounded border border-line bg-white p-2.5 text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary shadow-md"
+          className={`fixed z-50 max-h-[70vh] cursor-auto select-text overflow-y-auto p-2 text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary ${CARD_SHELL}`}
           style={{
             left: pos.x,
             width,
@@ -226,7 +273,7 @@ export function HoverFlyout({
       </span>
       {pos && (
         <div
-          className="fixed z-50 max-h-[75vh] cursor-auto select-text overflow-y-auto rounded border border-line bg-white p-2.5 text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary shadow-md"
+          className={`fixed z-50 max-h-[75vh] cursor-auto select-text overflow-y-auto p-2 text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary ${CARD_SHELL}`}
           style={{
             left: pos.x,
             width,
@@ -261,10 +308,10 @@ export function SwitchButton({
       disabled={disabled}
       title={title}
       onClick={onClick}
-      className={`rounded border px-1.5 py-0.5 text-[11px] leading-tight transition-colors disabled:cursor-default disabled:opacity-40 ${
+      className={`rounded border px-1 py-px text-[10.5px] leading-tight transition-colors disabled:cursor-default disabled:opacity-40 ${
         pressed
           ? "border-accent bg-accent-soft text-accent"
-          : "border-line-strong bg-white text-ink-secondary hover:bg-line"
+          : "border-line-strong/70 bg-white/70 text-ink-secondary hover:bg-line/70"
       }`}
     >
       {children}
@@ -272,6 +319,7 @@ export function SwitchButton({
   );
 }
 
+// One compact row: label left, range in the middle, optional value readout right.
 export function SliderRow({
   label,
   min,
@@ -280,6 +328,7 @@ export function SliderRow({
   value,
   disabled,
   onChange,
+  display,
 }: {
   label: ReactNode;
   min: number;
@@ -288,12 +337,15 @@ export function SliderRow({
   value: number;
   disabled?: boolean;
   onChange: (v: number) => void;
+  /** formatted current value, rendered right of the range */
+  display?: string;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-[11px] text-ink-secondary">{label}</span>
+    <label className="flex items-center gap-2">
+      <span className="whitespace-nowrap text-[10px] text-ink-muted">{label}</span>
       <input
         type="range"
+        className="min-w-0 flex-1"
         min={min}
         max={max}
         step={step}
@@ -301,6 +353,9 @@ export function SliderRow({
         disabled={disabled}
         onChange={(e) => onChange(Number(e.target.value))}
       />
+      {display != null && (
+        <span className="whitespace-nowrap text-right text-[10px] tabular-nums text-ink-muted">{display}</span>
+      )}
     </label>
   );
 }

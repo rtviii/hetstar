@@ -3,10 +3,13 @@ import { Vec4 } from "molstar/lib/mol-math/linear-algebra/3d/vec4";
 import { EmptyLoci } from "molstar/lib/mol-model/loci";
 import {
   Bond,
+  type Model,
   Structure,
   StructureElement,
   StructureProperties,
+  type Trajectory,
 } from "molstar/lib/mol-model/structure";
+import { Task } from "molstar/lib/mol-task";
 import { createPluginUI } from "molstar/lib/mol-plugin-ui";
 import { PluginUIContext } from "molstar/lib/mol-plugin-ui/context";
 import { renderReact18 } from "molstar/lib/mol-plugin-ui/react18";
@@ -30,6 +33,7 @@ import {
 import { PluginCommands } from "molstar/lib/mol-plugin/commands";
 import { StateSelection } from "molstar/lib/mol-state";
 import { Color } from "molstar/lib/mol-util/color";
+import { MarkerAction } from "molstar/lib/mol-util/marker-action";
 import type { ColorTheme } from "molstar/lib/mol-theme/color";
 import { AltLocColorThemeProvider } from "./altloc-theme";
 import { setReprsPickable } from "./density";
@@ -124,6 +128,8 @@ export class MolstarViewer {
   // update to switch frames) and the trajectory's total frame count.
   private modelRef: string | null = null;
   private modelCount = 1;
+  // State ref of the parsed trajectory (all frames), for reading ensemble members off-tree.
+  private trajectoryRef: string | null = null;
   // State ref of the primary structure (the one load()/buildRepresentation created), so callers can
   // target its hierarchy components (transparency/overpaint/clip) without guessing indices.
   private primaryStructureRef: string | null = null;
@@ -208,6 +214,7 @@ export class MolstarViewer {
     if (!this.ctx) throw new Error("Viewer disposed during load");
     const trajectory = await this.ctx.builders.structure.parseTrajectory(raw, "mmcif");
     if (!this.ctx) throw new Error("Viewer disposed during load");
+    this.trajectoryRef = trajectory.ref;
     if (opts.het && opts.het.length) await this.buildHeterogeneity(trajectory, opts.het);
     else if (opts.tlsGroups && opts.tlsGroups.length) await this.buildTls(trajectory, opts.tlsGroups);
     else await this.buildRepresentation(trajectory, opts.view ?? DEFAULT_VIEW);
@@ -338,6 +345,20 @@ export class MolstarViewer {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .update((old: any) => ({ ...old, modelIndex: index }))
       .commit();
+  }
+
+  /**
+   * Read one ensemble member's Model straight off the parsed trajectory — no state-tree
+   * writes, no effect on the displayed frame. For multi-model mmCIF the frames are plain
+   * models (sync); the Task branch covers computed trajectories.
+   */
+  async getFrameModel(index: number): Promise<Model | null> {
+    if (!this.ctx || !this.trajectoryRef) return null;
+    const cell = this.ctx.state.data.select(StateSelection.Generators.byRef(this.trajectoryRef))[0];
+    const traj = cell?.obj?.data as Trajectory | undefined;
+    if (!traj || index < 0 || index >= traj.frameCount) return null;
+    const frame = traj.getFrameAtIndex(index);
+    return Task.is(frame) ? await this.ctx.runTask(frame) : frame;
   }
 
   // --- TLS rigid-body libration ---
@@ -602,7 +623,9 @@ export class MolstarViewer {
     this.hetNetworks = [];
     this.modelRef = null;
     this.modelCount = 1;
+    this.trajectoryRef = null;
     this.primaryStructureRef = null;
+    this.prevHighlight = null;
     if (!this.ctx) return;
     await PluginCommands.State.RemoveObject(this.ctx, {
       state: this.ctx.state.data,
@@ -636,6 +659,9 @@ export class MolstarViewer {
 
   // --- highlight / focus / selection ---
 
+  // the loci this class last marked directly on the canvas (see highlightLoci)
+  private prevHighlight: StructureElement.Loci | null = null;
+
   highlightLoci(loci: StructureElement.Loci | null): void {
     if (!this.ctx) return;
     if (!loci || StructureElement.Loci.isEmpty(loci)) {
@@ -644,6 +670,22 @@ export class MolstarViewer {
       // highlightOnly, not highlight: plain highlight() ACCUMULATES marks, so sweeping
       // the cursor across the barplot lit up every residue passed over at once.
       this.ctx.managers.interactivity.lociHighlights.highlightOnly({ loci }, false);
+    }
+    // The manager only BOOKKEEPS: actual marking runs through the providers registered
+    // by the HighlightLoci behavior, and the lab spec disables that provider
+    // (mark: false — its automatic raw-loci marking traced transparency-hidden ghost
+    // conformers). So mark the canvas directly as well, clearing our previous mark by
+    // hand; in specs where the provider is live the two paths mark the same loci and
+    // the actions coalesce.
+    const canvas = this.ctx.canvas3d;
+    if (!canvas) return;
+    if (this.prevHighlight) {
+      canvas.mark({ loci: this.prevHighlight }, MarkerAction.RemoveHighlight);
+      this.prevHighlight = null;
+    }
+    if (loci && !StructureElement.Loci.isEmpty(loci)) {
+      canvas.mark({ loci }, MarkerAction.Highlight);
+      this.prevHighlight = loci;
     }
   }
 

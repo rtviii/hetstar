@@ -182,8 +182,7 @@ export default function SlicePanel({
           <option value="density">density</option>
         </select>
       </div>
-      {/* intrinsic size (320 x up to 240 px) so the strip grows by a bounded amount */}
-      <canvas ref={canvasRef} className="rounded border border-line" onMouseMove={onMove} onMouseLeave={() => setReadout(null)} />
+      <canvas ref={canvasRef} className="h-auto w-full rounded border border-line" onMouseMove={onMove} onMouseLeave={() => setReadout(null)} />
       <div className="min-h-[1rem] whitespace-pre-wrap text-[10.5px] tabular-nums text-ink-muted">
         {readout ??
           (hasMetric

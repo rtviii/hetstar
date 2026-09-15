@@ -10,6 +10,7 @@ export type MetricId =
   | "conformer-count"
   | "occupancy-entropy"
   | "b-iso-mean"
+  | "bond-variability"
   | "ensemble-rmsf"
   | "model-rmsd"
   | "altloc-rmsf-delta"
@@ -22,6 +23,7 @@ export const METRIC_ORDER: MetricId[] = [
   "conformer-count",
   "occupancy-entropy",
   "b-iso-mean",
+  "bond-variability",
   "ensemble-rmsf",
   "model-rmsd",
   "altloc-rmsf-delta",
@@ -71,6 +73,13 @@ export const METRIC_UI: Record<MetricId, MetricUi> = {
     sequential: true,
     colors: SEQUENTIAL_RAMP,
   },
+  "bond-variability": {
+    pair: false,
+    map: false,
+    unionSplat: false,
+    sequential: true,
+    colors: SEQUENTIAL_RAMP,
+  },
   "ensemble-rmsf": {
     pair: false,
     map: false,
@@ -112,14 +121,31 @@ export const METRIC_UI: Record<MetricId, MetricUi> = {
   },
 };
 
+// app-local metrics (computed in the app, not registered in hetkit)
+const LOCAL_LABELS: Partial<Record<MetricId, string>> = {
+  "altloc-rmsf-delta": "Altloc RMSF delta",
+  "bond-variability": "Differential bonds",
+};
+const LOCAL_UNITS: Partial<Record<MetricId, string>> = {
+  "altloc-rmsf-delta": "A",
+  "bond-variability": "bonds",
+};
+const LOCAL_DESCRIPTIONS: Partial<Record<MetricId, string>> = {
+  "altloc-rmsf-delta": "Discrete-heterogeneity spread of A minus B, per residue.",
+  "bond-variability":
+    "Non-covalent bonds at the residue that are not invariant: formed under only some altloc conformers, or present in only some ensemble members.",
+};
+
 export function metricLabel(id: MetricId): string {
-  if (id === "altloc-rmsf-delta") return "Altloc RMSF delta";
-  return METRICS.get(id)?.label ?? id;
+  return LOCAL_LABELS[id] ?? METRICS.get(id)?.label ?? id;
 }
 
 export function metricUnit(id: MetricId): string {
-  if (id === "altloc-rmsf-delta") return "A";
-  return METRICS.get(id)?.unit ?? "";
+  return LOCAL_UNITS[id] ?? METRICS.get(id)?.unit ?? "";
+}
+
+export function metricDescription(id: MetricId): string {
+  return LOCAL_DESCRIPTIONS[id] ?? METRICS.get(id)?.description ?? "";
 }
 
 export interface MetricProvenance {
@@ -149,6 +175,15 @@ export function metricTooltip(id: MetricId, prov: MetricProvenance): { title: st
       return {
         title: metricLabel(id),
         lines: [registry(id), "Computed on model A only. No map involved.", models[0]],
+      };
+    case "bond-variability":
+      return {
+        title: metricLabel(id),
+        lines: [
+          metricDescription(id),
+          "Bonds come from Mol*'s interaction engine (geometric cutoffs at its default thresholds) on model A; the engine pairs only altloc-compatible atoms, so per-conformer bond sets fall out of one pass. Ensemble variation is counted once the per-member pass finishes.",
+          models[0],
+        ],
       };
     case "ensemble-rmsf":
       return {

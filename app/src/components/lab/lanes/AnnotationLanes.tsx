@@ -10,7 +10,7 @@ import { spanStyle, type LaneContext, type LaneModule, type LaneProps } from "./
 // only reads its own source and chain. Overlapping domains are packed greedily into
 // sub-rows, and the lane's height follows the packing.
 
-const ROW_H = 12;
+const ROW_H = 10;
 
 type Packed = { spans: (AnnotationSpan & { row: number })[]; rows: number };
 const packCache = new WeakMap<AnnotationSpan[], Packed>();
@@ -68,11 +68,11 @@ function annotationLaneView(source: string) {
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
-                onSelectSpan(s);
+                onSelectSpan(s, { additive: e.shiftKey });
               }}
             >
-              {widthPx >= 40 && (
-                <span className="px-1 text-[8.5px] leading-[10px] text-white">{s.label}</span>
+              {widthPx >= 24 && (
+                <span className="px-1 text-[7.5px] leading-[8px] text-white">{s.label}</span>
               )}
             </span>
           );

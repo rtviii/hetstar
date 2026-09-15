@@ -1,14 +1,15 @@
 "use client";
 import { SLICE_AXES, type SliceAxis } from "../SlicePanel";
-import { SectionLabel } from "./ui";
 
 // The slice plane's controls: whether it cuts the density in 3D and the models, its
-// normal and its position through the model box. Always visible in the bottom tools
-// panel; the 2D map that images the same plane is optional (style flyout) and sits
-// underneath when on.
+// normal and its position through the model box. Rendered inside the density flyout's
+// "2D slice map" section; the 2D image of the same plane floats over the canvas when
+// switched on there. The plane itself needs only the model box (slice-model clipping
+// works before any density); only the in-scene density plane needs the maps.
 
 export default function SliceControls({
-  ready,
+  boxReady,
+  densityReady,
   slice3d,
   onSlice3d,
   sliceModel,
@@ -19,8 +20,10 @@ export default function SliceControls({
   onFrac,
   coord,
 }: {
-  /** maps built: the plane has something to cut */
-  ready: boolean;
+  /** the model box exists: the plane, its normal and slice-model clipping work */
+  boxReady: boolean;
+  /** maps built: the in-scene density plane has something to image */
+  densityReady: boolean;
   slice3d: boolean;
   onSlice3d: (v: boolean) => void;
   sliceModel: boolean;
@@ -34,15 +37,14 @@ export default function SliceControls({
   coord: number | null;
 }) {
   return (
-    <div className="flex flex-col gap-1 text-[11px]">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <SectionLabel>Slice</SectionLabel>
+    <div className="flex flex-col gap-1 text-[10.5px]">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
         <label className="flex items-center gap-1 text-ink-secondary">
-          <input type="checkbox" checked={slice3d} disabled={!ready} onChange={(e) => onSlice3d(e.target.checked)} />
+          <input type="checkbox" checked={slice3d} disabled={!densityReady} onChange={(e) => onSlice3d(e.target.checked)} />
           <span>plane in 3D</span>
         </label>
         <label className="flex items-center gap-1 text-ink-secondary">
-          <input type="checkbox" checked={sliceModel} disabled={!ready} onChange={(e) => onSliceModel(e.target.checked)} />
+          <input type="checkbox" checked={sliceModel} disabled={!boxReady} onChange={(e) => onSliceModel(e.target.checked)} />
           <span>slice model</span>
         </label>
         <span className="flex items-center gap-1.5">
@@ -53,7 +55,7 @@ export default function SliceControls({
                 type="radio"
                 name="slice-normal"
                 checked={axis === i}
-                disabled={!ready}
+                disabled={!boxReady}
                 onChange={() => onAxis(i as SliceAxis)}
               />
               <span>{a}</span>
@@ -62,7 +64,7 @@ export default function SliceControls({
         </span>
       </div>
       <label className="flex items-center gap-2">
-        <span className="w-20 whitespace-nowrap tabular-nums text-ink-muted">
+        <span className="whitespace-nowrap tabular-nums text-[10px] text-ink-muted">
           {SLICE_AXES[axis]} = {coord == null ? "-" : `${coord.toFixed(1)} A`}
         </span>
         <input
@@ -72,7 +74,7 @@ export default function SliceControls({
           max={1}
           step={0.005}
           value={frac}
-          disabled={!ready}
+          disabled={!boxReady}
           onChange={(e) => onFrac(Number(e.target.value))}
         />
       </label>

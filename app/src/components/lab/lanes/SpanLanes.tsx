@@ -27,7 +27,7 @@ function Feature({
   span: PositionSpan;
   color: string;
   title: string;
-  onSelectSpan: (span: PositionSpan) => void;
+  onSelectSpan: (span: PositionSpan, opts?: { additive?: boolean }) => void;
 }) {
   return (
     <span
@@ -37,7 +37,7 @@ function Feature({
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => {
         e.stopPropagation();
-        onSelectSpan(span);
+        onSelectSpan(span, { additive: e.shiftKey });
       }}
     />
   );
@@ -65,7 +65,7 @@ export const secondaryLane: LaneModule = {
   label: "2° structure",
   description: "helices (pink) and strands (yellow) from the deposited file's records; click one to select it",
   defaultOn: false,
-  height: 12,
+  height: 10,
   unavailable: (ctx) => (ctx.secondary && ctx.secondary.length ? null : "no secondary-structure records in the source file"),
   Component: SecondaryLaneView,
   readout: (ctx, pos) => {
@@ -90,7 +90,7 @@ export const unobservedLane: LaneModule = {
   label: "Unobserved",
   description: "residues of the sequence the shown model has no atoms for",
   defaultOn: false,
-  height: 12,
+  height: 10,
   unavailable: (ctx) => (unobservedSpans(ctx.chain).length ? null : "every residue of this chain is modelled"),
   Component: UnobservedLaneView,
 };

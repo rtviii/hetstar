@@ -2,7 +2,7 @@
 import { ENTRIES, STAGE_LABELS, STAGES, type ProvenanceRecord, type StageId, type StageState } from "@/lib/lab/entries";
 import { knownEntryIds, PDB_ALIASES } from "@/lib/dpdb/resolve";
 import type { EntryManifest } from "@/lib/dpdb/types";
-import { PinPopover, TinyText, Tooltip } from "./ui";
+import { PinPopover, Spinner, TinyText, Tooltip } from "./ui";
 
 // The entry chip at the top of the sidebar, above the entry card. Prints the loaded
 // entry the way dynamicpdb.com does ("PDB 7APT | dpdb_kytgultv": the code a reader scans
@@ -191,10 +191,7 @@ export default function EntryChip({
       </PinPopover>
       {busy && (
         <Tooltip content={<StageList stages={stages} error={error} />}>
-          <span
-            className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-line border-t-accent"
-            aria-label="loading"
-          />
+          <Spinner />
         </Tooltip>
       )}
       {failed && (

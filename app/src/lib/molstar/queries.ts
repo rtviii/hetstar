@@ -101,6 +101,11 @@ export const buildAltGroupExpression = (selectors: AltGroupSelector[]) => {
 export const mergeExpressions = (exprs: any[]) =>
   exprs.length === 1 ? exprs[0] : MS.struct.combinator.merge(exprs);
 
+// base minus by (set difference) — e.g. a selection minus its hidden conformer atoms.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const exceptExpression = (base: any, by: any) =>
+  MS.struct.modifier.exceptBy({ 0: base, by });
+
 // The constant "base" part: every atom not claimed by any network selector (empty in files that
 // list only the alternate atoms; the single-conformer scaffold in a full structure).
 export const buildHetBaseExpression = (allSelectors: AltGroupSelector[]) =>
@@ -163,6 +168,26 @@ export const buildBondAtomsExpression = (a: BondEnd, b: BondEnd) => {
     "atom-test": MS.core.logic.or([end(a), end(b)]),
   });
 };
+
+// Exactly the named water residues (chain + auth seq, every insertion-code copy), limited to
+// the given altloc letters ("" = blank). The comp test guards against an auth chain+seq
+// collision with a polymer residue; comps is passed in so this module stays free of lab imports.
+export const buildWatersQuery = (
+  waters: readonly { chain: string; seq: number; alts: string[] }[],
+  comps: string[],
+) =>
+  mergeExpressions(
+    waters.map((w) =>
+      MS.struct.generator.atomGroups({
+        "chain-test": MS.core.rel.eq([MS.ammp("auth_asym_id"), w.chain]),
+        "residue-test": MS.core.logic.and([
+          MS.core.rel.eq([MS.ammp("auth_seq_id"), w.seq]),
+          MS.core.set.has([MS.set(...comps), MS.ammp("label_comp_id")]),
+        ]),
+        "atom-test": MS.core.set.has([MS.set(...w.alts), MS.ammp("label_alt_id")]),
+      }),
+    ),
+  );
 
 export const buildSurroundingsQuery = (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

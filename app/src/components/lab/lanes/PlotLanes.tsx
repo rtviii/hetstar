@@ -20,8 +20,8 @@ const COLOR_ZERO = "#d4d4d4";
 const COLOR_UNSPLIT = "#c8cdd4";
 const COLOR_LABEL = "#3d414f";
 
-const CONFORMER_H = 56;
-const METRIC_H = 36;
+const CONFORMER_H = 48;
+const METRIC_H = 30;
 
 // count 2 -> the shared model color, max -> a deep bronze of the same family
 const COUNT_RAMP = [MODEL_A_COLOR, 0x6f4a26];

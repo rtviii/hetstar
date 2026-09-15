@@ -41,6 +41,8 @@ export interface LaneContext {
   colorBy: LaneMetric | null;
   /** PDBe annotations, host-fetched once per entry; "loading" while in flight, null without a PDB id */
   annotations: AnnotationsBySource | "loading" | null;
+  /** lane ids expanded into per-item sub-rows (the host's +/- toggle; session-only) */
+  expandedLanes: ReadonlySet<string>;
 }
 
 export interface LaneView {
@@ -54,8 +56,9 @@ export interface LaneView {
 export interface LaneProps {
   ctx: LaneContext;
   view: LaneView;
-  /** lanes with clickable features call this to select a span (the host maps it to residues) */
-  onSelectSpan: (span: PositionSpan) => void;
+  /** lanes with clickable features call this to select a span (the host maps it to
+   * residues); additive (shift held) adds to the selection instead of replacing it */
+  onSelectSpan: (span: PositionSpan, opts?: { additive?: boolean }) => void;
 }
 
 export interface LaneModule {
@@ -68,6 +71,8 @@ export interface LaneModule {
   height: number | ((ctx: LaneContext) => number);
   /** null when the lane can draw for this context; otherwise why not (the drawer shows it disabled) */
   unavailable: (ctx: LaneContext) => string | null;
+  /** the lane can expand into per-item sub-rows here (the host shows a +/- toggle) */
+  expandable?: (ctx: LaneContext) => boolean;
   Component: ComponentType<LaneProps>;
   /** one short phrase about the hovered position, appended to the host's readout line */
   readout?: (ctx: LaneContext, pos: number) => string | null;

@@ -102,7 +102,7 @@ function toFormat(f: string): ModelFormat {
 }
 
 /**
- * entry + models + artifacts for the models this pass loads (deposited, qFit): four requests.
+ * entry + models + artifacts for the models this pass loads (deposited, qFit, ensemble).
  * Other roles are listed with null url/format so the UI can say they exist.
  */
 export async function fetchEntryManifest(dpdbId: string): Promise<EntryManifest> {
@@ -130,7 +130,7 @@ export async function fetchEntryManifest(dpdbId: string): Promise<EntryManifest>
   };
 
   const summaries = modelsRes.data.map((m) => ({ ...m.attributes, role: deriveRole(m.attributes.title, m.attributes.metadata) }));
-  const wanted = summaries.filter((m) => m.role === "deposited" || m.role === "qfit");
+  const wanted = summaries.filter((m) => m.role === "deposited" || m.role === "qfit" || m.role === "ensemble");
   const lists = await Promise.all(wanted.map((m) => apiGet<ArtifactsResponse>(`entries/${dpdbId}/models/${m.id}/artifacts`)));
   const artifactsByModel = new Map(wanted.map((m, i) => [m.id, lists[i]]));
 

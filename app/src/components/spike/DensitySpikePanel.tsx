@@ -42,7 +42,7 @@ import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/sta
 //      @dynamic-pdb/hetkit (the package integration probe).
 
 const MODEL_URL = "/corpus/7a1x_qFit_010.cif";
-const SF_URL = "https://files.rcsb.org/download/7A1X-sf.cif";
+const SF_URL    = "https://files.rcsb.org/download/7A1X-sf.cif";
 
 // Module-level so the load effect in MolstarViewer never sees a new identity: an inline
 // literal here re-triggered clear()+load() on every status re-render, and a clear() lands
@@ -57,28 +57,29 @@ const AXIS_NORMALS: Record<SliceAxis, [number, number, number]> = {
 };
 
 export default function DensitySpikePanel() {
-  const [viewer, setViewer] = useState<ViewerInstance | null>(null);
-  const [modelText, setModelText] = useState<string | null>(null);
-  const [status, setStatus] = useState<string>("loading model...");
+
+  const [viewer, setViewer]             = useState<ViewerInstance | null>(null);
+  const [modelText, setModelText]       = useState<string | null>(null);
+  const [status, setStatus]             = useState<string>("loading model...");
   const [densityState, setDensityState] = useState<"idle" | "loading" | "ready" | "error">("idle");
 
-  const volsRef = useRef<DensityVolumes | null>(null);
-  const reprsRef = useRef<DensityReprs | null>(null);
-  const tableRef = useRef<AtomTable | null>(null);
-  const trackRef = useRef<Track | null>(null);
+  const volsRef      = useRef<DensityVolumes | null>(null);
+  const reprsRef     = useRef<DensityReprs | null>(null);
+  const tableRef     = useRef<AtomTable | null>(null);
+  const trackRef     = useRef<Track | null>(null);
   const metricVolRef = useRef<string | null>(null);
-  const sliceRef = useRef<string | null>(null);
+  const sliceRef     = useRef<string | null>(null);
 
-  const [show2fofc, setShow2fofc] = useState(true);
-  const [showFofc, setShowFofc] = useState(true);
-  const [sigma, setSigma] = useState(1.5);
-  const [clipOn, setClipOn] = useState(false);
+  const [show2fofc, setShow2fofc]   = useState(true);
+  const [showFofc, setShowFofc]     = useState(true);
+  const [sigma, setSigma]           = useState(1.5);
+  const [clipOn, setClipOn]         = useState(false);
   const [clipRadius, setClipRadius] = useState(5);
-  const [sliceOn, setSliceOn] = useState(false);
-  const [sliceAxis, setSliceAxis] = useState<SliceAxis>("z");
-  const [metricOn, setMetricOn] = useState(false);
-  const [picked, setPicked] = useState<PickInfo | null>(null);
-  const pickedRef = useRef<PickInfo | null>(null);
+  const [sliceOn, setSliceOn]       = useState(false);
+  const [sliceAxis, setSliceAxis]   = useState<SliceAxis>("z");
+  const [metricOn, setMetricOn]     = useState(false);
+  const [picked, setPicked]         = useState<PickInfo | null>(null);
+  const pickedRef                   = useRef<PickInfo | null>(null);
 
   // load the bundled qFit model + parse it once with hetkit
   useEffect(() => {

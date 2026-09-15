@@ -5,8 +5,8 @@
 body {
   color: #1a1e2a;
   background: #ffffff;
-  /* Geist variables are set on <body> by the root layout; Arial previously overrode them. */
-  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  /* Plex variables are set on <body> by the root layout; Arial previously overrode them. */
+  font-family: var(--font-plex-sans), system-ui, -apple-system, sans-serif;
 }
 
 /* Native controls follow the accent (Dynamic PDB purple) when checked or dragged, so

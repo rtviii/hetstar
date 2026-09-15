@@ -66,6 +66,39 @@ export const ENTRIES: readonly EntryDef[] = [
       note: "deposited NMR ensemble (ubiquitin, 10 MODEL frames), fetched from RCSB at load time",
     },
   },
+  // Meatier ensemble entries (model counts verified against the RCSB data API 2026-09):
+  {
+    id: "1E8L",
+    label: "1E8L (lysozyme, 50 models)",
+    deposited: {
+      url: "https://files.rcsb.org/download/1E8L.cif",
+      note: "deposited NMR ensemble (hen lysozyme, 129 residues, 50 MODEL frames), fetched from RCSB at load time",
+    },
+  },
+  {
+    id: "2K39",
+    label: "2K39 (ubiquitin RDC, 116 models)",
+    deposited: {
+      url: "https://files.rcsb.org/download/2K39.cif",
+      note: "RDC-derived ubiquitin ensemble (EROS; motions up to microseconds), 116 MODEL frames, fetched from RCSB at load time",
+    },
+  },
+  {
+    id: "1XQQ",
+    label: "1XQQ (ubiquitin DER, 128 models)",
+    deposited: {
+      url: "https://files.rcsb.org/download/1XQQ.cif",
+      note: "dynamic-ensemble-refinement ubiquitin (structure + dynamics simultaneously), 128 MODEL frames, fetched from RCSB at load time",
+    },
+  },
+  {
+    id: "2KOX",
+    label: "2KOX (ubiquitin, 640 models — stress test)",
+    deposited: {
+      url: "https://files.rcsb.org/download/2KOX.cif",
+      note: "RDC ensemble probing correlated backbone motions, 640 MODEL frames — the heavy scrubber/RMSF stress case, fetched from RCSB at load time",
+    },
+  },
 ];
 
 export function findEntry(id: string): EntryDef | null {
