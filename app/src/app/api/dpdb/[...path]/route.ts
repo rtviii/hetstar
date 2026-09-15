@@ -1,6 +1,6 @@
 // Dev proxy for the Dynamic PDB catalogue: /api/dpdb/<path> -> https://dynamicpdb.com/api/v1/<path>
 
-import { proxyUpstream } from "@/lib/dpdb/proxy";
+import { proxyUpstream } from "@/lib/dpdb-proxy";
 
 export const dynamic = "force-dynamic";
 

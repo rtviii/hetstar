@@ -1,0 +1,71 @@
+/* Source for hetstar.css (npm run css). With preflight disabled, @tailwind base only emits the
+   --tw-* custom-property defaults the transform/ring/shadow utilities read; the element reset
+   below is Tailwind's preflight scoped to the .hetstar wrapper via :where(), so it has zero
+   specificity and never touches the host page. */
+
+@tailwind base;
+
+:where(.hetstar) {
+  line-height: 1.5;
+  tab-size: 4;
+  font-family: var(--font-plex-sans), system-ui, -apple-system, sans-serif;
+  color: #1a1e2a;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:where(.hetstar, .hetstar *, .hetstar ::before, .hetstar ::after) {
+  box-sizing: border-box;
+  border-width: 0;
+  border-style: solid;
+  border-color: #e5e7eb;
+}
+
+:where(.hetstar) :where(hr) { height: 0; color: inherit; border-top-width: 1px; }
+:where(.hetstar) :where(h1, h2, h3, h4, h5, h6) { font-size: inherit; font-weight: inherit; }
+:where(.hetstar) :where(a) { color: inherit; text-decoration: inherit; }
+:where(.hetstar) :where(b, strong) { font-weight: bolder; }
+:where(.hetstar) :where(code, kbd, samp, pre) {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 1em;
+}
+:where(.hetstar) :where(small) { font-size: 80%; }
+:where(.hetstar) :where(table) { text-indent: 0; border-color: inherit; border-collapse: collapse; }
+:where(.hetstar) :where(button, input, optgroup, select, textarea) {
+  font-family: inherit;
+  font-feature-settings: inherit;
+  font-variation-settings: inherit;
+  font-size: 100%;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  margin: 0;
+  padding: 0;
+}
+:where(.hetstar) :where(button, select) { text-transform: none; }
+:where(.hetstar) :where(button, input[type="button"], input[type="reset"], input[type="submit"]) {
+  -webkit-appearance: button;
+  background-color: transparent;
+  background-image: none;
+}
+:where(.hetstar) :where(blockquote, dl, dd, h1, h2, h3, h4, h5, h6, hr, figure, p, pre) { margin: 0; }
+:where(.hetstar) :where(fieldset) { margin: 0; padding: 0; }
+:where(.hetstar) :where(ol, ul, menu) { list-style: none; margin: 0; padding: 0; }
+:where(.hetstar) :where(textarea) { resize: vertical; }
+:where(.hetstar) :where(input::placeholder, textarea::placeholder) { opacity: 1; color: #9ca3af; }
+:where(.hetstar) :where(button, [role="button"]) { cursor: pointer; }
+:where(.hetstar) :where(:disabled) { cursor: default; }
+:where(.hetstar) :where(img, svg, video, canvas, audio, iframe, embed, object) {
+  display: block;
+  vertical-align: middle;
+}
+:where(.hetstar) :where(img, video) { max-width: 100%; height: auto; }
+:where(.hetstar) :where([hidden]) { display: none; }
+
+/* Native controls follow the accent (Dynamic PDB purple) when checked or dragged. */
+:where(.hetstar) :where(input[type="checkbox"], input[type="radio"], input[type="range"]) {
+  accent-color: #663be4;
+}
+
+@tailwind components;
+@tailwind utilities;

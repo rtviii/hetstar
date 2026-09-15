@@ -2,7 +2,7 @@
 // /api/dpdb-file?u=<encoded https uri>. Redirects (the /api/v1/files shortcut) are followed
 // server-side so the browser never touches files.dynamicpdb.com itself.
 
-import { proxyUpstream } from "@/lib/dpdb/proxy";
+import { proxyUpstream } from "@/lib/dpdb-proxy";
 
 export const dynamic = "force-dynamic";
 

@@ -1,0 +1,33 @@
+{
+  "name": "@dynamic-pdb/hetstar",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Dynamic PDB heterogeneity viewer: qFit vs deposited models against their shared density, as one React component.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./styles.css": "./hetstar.css",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@dynamic-pdb/hetkit": "*"
+  },
+  "peerDependencies": {
+    "molstar": "^5.11.0",
+    "react": "^18",
+    "react-dom": "^18"
+  },
+  "devDependencies": {
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  },
+  "scripts": {
+    "css": "tailwindcss -c tailwind.config.ts -i src/styles.css -o hetstar.css",
+    "css:watch": "tailwindcss -c tailwind.config.ts -i src/styles.css -o hetstar.css --watch=always",
+    "typecheck": "tsc --noEmit"
+  }
+}

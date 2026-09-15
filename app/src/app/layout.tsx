@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import "molstar/build/viewer/molstar.css";
+import "@dynamic-pdb/hetstar/styles.css";
 import "./globals.css";
 
-// IBM Plex (the tubulinxyz pairing): Plex Sans for UI text, Plex Mono for residue
-// labels and numeric readouts.
+// IBM Plex: Plex Sans for UI text, Plex Mono for residue labels and numeric readouts. The
+// viewer reads these through --font-plex-sans / --font-plex-mono and falls back to system fonts.
 const plexSans = IBM_Plex_Sans({
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
@@ -27,9 +29,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${plexSans.variable} ${plexMono.variable} antialiased`}
-      >
+      <body className={`${plexSans.variable} ${plexMono.variable}`}>
         {children}
       </body>
     </html>

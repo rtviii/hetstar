@@ -6,8 +6,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev -w hetstar-app",
-    "build": "npm run build -w hetstar-app",
+    "dev": "npm run css -w @dynamic-pdb/hetstar && (npm run css:watch -w @dynamic-pdb/hetstar & npm run dev -w hetstar-app & wait)",
+    "build": "npm run css -w @dynamic-pdb/hetstar && npm run build -w hetstar-app",
     "typecheck": "npm run typecheck -ws --if-present",
     "test": "npm run test -w @dynamic-pdb/hetkit"
   }
