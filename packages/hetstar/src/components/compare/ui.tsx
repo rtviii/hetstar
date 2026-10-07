@@ -1,5 +1,14 @@
 "use client";
-import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 // Shared UI vocabulary for the viewer: small, compact, austere. Whites and the Dynamic
 // PDB grays; the purple accent only on pressed state, links, focus and progress. No
@@ -123,12 +132,51 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
   );
 }
 
+// Placement shared by PinPopover and HoverFlyout. The card hangs below its anchor when its
+// content fits there, else on the side with more room, and is capped to that room so a
+// long card scrolls inside itself instead of running off the viewport (a fixed card can't
+// be reached by scrolling the page). The content height is measured in a layout effect,
+// i.e. before paint, so the card never shows on the wrong side.
+type CardAnchor = { x: number; top: number; bottom: number };
+const CARD_EDGE = 8; // min distance to the viewport edge
+const CARD_GAP = 6; // anchor-to-card gap
+const CARD_MAX_VH = 0.75;
+
+function cardAnchor(el: HTMLElement | null, width: number, align: "start" | "end"): CardAnchor | null {
+  const rect = el?.getBoundingClientRect();
+  if (!rect) return null;
+  const left = align === "end" ? rect.right - width : rect.left;
+  const x = Math.max(CARD_EDGE, Math.min(left, window.innerWidth - width - CARD_EDGE));
+  return { x, top: rect.top, bottom: rect.bottom };
+}
+
+function useCardPlacement(anchor: CardAnchor | null, width: number) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [contentH, setContentH] = useState(0);
+  useLayoutEffect(() => {
+    if (anchor && cardRef.current) setContentH(cardRef.current.scrollHeight);
+  }, [anchor]);
+
+  if (!anchor) return { cardRef, style: undefined };
+  const roomBelow = window.innerHeight - anchor.bottom - CARD_GAP - CARD_EDGE;
+  const roomAbove = anchor.top - CARD_GAP - CARD_EDGE;
+  const above = contentH > roomBelow && roomAbove > roomBelow;
+  const style: CSSProperties = {
+    left: anchor.x,
+    width,
+    maxHeight: Math.max(0, Math.min(above ? roomAbove : roomBelow, window.innerHeight * CARD_MAX_VH)),
+    top: above ? undefined : anchor.bottom + CARD_GAP,
+    bottom: above ? window.innerHeight - anchor.top + CARD_GAP : undefined,
+  };
+  return { cardRef, style };
+}
+
 // Click-to-pin popover for content the user needs to READ and USE (select, copy, follow
 // links) — unlike Tooltip, whose card is pointer-events-none. Opens on trigger click,
 // closes on Escape, outside mousedown, clicking the trigger again, or when `closeKey`
-// changes (say, a new entry resolved). The card is position:fixed (measured on open) so it
-// escapes the overflow-y-auto side columns; `align: "end"` hangs it leftward from the
-// trigger's right edge, for triggers near the viewport's right side.
+// changes (say, a new entry resolved). The card is position:fixed (placed on open, see
+// useCardPlacement) so it escapes the overflow-y-auto side columns; `align: "end"` hangs
+// it leftward from the trigger's right edge, for triggers near the viewport's right side.
 export function PinPopover({
   content,
   children,
@@ -144,18 +192,11 @@ export function PinPopover({
 }) {
   const rootRef = useRef<HTMLSpanElement>(null);
   const anchorRef = useRef<HTMLSpanElement>(null);
-  const [pos, setPos] = useState<{ x: number; y: number; above: boolean } | null>(null);
+  const [pos, setPos] = useState<CardAnchor | null>(null);
+  const { cardRef, style } = useCardPlacement(pos, width);
 
   const toggle = useCallback(() => {
-    setPos((prev) => {
-      if (prev) return null;
-      const rect = anchorRef.current?.getBoundingClientRect();
-      if (!rect) return null;
-      const left = align === "end" ? rect.right - width : rect.left;
-      const x = Math.max(8, Math.min(left, window.innerWidth - width - 8));
-      const above = rect.bottom + 280 > window.innerHeight;
-      return { x, y: above ? rect.top - 6 : rect.bottom + 6, above };
-    });
+    setPos((prev) => (prev ? null : cardAnchor(anchorRef.current, width, align)));
   }, [width, align]);
 
   const close = useCallback(() => setPos(null), []);
@@ -178,13 +219,9 @@ export function PinPopover({
       </span>
       {pos && (
         <div
-          className={`fixed z-50 max-h-[70vh] cursor-auto select-text overflow-y-auto p-2 text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary ${CARD_SHELL}`}
-          style={{
-            left: pos.x,
-            width,
-            top: pos.above ? undefined : pos.y,
-            bottom: pos.above ? window.innerHeight - pos.y : undefined,
-          }}
+          ref={cardRef}
+          className={`fixed z-50 cursor-auto select-text overflow-y-auto p-2 text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary ${CARD_SHELL}`}
+          style={style}
         >
           {content}
         </div>
@@ -218,16 +255,10 @@ export function HoverFlyout({
   const anchorRef = useRef<HTMLSpanElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pinnedRef = useRef(false);
-  const [pos, setPos] = useState<{ x: number; y: number; above: boolean } | null>(null);
+  const [pos, setPos] = useState<CardAnchor | null>(null);
+  const { cardRef, style } = useCardPlacement(pos, width);
 
-  const measure = useCallback(() => {
-    const rect = anchorRef.current?.getBoundingClientRect();
-    if (!rect) return null;
-    const left = align === "end" ? rect.right - width : rect.left;
-    const x = Math.max(8, Math.min(left, window.innerWidth - width - 8));
-    const above = rect.bottom + 280 > window.innerHeight;
-    return { x, y: above ? rect.top - 6 : rect.bottom + 6, above };
-  }, [align, width]);
+  const measure = useCallback(() => cardAnchor(anchorRef.current, width, align), [align, width]);
 
   const cancelTimer = useCallback(() => {
     if (timerRef.current) {
@@ -273,13 +304,9 @@ export function HoverFlyout({
       </span>
       {pos && (
         <div
-          className={`fixed z-50 max-h-[75vh] cursor-auto select-text overflow-y-auto p-2 text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary ${CARD_SHELL}`}
-          style={{
-            left: pos.x,
-            width,
-            top: pos.above ? undefined : pos.y,
-            bottom: pos.above ? window.innerHeight - pos.y : undefined,
-          }}
+          ref={cardRef}
+          className={`fixed z-50 cursor-auto select-text overflow-y-auto p-2 text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary ${CARD_SHELL}`}
+          style={style}
         >
           {content}
         </div>
