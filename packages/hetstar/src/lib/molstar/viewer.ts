@@ -30,6 +30,12 @@ import {
   WHITE_BACKGROUND,
 } from "./style";
 
+// Structures are built from the model as deposited (the asymmetric unit). Left to its
+// default, Mol* builds biological assembly 1 whenever the file carries assemblies (every
+// RCSB CIF), which can drop chains or add symmetry copies that hetkit's atom tables, the
+// lanes and the ghost/primary comparison know nothing about.
+const AS_MODELED = { name: "model" as const, params: {} };
+
 export interface PickInfo {
   chainId: string;
   authSeqId: number;
@@ -144,7 +150,9 @@ export class MolstarViewer {
    * lab's tagged expression components (lab-polymer/het/ion — what applyRepStyle
    * expects) instead of Mol*'s static kinds. Returns the structure's state ref
    * (toggle it with setSubtreeVisibility; a viewer.clear() removes it with everything
-   * else). Format defaults to mmCIF.
+   * else). The representations are born hidden: the caller reveals them once its own
+   * styling (ghost transparency, rep style) is on, so the opaque first build never
+   * shows. Format defaults to mmCIF.
    */
   async loadSecondary(
     data: string | Uint8Array,
@@ -161,8 +169,9 @@ export class MolstarViewer {
     if (!this.ctx) throw new Error("Viewer disposed during load");
     const model = await ctx.builders.structure.createModel(trajectory);
     if (!this.ctx) return null;
-    const structure = await ctx.builders.structure.createStructure(model);
+    const structure = await ctx.builders.structure.createStructure(model, AS_MODELED);
     if (!this.ctx) return null;
+    const reprOpts = { initialState: { isHidden: true } };
     const reprProps = {
       type: "ball-and-stick" as const,
       typeParams: { ignoreLight: true },
@@ -185,14 +194,14 @@ export class MolstarViewer {
           { label: g.comps.join(", "), tags: [g.tag] },
         );
         if (!comp || !this.ctx) continue;
-        const repr = await ctx.builders.structure.representation.addRepresentation(comp, reprProps);
+        const repr = await ctx.builders.structure.representation.addRepresentation(comp, reprProps, reprOpts);
         if (repr) reprRefs.push(repr.ref);
       }
     } else {
       for (const kind of BALL_AND_STICK_COMPONENTS) {
         const comp = await ctx.builders.structure.tryCreateComponentStatic(structure, kind);
         if (!comp || !this.ctx) continue;
-        const repr = await ctx.builders.structure.representation.addRepresentation(comp, reprProps);
+        const repr = await ctx.builders.structure.representation.addRepresentation(comp, reprProps, reprOpts);
         if (repr) reprRefs.push(repr.ref);
       }
     }
@@ -215,7 +224,7 @@ export class MolstarViewer {
     const model = await ctx.builders.structure.createModel(trajectory);
     if (!this.ctx) return;
     this.modelRef = model.ref;
-    const structure = await ctx.builders.structure.createStructure(model);
+    const structure = await ctx.builders.structure.createStructure(model, AS_MODELED);
     if (!this.ctx) return;
     this.primaryStructureRef = structure.ref;
     const components = POLYMER_ONLY_REPRESENTATIONS.includes(view.representation)

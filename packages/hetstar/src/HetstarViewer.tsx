@@ -126,8 +126,9 @@ import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/sta
 // multiconformer rendered as SOLID warm camel sticks (MODEL_A_COLOR, shared with the 1D
 // strip) COLLAPSED to its highest-occupancy conformer — expand per residue via the
 // Selection Actions Panel on right click, or force one letter everywhere with the
-// Conformer state buttons; model B is the deposited model as a cool ghost, hidden until
-// toggled on. Density + metric projection + slice ride on top.
+// Conformer state buttons; model B is the deposited model as a cool translucent ghost,
+// shown on load and toggleable from the style tray. Density + metric projection + slice
+// ride on top.
 
 // Bonds touching any of the ranges. Only non-water ends count: a water's auth seq must not
 // accidentally match a polymer range.
@@ -295,7 +296,7 @@ export default function HetstarViewer({ entryId, dpdb, className }: HetstarViewe
   const [bFile, setBFile] = useState<MolCifFile | null>(null);
   const [primaryLoaded, setPrimaryLoaded] = useState(false);
   const [secondaryRef, setSecondaryRef] = useState<string | null>(null);
-  const [showB, setShowB] = useState(false);
+  const [showB, setShowB] = useState(true);
   // which MODEL frame of a multi-model (ensemble) model A is on screen
   const [memberIndex, setMemberIndex] = useState(0);
   // bumps once a member scrub's Mol* commit has landed: memberIndex changes first, while
@@ -480,6 +481,7 @@ export default function HetstarViewer({ entryId, dpdb, className }: HetstarViewe
       // reset everything scene-derived; setting new texts clears the Mol* state tree
       setPrimaryLoaded(false);
       setSecondaryRef(null);
+      setShowB(true); // every entry opens with its ghost, whatever the last one was set to
       setMemberIndex(0);
       setAText(null);
       setBText(null);
@@ -595,12 +597,6 @@ export default function HetstarViewer({ entryId, dpdb, className }: HetstarViewe
     if (!ctx || !secondaryRef) return;
     runStyling("ghost", () => applySecondaryGhost(ctx, secondaryRef));
   }, [viewer, secondaryRef, runStyling]);
-
-  useEffect(() => {
-    const ctx = viewer?.ctx;
-    if (!ctx || !secondaryRef) return;
-    setSubtreeVisibility(ctx.state.data, secondaryRef, !showB);
-  }, [viewer, secondaryRef, showB]);
 
   // --- chemistry components of model A (lab-polymer / lab-het / lab-ion) ---
   // Declared FIRST among the styling effects: a component rebuild wipes the conformer
@@ -729,6 +725,15 @@ export default function HetstarViewer({ entryId, dpdb, className }: HetstarViewe
     if (!ctx || !secondaryRef) return;
     runStyling("rep-b", () => applyRepStyle(ctx, secondaryRef, repStyle, { uniformColor: GHOST_B_COLOR, ghost: true }));
   }, [viewer, secondaryRef, repStyle, runStyling]);
+
+  // Model B is born hidden (loadSecondary); its visibility rides the styling serializer and
+  // is declared after "ghost" and "rep-b", so on load it is revealed only once it is
+  // translucent and in the current rep style — no opaque first frame.
+  useEffect(() => {
+    const ctx = viewer?.ctx;
+    if (!ctx || !secondaryRef) return;
+    runStyling("vis-b", async () => setSubtreeVisibility(ctx.state.data, secondaryRef, !showB));
+  }, [viewer, secondaryRef, showB, runStyling]);
 
   // --- clip composition: residue sphere on the density (and, when isolating, on the
   // models too), slice plane on density + models. Serialized between the rep effects

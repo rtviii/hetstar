@@ -146,7 +146,7 @@ export default function StyleTray({
       <div className="flex flex-col gap-1 border-t border-line pt-1.5">
         <GroupLabel>layers</GroupLabel>
         <label className="flex items-center gap-2">
-          <input type="checkbox" checked={showB} disabled={!bAvailable} onChange={(e) => onShowB(e.target.checked)} />
+          <input type="checkbox" checked={showB && bAvailable} disabled={!bAvailable} onChange={(e) => onShowB(e.target.checked)} />
           <span>model B: deposited (ghost)</span>
         </label>
       </div>
