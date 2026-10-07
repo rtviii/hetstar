@@ -29,6 +29,7 @@ import {
   compSplitFromTable,
   DEFAULT_REP_STYLE,
   ensureLabComponents,
+  NO_HYDROGENS,
   reprSpecForRole,
   SELREP_BALLSTICK_SIZE,
   SELREP_SPACEFILL_SIZE,
@@ -97,6 +98,7 @@ import {
   buildAtomTable,
   buildSequenceModel,
   describeEntry,
+  isHeavy,
   parseCifText,
   readSecondaryStructure,
   residueKey,
@@ -977,7 +979,7 @@ export default function HetstarViewer({ entryId, dpdb, className }: HetstarViewe
       bondWatersRef.current = comp.ref;
       const repr = await ctx.builders.structure.representation.addRepresentation(comp, {
         type: "spacefill",
-        typeParams: { sizeFactor: 0.25, ignoreLight: true, clip: { variant: "pixel", objects: clipObjects } },
+        typeParams: { sizeFactor: 0.25, ignoreLight: true, ...NO_HYDROGENS, clip: { variant: "pixel", objects: clipObjects } },
         color: "element-symbol",
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
@@ -1033,15 +1035,15 @@ export default function HetstarViewer({ entryId, dpdb, className }: HetstarViewe
     if (pickMode !== "measure") setMeasureArm(null);
   }, [pickMode]);
 
-  // distinct atom names per residue (altloc copies deduped, hydrogens kept — anything
-  // clickable must be togglable): the enumeration toggleAtoms needs to explode a
+  // distinct atom names per residue (altloc copies deduped, hydrogens dropped — they are
+  // never drawn, so never clickable): the enumeration toggleAtoms needs to explode a
   // range-covered residue into its remaining atoms
   const residueAtomNamesMap = useMemo(() => {
     const map = new Map<string, string[]>();
     if (!aTable) return map;
     for (const res of aTable.residues) {
       const names = new Set<string>();
-      for (const r of res.rows) names.add(aTable.atomName[r]);
+      for (const r of res.rows) if (isHeavy(aTable, r)) names.add(aTable.atomName[r]);
       map.set(`${res.ref.chain}|${res.ref.seq}`, [...names]);
     }
     return map;
@@ -1801,7 +1803,7 @@ export default function HetstarViewer({ entryId, dpdb, className }: HetstarViewe
         const name = aTable.atomName[r];
         if (onlyAtom && name !== onlyAtom) continue;
         const alt = aTable.altId[r];
-        if (!alt) continue;
+        if (!alt || !isHeavy(aTable, r)) continue; // hydrogens are never drawn
         let letters = byName.get(name);
         if (!letters) {
           letters = new Set();

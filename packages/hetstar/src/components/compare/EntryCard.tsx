@@ -3,7 +3,7 @@ import { useMemo, type ReactNode } from "react";
 
 import { WATER_COMPS } from "../../lib/lab/entries";
 import { ROLE_LABELS, type EntryManifest } from "../../lib/dpdb/types";
-import { isPolymerComp, type AltlocSummary, type AtomTable, type EntryDescription } from "@dynamic-pdb/hetkit/model";
+import { isHeavy, isPolymerComp, type AltlocSummary, type AtomTable, type EntryDescription } from "@dynamic-pdb/hetkit/model";
 import { SectionLabel, TinyText } from "./ui";
 
 // The sidebar's entry card: what this structure IS — ids, title, experiment facts,
@@ -65,8 +65,11 @@ export default function EntryCard({
         ligands.set(res.compId, (ligands.get(res.compId) ?? 0) + 1);
       }
     }
+    // heavy atoms only: hydrogens are never drawn, so they don't count either
+    let atoms = 0;
+    for (let r = 0; r < aTable.count; r++) if (isHeavy(aTable, r)) atoms++;
     return {
-      atoms: aTable.count,
+      atoms,
       polymerResidues,
       chains: chains.size,
       splitResidues: altSummary?.residues.length ?? 0,

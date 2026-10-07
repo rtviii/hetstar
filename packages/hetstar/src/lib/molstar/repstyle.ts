@@ -110,16 +110,23 @@ function componentRole(c: StructureComponentRef): LabRole | null {
   return null;
 }
 
+// Hydrogens are never drawn: qFit models carry about half their atoms as explicit H,
+// which buries the alternate conformers. Ball-and-stick and spacefill take the flag
+// (bonds to H go with the atoms); cartoon draws no H anyway. Every hand-built rep
+// outside reprSpecForRole spreads this too.
+export const NO_HYDROGENS = { ignoreHydrogens: true } as const;
+
 function typeParamsFor(type: RepType, style: RepStyle) {
   return type === "ball-and-stick"
     ? {
         ignoreLight: true,
+        ...NO_HYDROGENS,
         quality: style.quality,
         sizeFactor: style.ballStick.sizeFactor,
         sizeAspectRatio: BALL_STICK_SIZE_ASPECT_RATIO,
       }
     : type === "spacefill"
-      ? { ignoreLight: true, quality: style.quality, sizeFactor: style.spacefill.sizeFactor }
+      ? { ignoreLight: true, ...NO_HYDROGENS, quality: style.quality, sizeFactor: style.spacefill.sizeFactor }
       : {
           ignoreLight: true,
           quality: style.quality,
@@ -158,7 +165,7 @@ export function reprSpecForRole(role: LabRole, style: RepStyle, opts: { uniformC
   const type: RepType = role === "ion" ? "spacefill" : role === "het" ? "ball-and-stick" : style.type;
   const typeParams =
     role === "ion"
-      ? { ignoreLight: true, quality: style.quality, sizeFactor: ION_SIZE_FACTOR }
+      ? { ignoreLight: true, ...NO_HYDROGENS, quality: style.quality, sizeFactor: ION_SIZE_FACTOR }
       : typeParamsFor(type, style);
   const color = opts.ghost
     ? uniformOnly(opts.uniformColor)

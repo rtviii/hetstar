@@ -1,11 +1,16 @@
 import { Structure, StructureElement, StructureProperties, Unit } from "molstar/lib/mol-model/structure";
-import { computeInteractions } from "molstar/lib/mol-model-props/computed/interactions/interactions";
-import type { Interactions } from "molstar/lib/mol-model-props/computed/interactions/interactions";
+import {
+  computeInteractions,
+  InteractionsParams,
+  type Interactions,
+  type InteractionsProps,
+} from "molstar/lib/mol-model-props/computed/interactions/interactions";
 import { InteractionFlag, interactionTypeLabel } from "molstar/lib/mol-model-props/computed/interactions/common";
 import { Features } from "molstar/lib/mol-model-props/computed/interactions/features";
 import { Vec3 } from "molstar/lib/mol-math/linear-algebra/3d/vec3";
 import type { PluginContext } from "molstar/lib/mol-plugin/context";
 import { Task } from "molstar/lib/mol-task";
+import { ParamDefinition as PD } from "molstar/lib/mol-util/param-definition";
 import { WATER_COMPS } from "../lab/entries";
 
 // Typed non-covalent bonds (H-bond, ionic, pi-stacking, ...) computed client-side with
@@ -67,11 +72,29 @@ export function bondKey(p: BondPair): string {
   return `${endKey(p.a)}|${endKey(p.b)}|${p.type}`;
 }
 
+// Mol*'s defaults, except that hydrogen-bond geometry ignores explicit H. hetstar never
+// draws hydrogens, and qFit models carry them while deposited ones mostly don't: judging
+// donor angles off H positions would make the bond set (and the conformer/member bond
+// difference) depend on whether a file happens to carry H, through atoms nobody can see.
+const INTERACTION_PROPS: InteractionsProps = (() => {
+  const d = PD.getDefaultValues(InteractionsParams);
+  const noH = <T extends { name: string; params: object }>(p: T): T =>
+    p.name === "on" ? { ...p, params: { ...p.params, ignoreHydrogens: true } } : p;
+  return {
+    ...d,
+    providers: {
+      ...d.providers,
+      "hydrogen-bonds": noH(d.providers["hydrogen-bonds"]),
+      "weak-hydrogen-bonds": noH(d.providers["weak-hydrogen-bonds"]),
+    },
+  };
+})();
+
 async function computeStructureInteractions(ctx: PluginContext, structure: Structure): Promise<Interactions> {
   let interactions: Interactions | undefined;
   await ctx.runTask(
     Task.create("Compute interactions", async (runtime) => {
-      interactions = await computeInteractions({ runtime, assetManager: ctx.managers.asset }, structure, {});
+      interactions = await computeInteractions({ runtime, assetManager: ctx.managers.asset }, structure, INTERACTION_PROPS);
     }),
   );
   if (!interactions) throw new Error("interaction computation produced nothing");

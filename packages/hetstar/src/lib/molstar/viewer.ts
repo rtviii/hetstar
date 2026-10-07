@@ -18,7 +18,7 @@ import type { ColorTheme } from "molstar/lib/mol-theme/color";
 import { AltLocColorThemeProvider } from "./altloc-theme";
 import { setReprsPickable } from "./density";
 import { buildComponentQuery, mergeExpressions } from "./queries";
-import type { CompSplit } from "./repstyle";
+import { type CompSplit, NO_HYDROGENS } from "./repstyle";
 import { labViewerSpec } from "./spec";
 import {
   BALL_AND_STICK_COMPONENTS,
@@ -174,7 +174,7 @@ export class MolstarViewer {
     const reprOpts = { initialState: { isHidden: true } };
     const reprProps = {
       type: "ball-and-stick" as const,
-      typeParams: { ignoreLight: true },
+      typeParams: { ignoreLight: true, ...NO_HYDROGENS },
       color: "uniform" as const,
       colorParams: { value: Color(opts.color ?? 0x8a97a5) },
     };
@@ -235,7 +235,7 @@ export class MolstarViewer {
       if (!comp || !this.ctx) continue;
       await ctx.builders.structure.representation.addRepresentation(comp, {
         type: view.representation,
-        typeParams: { ignoreLight: true },
+        typeParams: { ignoreLight: true, ...NO_HYDROGENS },
         color: view.colorTheme as ColorTheme.BuiltIn,
         ...(view.colorTheme === "uniform" ? { colorParams: { value: Color(view.uniformColor ?? 0xcfd8dc) } } : {}),
       });
