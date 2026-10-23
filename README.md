@@ -98,10 +98,10 @@ One entry load makes these calls (`client.ts`, `fetchEntryManifest`):
    these.
 2. `GET entries/{id}/models` (in parallel with 1) for every model's title, metadata and
    metrics (R-work, R-free, and clashscore and Ramachandran outliers where present).
-3. `GET entries/{id}/models/{model}/artifacts` for each deposited, qFit and ensemble model,
-   so 1 to 3 requests. Re-refined models are listed but not fetched yet.
+3. `GET entries/{id}/models/{model}/artifacts` for every model, so 1 to 4 requests. Any of them
+   can be the model the host asks for.
 
-That is three to five API requests per entry, against the backend rate limit of 100 requests
+That is three to six API requests per entry, against the backend rate limit of 100 requests
 per 10 s per IP.
 
 How the responses are interpreted:
@@ -116,9 +116,12 @@ How the responses are interpreted:
 - Structure factors come from the first `structure_factors` artifact listed. If there is
   none, the viewer uses `https://files.rcsb.org/download/{PDB}-sf.cif`. Above 50 MB the viewer
   asks before downloading, because PanDDA deposits reach hundreds of MB.
-- Pairing (`types.ts`, `pickPair`): model A is qFit if present, else the ensemble, else the
-  deposited model. Model B is the deposited model when A is not. Only CIF-format models load
-  for now; hetkit's atom table is CIF-only.
+- Pairing (`types.ts`, `pickPair`): model A is the model the host passed as `modelId`, else
+  qFit if present, else the ensemble, else the deposited model. Model B is the deposited model
+  when A is not.
+- PDB-format models (re-refined `_020.pdb`, ensemble PDBs) are converted to mmCIF text in the
+  browser on arrival (`pdbToCifText` in hetkit, through Mol*'s own PDB converter). Everything
+  after the download reads CIF, so once the catalogue serves mmCIF this step is simply skipped.
 - Coordinates and sf-cif are downloaded by the browser as text and handed to Mol*.
   `toFetchableUrl` routes URIs on `files.dynamicpdb.com` and `dynamicpdb.com` through
   `fileProxy`. RCSB URIs are fetched directly.
@@ -186,8 +189,9 @@ guesswork from the client.
   alias map (7APT, 5GQJ, 5R8T).
 - An explicit model `role` (deposited / qfit / rerefined / ensemble) instead of inferring it
   from the title.
-- A files shortcut for PDB-format models (re-refined `_020.pdb`, ensemble PDBs). Today
-  `/v1/files/{entry}/{model}/{filename}` covers only `<entry>.cif` and `<entry>-sf.cif`.
+- mmCIF for the PDB-format models (re-refined `_020.pdb`, ensemble PDBs), issue #97. The viewer
+  converts them in the browser for now, but `/v1/files/{entry}/{model}/{filename}` covers only
+  `<entry>.cif` and `<entry>-sf.cif`, so those models have no download shortcut.
 - `size_bytes` filled on every sf-cif artifact (it is sometimes null), so the download gate
   can warn before fetching large files.
 - `meta.total` on list endpoints, and a sparse fields mode for bulk listing.

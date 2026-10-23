@@ -91,7 +91,7 @@ import type { LaneMetric } from "./components/lanes/types";
 import { fetchPdbeAnnotations, mapAnnotations, type AnnotationsBySource, type PdbeRaw } from "./lib/annotations/pdbe";
 import { METRIC_ORDER, METRIC_UI, metricDescription, metricLabel, metricUnit, type MetricId } from "./components/compare/metrics";
 import { WATER_COMPS, type ProvenanceRecord, type StageId, type StageState } from "./lib/lab/entries";
-import { pickPair, ROLE_LABELS, type EntryManifest, type ManifestModel } from "./lib/dpdb/types";
+import { pickPair, ROLE_LABELS, type EntryManifest, type LoadableModel, type ManifestModel } from "./lib/dpdb/types";
 import { resolveEntry } from "./lib/dpdb/resolve";
 import { configureDpdb, toFetchableUrl, type DpdbConfig } from "./lib/dpdb/client";
 import {
@@ -100,6 +100,7 @@ import {
   describeEntry,
   isHeavy,
   parseCifText,
+  pdbToCifText,
   readSecondaryStructure,
   residueKey,
   summarizeAltlocs,
@@ -250,11 +251,17 @@ async function fetchText(url: string): Promise<string> {
   return res.text();
 }
 
+// hetkit and Mol* both read CIF text, so a PDB-format model is converted on arrival
+async function fetchModelText(m: LoadableModel): Promise<string> {
+  const text = await fetchText(toFetchableUrl(m.url));
+  return m.format === "pdb" ? pdbToCifText(text, m.title) : text;
+}
+
 // provenance prose for a model: the RCSB example rows bring their own; catalogue models get what
 // the artifact record says about them
 function describeModel(m: ManifestModel): string {
   if (m.note) return m.note;
-  const bits = [ROLE_LABELS[m.role], m.format ?? "unknown format"];
+  const bits = [ROLE_LABELS[m.role], m.format === "pdb" ? "pdb, converted to mmCIF on load" : (m.format ?? "unknown format")];
   if (m.sizeBytes != null) bits.push(`${(m.sizeBytes / 1e6).toFixed(2)} MB`);
   if (m.sha256) bits.push(`sha256 ${m.sha256.slice(0, 12)}`);
   if (m.software) bits.push(m.software);
@@ -264,6 +271,8 @@ function describeModel(m: ManifestModel): string {
 export interface HetstarViewerProps {
   /** dpdb_xxxxxxxx id (or a PDB id from the alias map / RCSB examples). Reloads when it changes. */
   entryId: string;
+  /** the entry's model to show as A (B is then the deposited model); omitted, the viewer picks. Reloads when it changes. */
+  modelId?: string | null;
   /**
    * Where catalogue calls and non-CORS artifact downloads go. Defaults target the dev proxy
    * routes of the hetstar app (/api/dpdb, /api/dpdb-file); on dynamicpdb.com pass
@@ -274,15 +283,15 @@ export interface HetstarViewerProps {
   className?: string;
 }
 
-export default function HetstarViewer({ entryId, dpdb, className }: HetstarViewerProps) {
+export default function HetstarViewer({ entryId, modelId = null, dpdb, className }: HetstarViewerProps) {
   configureDpdb(dpdb);
   const [viewer, setViewer] = useState<ViewerInstance | null>(null);
 
   // --- loader / entry state ---
   const [entryInput, setEntryInput] = useState(entryId);
   const [entry, setEntry] = useState<EntryManifest | null>(null);
-  // the A/B pair; startLoad only sets an entry pickPair already accepted, so this cannot throw
-  const pair = useMemo(() => (entry ? pickPair(entry) : null), [entry]);
+  // the A/B pair startLoad chose for the entry; set together with it
+  const [pair, setPair] = useState<ReturnType<typeof pickPair> | null>(null);
   const [loading, setLoading] = useState(false);
   const [stages, setStages] = useState<Record<StageId, StageState>>(initialStages());
   const [provenance, setProvenance] = useState<ProvenanceRecord[]>([]);
@@ -475,9 +484,10 @@ export default function HetstarViewer({ entryId, dpdb, className }: HetstarViewe
   // --- load flow: entry -> model files -> tables (density chains in its own effect) ---
 
   const startLoad = useCallback(
-    (id: string) => {
+    (id: string, pickedModelId: string | null = null) => {
       setLoadError(null);
       setEntry(null);
+      setPair(null);
       setLoading(true);
 
       // reset everything scene-derived; setting new texts clears the Mol* state tree
@@ -526,15 +536,14 @@ export default function HetstarViewer({ entryId, dpdb, className }: HetstarViewe
       void (async () => {
         try {
           const manifest = await resolveEntry(id);
-          const { a, b } = pickPair(manifest);
+          const chosen = pickPair(manifest, pickedModelId);
+          const { a, b } = chosen;
+          setPair(chosen);
           setEntry(manifest);
           setEntryInput(manifest.pdbId);
           setStage("catalogue", "done");
           setStage("models", "active");
-          const [aT, bT] = await Promise.all([
-            fetchText(toFetchableUrl(a.url)),
-            b ? fetchText(toFetchableUrl(b.url)) : Promise.resolve(null),
-          ]);
+          const [aT, bT] = await Promise.all([fetchModelText(a), b ? fetchModelText(b) : Promise.resolve(null)]);
           setStage("models", "done");
           setProvenance([
             { role: "model A", desc: describeModel(a), url: a.url },
@@ -567,14 +576,15 @@ export default function HetstarViewer({ entryId, dpdb, className }: HetstarViewe
     [setStage],
   );
 
-  // load the host's entry on mount and whenever it changes (StrictMode's double effect run
-  // must not start two loads of the same id)
+  // load the host's entry and model on mount and whenever either changes (StrictMode's double
+  // effect run must not start two loads of the same pair)
   useEffect(() => {
-    if (autoLoadRef.current === entryId) return;
-    autoLoadRef.current = entryId;
+    const key = `${entryId}|${modelId ?? ""}`;
+    if (autoLoadRef.current === key) return;
+    autoLoadRef.current = key;
     setEntryInput(entryId);
-    startLoad(entryId);
-  }, [entryId, startLoad]);
+    startLoad(entryId, modelId);
+  }, [entryId, modelId, startLoad]);
 
   // --- second model into the same scene, once the primary is in ---
 
