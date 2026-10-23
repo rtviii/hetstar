@@ -38,6 +38,7 @@ export type { ResidueRef } from "./keys";
 export { asMolCifFile, normValue } from "./cif";
 export type { MolCifFile, MolCifBlock, MolCifCategory, MolCifField } from "./cif";
 export { parseCifText } from "./parse";
+export { pdbToCifText } from "./pdb";
 export { buildAtomTable, isHeavy, BACKBONE_ATOMS } from "./atoms";
 export type { AtomTable, ResidueEntry, BuildAtomTableOptions } from "./atoms";
 export { summarizeAltlocs, OCC_SUM_TOL } from "./altloc";

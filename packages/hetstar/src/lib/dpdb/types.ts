@@ -13,7 +13,7 @@ export interface ManifestModel {
   role: ModelRole;
   /** catalogue title verbatim ("qFit model", "Deposited model", ...) */
   title: string;
-  /** null when the catalogue lists the model but its artifacts were not fetched (roles this pass does not load) */
+  /** null when the catalogue lists no coordinate artifact for the model */
   format: ModelFormat | null;
   /** the published location (S3 or RCSB), never the proxied form; see toFetchableUrl */
   url: string | null;
@@ -69,19 +69,20 @@ export const ROLE_LABELS: Record<ModelRole, string> = {
 
 function loadable(m: EntryManifest, x: ManifestModel): LoadableModel {
   if (!x.url || !x.format) throw new Error(`${m.pdbId}: no coordinate file listed for "${x.title}"`);
-  if (x.format !== "cif") throw new Error(`${m.pdbId}: "${x.title}" is PDB format; only CIF is supported yet`);
   return x as LoadableModel;
 }
 
 /**
- * The A/B pair this pass renders: qFit as A and deposited as B when both exist; an
- * ensemble (or the deposited model alone) as A with no B otherwise. All CIF.
+ * The A/B pair this pass renders. A host that picked a model gets that model as A; otherwise
+ * qFit, else an ensemble, else the deposited model. B is the deposited model unless A is it.
  */
-export function pickPair(m: EntryManifest): { a: LoadableModel; b: LoadableModel | null } {
-  const a =
-    m.models.find((x) => x.role === "qfit") ??
-    m.models.find((x) => x.role === "ensemble") ??
-    m.models.find((x) => x.role === "deposited");
+export function pickPair(m: EntryManifest, modelId?: string | null): { a: LoadableModel; b: LoadableModel | null } {
+  if (modelId && !m.models.some((x) => x.id === modelId)) throw new Error(`${m.pdbId} has no model ${modelId}`);
+  const a = modelId
+    ? m.models.find((x) => x.id === modelId)
+    : (m.models.find((x) => x.role === "qfit") ??
+      m.models.find((x) => x.role === "ensemble") ??
+      m.models.find((x) => x.role === "deposited"));
   if (!a) throw new Error(`${m.pdbId} has no loadable model (qFit, ensemble or deposited)`);
   const b = a.role === "deposited" ? null : (m.models.find((x) => x.role === "deposited") ?? null);
   return { a: loadable(m, a), b: b ? loadable(m, b) : null };

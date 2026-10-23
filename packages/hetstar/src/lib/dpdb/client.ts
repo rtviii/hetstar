@@ -112,10 +112,7 @@ function toFormat(f: string): ModelFormat {
   return f === "pdb" ? "pdb" : "cif";
 }
 
-/**
- * entry + models + artifacts for the models this pass loads (deposited, qFit, ensemble).
- * Other roles are listed with null url/format so the UI can say they exist.
- */
+/** entry + models + every model's artifacts: any of them can be the one the host asks for */
 export async function fetchEntryManifest(dpdbId: string): Promise<EntryManifest> {
   const [entryRes, modelsRes] = await Promise.all([
     apiGet<{ data: Resource<EntryAttrs> }>(`entries/${dpdbId}`),
@@ -141,9 +138,8 @@ export async function fetchEntryManifest(dpdbId: string): Promise<EntryManifest>
   };
 
   const summaries = modelsRes.data.map((m) => ({ ...m.attributes, role: deriveRole(m.attributes.title, m.attributes.metadata) }));
-  const wanted = summaries.filter((m) => m.role === "deposited" || m.role === "qfit" || m.role === "ensemble");
-  const lists = await Promise.all(wanted.map((m) => apiGet<ArtifactsResponse>(`entries/${dpdbId}/models/${m.id}/artifacts`)));
-  const artifactsByModel = new Map(wanted.map((m, i) => [m.id, lists[i]]));
+  const lists = await Promise.all(summaries.map((m) => apiGet<ArtifactsResponse>(`entries/${dpdbId}/models/${m.id}/artifacts`)));
+  const artifactsByModel = new Map(summaries.map((m, i) => [m.id, lists[i]]));
 
   let sf: EntryManifest["sf"] | null = null;
   const models: ManifestModel[] = [];
