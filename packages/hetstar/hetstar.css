@@ -585,6 +585,10 @@
   flex-shrink: 0;
 }
 
+.hetstar .grow {
+  flex-grow: 1;
+}
+
 .hetstar .origin-left {
   transform-origin: left;
 }

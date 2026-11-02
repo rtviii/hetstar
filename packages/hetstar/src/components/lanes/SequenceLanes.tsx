@@ -23,6 +23,7 @@ import type { LaneContext, LaneMetric, LaneModule, LaneView, PositionSpan } from
 const GUTTER_L = 124; // fits the longest metric label ("Density support delta") at the row-label style
 const GUTTER_R = 12;
 const RULER_H = 20;
+const ROOT_GAP = 4; // the root column's gap-1
 const ZOOMS = [5, 8, 11, 14, 18, 24];
 const MAX_ZOOM = ZOOMS[ZOOMS.length - 1];
 const PINCH = 100;
@@ -263,6 +264,7 @@ export default function SequenceLanes({
   onSelect,
   onContext,
   leading,
+  onNaturalHeight,
 }: {
   model: SequenceModel | null;
   aTable: AtomTable | null;
@@ -287,6 +289,9 @@ export default function SequenceLanes({
   onContext?: (anchor: { x: number; y: number }, ref: ResidueRef | null) => void;
   /** rendered at the left of the toolbar (the section label, the selection chip) */
   leading?: ReactNode;
+  /** the height the lanes would take without scrolling (toolbar, header, board, readout),
+   * reported whenever it changes, so the host can size the strip to the enabled lanes */
+  onNaturalHeight?: (px: number) => void;
 }) {
   const [activeChain, setActiveChain] = useState<string | null>(null);
   const [zoom, setZoom] = useState<number | null>(null);
@@ -298,6 +303,9 @@ export default function SequenceLanes({
   const [drag, setDrag] = useState<[number, number] | null>(null);
   const [viewerNode, setViewerNode] = useState<HTMLDivElement | null>(null);
   const [laneNode, setLaneNode] = useState<HTMLDivElement | null>(null);
+  const [rootNode, setRootNode] = useState<HTMLDivElement | null>(null);
+  const [boardNode, setBoardNode] = useState<HTMLDivElement | null>(null);
+  const naturalRef = useRef<number | null>(null);
   const dragStartRef = useRef<number | null>(null);
   const dragEndRef = useRef<number | null>(null);
   const lastHoverRef = useRef<number | null>(null);
@@ -355,6 +363,35 @@ export default function SequenceLanes({
     ro.observe(viewerNode);
     return () => ro.disconnect();
   }, [viewerNode]);
+
+  // natural height: every row around the scrollport at its own height, plus the board's
+  // content height and the scrollport's horizontal scrollbar, plus the column gaps. Not the
+  // root's height, which is whatever the strip gives it.
+  useEffect(() => {
+    if (!rootNode || !onNaturalHeight) return;
+    const measure = () => {
+      let total = 0;
+      let rows = 0;
+      for (const child of Array.from(rootNode.children)) {
+        rows++;
+        if (child === viewerNode) {
+          total += viewerNode.offsetHeight - viewerNode.clientHeight + (boardNode?.offsetHeight ?? 0);
+        } else {
+          total += (child as HTMLElement).offsetHeight;
+        }
+      }
+      const natural = Math.ceil(total + ROOT_GAP * Math.max(0, rows - 1));
+      if (natural === naturalRef.current) return;
+      naturalRef.current = natural;
+      onNaturalHeight(natural);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(rootNode);
+    if (viewerNode) ro.observe(viewerNode);
+    if (boardNode) ro.observe(boardNode);
+    return () => ro.disconnect();
+  }, [rootNode, viewerNode, boardNode, onNaturalHeight]);
 
   const length = chain?.length ?? 0;
   const fitCell = length > 0 && fitWidth > 0 ? fitWidth / length : null;
@@ -567,7 +604,7 @@ export default function SequenceLanes({
   } as CSSProperties;
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col gap-1">
+    <div ref={setRootNode} className="flex h-full min-h-0 min-w-0 flex-col gap-1">
       <div className="flex shrink-0 flex-wrap items-center gap-2 text-[11px]">
         {leading}
         {model && chain && (
@@ -651,7 +688,7 @@ export default function SequenceLanes({
           onPointerLeave={onPointerLeave}
           onContextMenu={onContextMenu}
         >
-          <div className="relative flex flex-col gap-[2px]" style={boardStyle}>
+          <div ref={setBoardNode} className="relative flex flex-col gap-[2px]" style={boardStyle}>
             <Row label="" height={RULER_H} trackRef={setLaneNode} plain className="sticky top-0 z-20 bg-white">
               <div className="absolute inset-x-0 bottom-0 border-b border-line-strong" />
               {ticks.map((t) => (
