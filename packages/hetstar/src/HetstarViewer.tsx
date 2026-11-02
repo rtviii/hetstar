@@ -84,7 +84,7 @@ import SelectionFlyout, { type SelectionSummary } from "./components/compare/Sel
 import type { BondRow } from "./components/compare/BondList";
 import StyleTray from "./components/compare/StyleTray";
 import BookmarkTray from "./components/compare/BookmarkTray";
-import { CARD_SHELL, Spinner } from "./components/compare/ui";
+import { CARD_SHELL, CardBoundsContext, Spinner } from "./components/compare/ui";
 import SequenceLanes from "./components/lanes/SequenceLanes";
 import { makeMetricLane } from "./components/lanes/PlotLanes";
 import type { LaneMetric } from "./components/lanes/types";
@@ -281,9 +281,22 @@ export interface HetstarViewerProps {
   dpdb?: DpdbConfig;
   /** classes for the outer wrapper; the viewer fills whatever box it is given */
   className?: string;
+  /** the lanes strip's height whenever it changes, so a host whose box is fixed can grow it;
+   * the strip starts at DEFAULT_LANES_HEIGHT */
+  onLanesHeight?: (px: number) => void;
 }
 
-export default function HetstarViewer({ entryId, modelId = null, dpdb, className }: HetstarViewerProps) {
+/** the lanes strip's height before any lane is toggled or the divider dragged, px */
+export const DEFAULT_LANES_HEIGHT = 260;
+const LANES_PAD = 16; // the strip's py-2
+const LANES_MIN = 96;
+
+function clampLanes(h: number): number {
+  const max = typeof window === "undefined" ? 600 : window.innerHeight * 0.6;
+  return Math.round(Math.min(max, Math.max(LANES_MIN, h)));
+}
+
+export default function HetstarViewer({ entryId, modelId = null, dpdb, className, onLanesHeight }: HetstarViewerProps) {
   configureDpdb(dpdb);
   const [viewer, setViewer] = useState<ViewerInstance | null>(null);
 
@@ -388,8 +401,19 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
   const [projVersion, setProjVersion] = useState(0);
   const [status, setStatus] = useState<string | null>(null);
 
-  // --- layout: height of the resizable lanes strip ---
-  const [lanesHeight, setLanesHeight] = useState(260);
+  // --- layout: height of the lanes strip ---
+  // sized to the enabled lanes (SequenceLanes reports its natural height) unless the divider
+  // was dragged; a change of content drops the override, so enabling a lane always grows it
+  const [lanesNatural, setLanesNatural] = useState(DEFAULT_LANES_HEIGHT - LANES_PAD);
+  const [lanesOverride, setLanesOverride] = useState<number | null>(null);
+  const lanesHeight = lanesOverride ?? clampLanes(lanesNatural + LANES_PAD);
+  const onNaturalHeight = useCallback((px: number) => {
+    setLanesNatural(px);
+    setLanesOverride(null);
+  }, []);
+  useEffect(() => {
+    onLanesHeight?.(lanesHeight);
+  }, [lanesHeight, onLanesHeight]);
 
   // --- slice ---
   const [slice3d, setSlice3d] = useState(false);
@@ -419,6 +443,8 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
   const hoverKeyRef = useRef<string | null>(null);
   const selectionRef = useRef<LabSelection>(EMPTY_SELECTION); // click handler reads the live selection
   const autoLoadRef = useRef<string | null>(null);
+  // the popovers and flyouts place themselves inside this box (CardBoundsContext)
+  const rootRef = useRef<HTMLDivElement>(null);
   // the components effect reads the style through a ref so style changes never rebuild
   // components (applyRepStyle restyles them in place)
   const repStyleRef = useRef(repStyle);
@@ -2142,7 +2168,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
       const startH = lanesHeight;
       const onMove = (ev: MouseEvent) => {
         const h = startH + (startY - ev.clientY);
-        setLanesHeight(Math.round(Math.min(window.innerHeight * 0.6, Math.max(96, h))));
+        setLanesOverride(clampLanes(h));
       };
       const onUp = () => {
         window.removeEventListener("mousemove", onMove);
@@ -2242,7 +2268,8 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
   );
 
   return (
-    <div className={`hetstar ${className ?? ""}`} style={{ height: "100%", width: "100%" }}>
+    <div ref={rootRef} className={`hetstar ${className ?? ""}`} style={{ height: "100%", width: "100%" }}>
+      <CardBoundsContext.Provider value={rootRef}>
       <div className="flex h-full min-h-0 flex-col bg-white text-[12px] text-ink-secondary">
         <div className="flex min-h-0 flex-1">
           <aside className="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto border-r border-line bg-surface-muted p-3">
@@ -2366,8 +2393,10 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
         </div>
 
         <div
+          title="drag to resize the lanes; double-click to fit them"
           className="h-1.5 shrink-0 cursor-row-resize border-t border-line bg-surface-muted hover:bg-accent/30"
           onMouseDown={startLanesResize}
+          onDoubleClick={() => setLanesOverride(null)}
         />
         <div className="flex shrink-0 items-start bg-white px-3 py-2" style={{ height: lanesHeight }}>
           <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-1 overflow-hidden">
@@ -2384,6 +2413,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
               onHover={onLaneHover}
               onSelect={onLaneSelect}
               onContext={onLaneContext}
+              onNaturalHeight={onNaturalHeight}
               leading={
                 <>
                   <span className="text-[11px] font-medium text-ink-muted">Sequence</span>
@@ -2406,6 +2436,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
           </div>
         </div>
       </div>
+      </CardBoundsContext.Provider>
     </div>
   );
 }

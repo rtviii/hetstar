@@ -1,14 +1,22 @@
 "use client";
 import {
+  createContext,
   type CSSProperties,
   type ReactNode,
   type RefObject,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
 } from "react";
+
+// The box the fixed cards (PinPopover, HoverFlyout) stay inside. A host that embeds the
+// viewer in a clipped or isolated frame keeps anything drawn past that frame's edge
+// hidden behind its own page chrome, so the cards place and cap themselves by the room
+// inside this element rather than the viewport. Unset, the viewport is the box.
+export const CardBoundsContext = createContext<RefObject<HTMLElement | null> | null>(null);
 
 // Shared UI vocabulary for the viewer: small, compact, austere. Whites and the Dynamic
 // PDB grays; the purple accent only on pressed state, links, focus and progress. No
@@ -137,17 +145,56 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
 // long card scrolls inside itself instead of running off the viewport (a fixed card can't
 // be reached by scrolling the page). The content height is measured in a layout effect,
 // i.e. before paint, so the card never shows on the wrong side.
-type CardAnchor = { x: number; top: number; bottom: number };
-const CARD_EDGE = 8; // min distance to the viewport edge
+type CardBox = { left: number; right: number; top: number; bottom: number; height: number };
+type CardAnchor = { x: number; top: number; bottom: number; box: CardBox };
+const CARD_EDGE = 8; // min distance to the box edge
 const CARD_GAP = 6; // anchor-to-card gap
-const CARD_MAX_VH = 0.75;
+const CARD_MAX_FRACTION = 0.75; // of the box height
 
-function cardAnchor(el: HTMLElement | null, width: number, align: "start" | "end"): CardAnchor | null {
+function cardBox(bounds: RefObject<HTMLElement | null> | null): CardBox {
+  const rect = bounds?.current?.getBoundingClientRect();
+  if (rect && rect.width > 0 && rect.height > 0) return rect;
+  return { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight, height: window.innerHeight };
+}
+
+function cardAnchor(
+  el: HTMLElement | null,
+  width: number,
+  align: "start" | "end",
+  bounds: RefObject<HTMLElement | null> | null,
+): CardAnchor | null {
   const rect = el?.getBoundingClientRect();
   if (!rect) return null;
+  const box = cardBox(bounds);
   const left = align === "end" ? rect.right - width : rect.left;
-  const x = Math.max(CARD_EDGE, Math.min(left, window.innerWidth - width - CARD_EDGE));
-  return { x, top: rect.top, bottom: rect.bottom };
+  const x = Math.max(box.left + CARD_EDGE, Math.min(left, box.right - width - CARD_EDGE));
+  return { x, top: rect.top, bottom: rect.bottom, box };
+}
+
+function sameAnchor(a: CardAnchor | null, b: CardAnchor | null): boolean {
+  if (!a || !b) return a === b;
+  return a.x === b.x && a.top === b.top && a.bottom === b.bottom && a.box.top === b.box.top && a.box.bottom === b.box.bottom;
+}
+
+// While a card is open its anchor can move: the page scrolls, the window resizes, or the
+// layout around it changes (a lane enabled grows the strip the trigger sits in). The card
+// is position:fixed, so it has to be re-placed; one rect read per frame while open.
+function useFollowAnchor(open: boolean, measure: () => CardAnchor | null, setPos: (pos: CardAnchor | null) => void) {
+  useEffect(() => {
+    if (!open) return;
+    let raf = 0;
+    let last: CardAnchor | null = null;
+    const tick = () => {
+      const next = measure();
+      if (next && !sameAnchor(next, last)) {
+        last = next;
+        setPos(next);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [open, measure, setPos]);
 }
 
 function useCardPlacement(anchor: CardAnchor | null, width: number) {
@@ -158,13 +205,13 @@ function useCardPlacement(anchor: CardAnchor | null, width: number) {
   }, [anchor]);
 
   if (!anchor) return { cardRef, style: undefined };
-  const roomBelow = window.innerHeight - anchor.bottom - CARD_GAP - CARD_EDGE;
-  const roomAbove = anchor.top - CARD_GAP - CARD_EDGE;
+  const roomBelow = anchor.box.bottom - anchor.bottom - CARD_GAP - CARD_EDGE;
+  const roomAbove = anchor.top - anchor.box.top - CARD_GAP - CARD_EDGE;
   const above = contentH > roomBelow && roomAbove > roomBelow;
   const style: CSSProperties = {
     left: anchor.x,
     width,
-    maxHeight: Math.max(0, Math.min(above ? roomAbove : roomBelow, window.innerHeight * CARD_MAX_VH)),
+    maxHeight: Math.max(0, Math.min(above ? roomAbove : roomBelow, anchor.box.height * CARD_MAX_FRACTION)),
     top: above ? undefined : anchor.bottom + CARD_GAP,
     bottom: above ? window.innerHeight - anchor.top + CARD_GAP : undefined,
   };
@@ -192,15 +239,18 @@ export function PinPopover({
 }) {
   const rootRef = useRef<HTMLSpanElement>(null);
   const anchorRef = useRef<HTMLSpanElement>(null);
+  const bounds = useContext(CardBoundsContext);
   const [pos, setPos] = useState<CardAnchor | null>(null);
   const { cardRef, style } = useCardPlacement(pos, width);
 
+  const measure = useCallback(() => cardAnchor(anchorRef.current, width, align, bounds), [width, align, bounds]);
   const toggle = useCallback(() => {
-    setPos((prev) => (prev ? null : cardAnchor(anchorRef.current, width, align)));
-  }, [width, align]);
+    setPos((prev) => (prev ? null : measure()));
+  }, [measure]);
 
   const close = useCallback(() => setPos(null), []);
   useDismiss(rootRef, pos !== null, close);
+  useFollowAnchor(pos !== null, measure, setPos);
 
   // close on a key change, not on mount
   const keySeenRef = useRef(false);
@@ -255,10 +305,12 @@ export function HoverFlyout({
   const anchorRef = useRef<HTMLSpanElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pinnedRef = useRef(false);
+  const bounds = useContext(CardBoundsContext);
   const [pos, setPos] = useState<CardAnchor | null>(null);
   const { cardRef, style } = useCardPlacement(pos, width);
 
-  const measure = useCallback(() => cardAnchor(anchorRef.current, width, align), [align, width]);
+  const measure = useCallback(() => cardAnchor(anchorRef.current, width, align, bounds), [align, width, bounds]);
+  useFollowAnchor(pos !== null, measure, setPos);
 
   const cancelTimer = useCallback(() => {
     if (timerRef.current) {
