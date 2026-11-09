@@ -43,6 +43,8 @@ import {
   planConformers,
   representationRefsForStructure,
   residueIdKey,
+  WORLD_STICKS_TAG,
+  worldStickRanges,
   type ResidueRange,
   type WorldStyle,
 } from "./lib/molstar/conformers";
@@ -389,6 +391,8 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
   const modelClipRef = useRef<ClipObjectSpec[]>([]);
   const [selRepOverlays, setSelRepOverlays] = useState<{ key: string; ranges: ResidueRange[]; type: RepType }[]>([]);
   const selRepRefs = useRef(new Map<string, string>());
+  // the world-sticks overlay component (lab-worldsticks), see the hetcif world section
+  const worldSticksRef = useRef<string | null>(null);
 
   // --- distance measurements ---
   // the armed first atom of a two-click measure; version bumps refresh the count readout
@@ -570,6 +574,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
       bondDashRef.current = null;
       setSelRepOverlays([]);
       selRepRefs.current.clear();
+      worldSticksRef.current = null;
       setMeasureArm(null);
       setMeasureVersion((v) => v + 1);
       setStatus(null);
@@ -771,6 +776,58 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
     return { hidden, covered: new Set(hetcifIndex.byResidue.keys()), accent };
   }, [hetcifModel, hetcifIndex, aTable, effectiveWorld, worldChoice]);
 
+  // --- world sticks: the variables' polymer residues as ball-and-stick under a cartoon ---
+  // Cartoon marks transparency per residue, so the collapse layers skip the polymer trace
+  // (polymerAsTrace) and a world choice on a protein variable would move nothing on screen.
+  // This overlay draws every polymer residue a variable covers as sticks on top of the
+  // trace; the collapse/accent layers apply to it like to any non-polymer component, so
+  // the chosen state's atoms show and the others vanish. Null when the polymer is not a
+  // trace (the polymer component is sticks itself) or the file has no hetcif variables.
+  const worldSticks = useMemo<ResidueRange[] | null>(() => {
+    if (!hetcifIndex || !aTable || repStyle.type !== "cartoon") return null;
+    const ranges = worldStickRanges(aTable, hetcifIndex);
+    return ranges.length ? ranges : null;
+  }, [hetcifIndex, aTable, repStyle.type]);
+
+  useEffect(() => {
+    const ctx = viewer?.ctx;
+    if (!ctx || !viewer || !primaryLoaded) return;
+    const structureRef = viewer.getPrimaryStructureRef();
+    if (!structureRef) return;
+    runStyling("worldsticks", async () => {
+      if (viewer.getPrimaryStructureRef() !== structureRef) return;
+      if (worldSticksRef.current) {
+        try {
+          await removeNode(ctx, worldSticksRef.current);
+        } catch {
+          // died with a tree rebuild
+        }
+        worldSticksRef.current = null;
+      }
+      if (!worldSticks) return;
+      const exprs = worldSticks.map((r) => buildResidueQuery(r.chain, r.from, r.to === r.from ? undefined : r.to));
+      const comp = await ctx.builders.structure.tryCreateComponentFromExpression(
+        structureRef,
+        mergeExpressions(exprs),
+        WORLD_STICKS_TAG,
+        { label: "world sticks", tags: [WORLD_STICKS_TAG] },
+      );
+      if (!comp) return;
+      worldSticksRef.current = comp.ref;
+      // thin sticks in the active colour mode (the card look paints them ghost-conformer,
+      // so covered residues read purple like their trace); the accent overpaint adds the
+      // letter colour wherever the user moved a variable off the top world
+      const style: RepStyle = { ...repStyleRef.current, type: "ball-and-stick", ballStick: { sizeFactor: SELREP_BALLSTICK_SIZE } };
+      const spec = reprSpecForRole("polymer", style, { uniformColor: MODEL_A_COLOR });
+      await ctx.builders.structure.representation.addRepresentation(comp, {
+        ...spec,
+        typeParams: { ...spec.typeParams, clip: { variant: "pixel", objects: modelClipRef.current } },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+    });
+    // colorMode/ramp: the sticks follow the tray's colour mode, so a mode change rebuilds them
+  }, [viewer, primaryLoaded, worldSticks, repStyle.colorMode, repStyle.ramp, runStyling]);
+
   useEffect(() => {
     const ctx = viewer?.ctx;
     if (!ctx || !primaryLoaded) return;
@@ -790,9 +847,9 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
     // memberIndex: a frame scrub rebuilds the structure in place, dropping the layers;
     // aSplit: a component rebuild drops them too; repStyle.type: cartoon excludes the
     // polymer from the collapse layers, so a type switch re-applies them;
-    // selRepOverlays: a fresh override component needs the layers applied to it;
+    // selRepOverlays / worldSticks: a fresh overlay component needs the layers applied to it;
     // colorMode/ramp: the card look's polymer fade is one of these layers
-  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, mutedAlts, worldStyle, memberIndex, aSplit, repStyle.type, repStyle.colorMode, repStyle.ramp, selRepOverlays, runStyling]);
+  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, mutedAlts, worldStyle, memberIndex, aSplit, repStyle.type, repStyle.colorMode, repStyle.ramp, selRepOverlays, worldSticks, runStyling]);
 
   // --- representation style (tray): in-place state-tree updates on both models ---
 

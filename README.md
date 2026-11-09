@@ -71,7 +71,9 @@ import "@dynamic-pdb/hetstar/styles.css";
   conformer count, ligand hues), so the website passes nothing. `hetcifPreset` is
   ball-and-stick with letter colours and the hetcif example files. Everything the viewer does
   because of what a file carries (altlocs, model numbers, hetcif state variables) is the same
-  under every preset; a preset must not be the place where engine behaviour changes.
+  under every preset; a preset must not be the place where engine behaviour changes. One
+  example: under a cartoon, the polymer residues hetcif variables cover are drawn as thin
+  sticks over the trace, so a world choice moves atoms under the card look too.
 - It is client-only. Mol* needs `window` and WebGL, so render it through
   `next/dynamic(..., { ssr: false })`.
 - It ships raw TypeScript (like hetkit), so a Next host needs both packages in

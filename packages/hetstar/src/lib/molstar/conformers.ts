@@ -11,7 +11,14 @@ import {
   setStructureTransparency,
 } from "molstar/lib/mol-plugin-state/helpers/structure-transparency";
 import { Color } from "molstar/lib/mol-util/color";
-import { residueKey, type AltlocResidue, type AltlocSummary } from "@dynamic-pdb/hetkit/model";
+import {
+  isPolymerComp,
+  residueKey,
+  type AltlocResidue,
+  type AltlocSummary,
+  type AtomTable,
+  type HetcifRowIndex,
+} from "@dynamic-pdb/hetkit/model";
 import { ALT_FALLBACK_COLOR, AltColors } from "./altloc-theme";
 import {
   type AltGroupSelector,
@@ -142,9 +149,39 @@ export function isSelRepComponent(c: StructureComponentRef): boolean {
   return !!c.cell.transform.tags?.includes("lab-selrep");
 }
 
+// the world-sticks overlay: ball-and-stick over every polymer residue a hetcif variable
+// covers, present only while the polymer is a trace (cartoon), where the collapse layers
+// leave the polymer alone and the world's choices would otherwise move nothing on screen.
+// Exempt from the rep-style pass and the chemistry rebuild; takes the collapse/accent layers.
+export const WORLD_STICKS_TAG = "lab-worldsticks";
+export function isWorldSticksComponent(c: StructureComponentRef): boolean {
+  return !!c.cell.transform.tags?.includes(WORLD_STICKS_TAG);
+}
+
 /** any app-managed overlay component whose lifecycle its own effect owns */
 export function isOverlayComponent(c: StructureComponentRef): boolean {
-  return isBondsComponent(c) || isSelRepComponent(c);
+  return isBondsComponent(c) || isSelRepComponent(c) || isWorldSticksComponent(c);
+}
+
+/**
+ * The polymer residues any hetcif variable covers, as contiguous per-chain ranges in table
+ * order: the extent of the world-sticks overlay. Waters, ligands and ions a variable covers
+ * are left out — their components are ball-and-stick under every polymer type already.
+ */
+export function worldStickRanges(table: AtomTable, index: HetcifRowIndex): ResidueRange[] {
+  const ranges: ResidueRange[] = [];
+  let lastKey = "";
+  for (let i = 0; i < table.count; i++) {
+    const key = `${table.chain[i]}|${table.seq[i]}|${table.ins[i]}`;
+    if (key === lastKey) continue;
+    lastKey = key;
+    if (!index.byResidue.has(key) || !isPolymerComp(table.compId[i])) continue;
+    const last = ranges[ranges.length - 1];
+    if (last && last.chain === table.chain[i] && table.seq[i] === last.to + 1) last.to = table.seq[i];
+    else if (last && last.chain === table.chain[i] && table.seq[i] === last.to) continue; // insertion-code copy
+    else ranges.push({ chain: table.chain[i], from: table.seq[i], to: table.seq[i] });
+  }
+  return ranges;
 }
 
 /**
