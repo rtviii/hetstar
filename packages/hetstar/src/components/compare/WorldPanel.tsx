@@ -17,6 +17,7 @@ import {
   type HetcifVariable,
   type HetcifWorld,
 } from "@dynamic-pdb/hetkit/model";
+import { stateSupport, type MapSampler, type StateSupportRow } from "@dynamic-pdb/hetkit/metrics";
 import { altColorCss } from "../../lib/molstar/altloc-theme";
 import { GroupLabel, SectionLabel, SwitchButton, TinyText } from "./ui";
 
@@ -39,6 +40,10 @@ export interface WorldPanelProps {
   overridden: ReadonlySet<string>;
   /** variables touching the current selection, in file order */
   selectedVariables: string[];
+  /** 2mFo-DFc sampler in sigma units; null until density is ready */
+  densitySampler?: MapSampler | null;
+  /** Fo-Fc sampler in sigma units; null until density is ready */
+  fofcSampler?: MapSampler | null;
   disabled?: boolean;
   onChoose: (variable: string, state: string) => void;
   onChooseMany: (states: Record<string, string>) => void;
@@ -187,6 +192,8 @@ function VariableCard({
   world,
   moved,
   disabled,
+  densitySampler,
+  fofcSampler,
   onChoose,
 }: {
   v: HetcifVariable;
@@ -197,12 +204,26 @@ function VariableCard({
   world: Record<string, string>;
   moved: boolean;
   disabled?: boolean;
+  densitySampler: MapSampler | null;
+  fofcSampler: MapSampler | null;
   onChoose: (variable: string, state: string) => void;
 }) {
   const words = useMemo(() => describeVariable(table, index, v), [table, index, v]);
   const owner = hetcifTableFor(model, v.id);
   const rowInForce = owner ? hetcifRowFor(owner, world) : null;
   const rows = hetcifStateRows(index, v.id);
+  // per-state density support from the maps the viewer already holds: mean map value over
+  // the state's heavy atoms and over the atoms no other state comes within 0.5 A of
+  const support = useMemo(() => {
+    const by = (sampler: MapSampler | null) => {
+      if (!sampler) return null;
+      const m = new Map<string, StateSupportRow>();
+      for (const r of stateSupport(table, rows, sampler)) m.set(r.state, r);
+      return m;
+    };
+    return { twoFo: by(densitySampler), fofc: by(fofcSampler) };
+  }, [table, rows, densitySampler, fofcSampler]);
+  const hasMaps = !!support.twoFo;
   const children = [...model.tables.values()].filter((t) => t.parents.includes(v.id)).map((t) => t.child);
 
   return (
@@ -225,7 +246,11 @@ function VariableCard({
         {children.length > 0 && <> It is a parent of {children.join(", ")}.</>}
       </TinyText>
       {v.details && <TinyText className="italic">{v.details}</TinyText>}
-      <div className="grid grid-cols-[auto_auto_1fr_auto_auto_auto] items-center gap-x-2 gap-y-0.5 text-[10.5px] tabular-nums">
+      <div
+        className={`grid items-center gap-x-2 gap-y-0.5 text-[10.5px] tabular-nums ${
+          hasMaps ? "grid-cols-[auto_auto_1fr_auto_auto_auto_auto_auto]" : "grid-cols-[auto_auto_1fr_auto_auto_auto]"
+        }`}
+      >
         <span className="text-ink-muted/70">state</span>
         <span />
         <span className="text-ink-muted/70">what it is</span>
@@ -234,6 +259,19 @@ function VariableCard({
           {owner ? "p | parents" : ""}
         </span>
         <span className="text-right text-ink-muted/70">atoms · B</span>
+        {hasMaps && (
+          <>
+            <span
+              className="text-right text-ink-muted/70"
+              title="mean 2mFo-DFc (sigma) over the atoms exclusive to this state (farther than 0.5 A from every other state); in brackets the count of such atoms; when none, over all its atoms"
+            >
+              2mFo-DFc
+            </span>
+            <span className="text-right text-ink-muted/70" title="mean Fo-Fc (sigma) over the same atoms: negative means the state is over-modelled here, positive under-modelled">
+              Fo-Fc
+            </span>
+          </>
+        )}
         {v.states.map((s) => (
           <StateRow
             key={s.id}
@@ -246,10 +284,21 @@ function VariableCard({
             isWater={words.isWater}
             pressed={world[v.id] === s.id}
             disabled={disabled}
+            twoFo={support.twoFo?.get(s.id) ?? null}
+            fofc={support.fofc?.get(s.id) ?? null}
             onChoose={onChoose}
           />
         ))}
       </div>
+      {hasMaps ? (
+        <TinyText>
+          Density columns are plain map means at the state's atoms, not a correlation: a state with a high 2mFo-DFc on its exclusive
+          atoms has density of its own; a low value with a negative Fo-Fc says the map does not want it there. Occupancy is not divided
+          out.
+        </TinyText>
+      ) : (
+        <TinyText>per-state density support appears once the maps are built</TinyText>
+      )}
     </div>
   );
 }
@@ -264,6 +313,8 @@ function StateRow({
   isWater,
   pressed,
   disabled,
+  twoFo,
+  fofc,
   onChoose,
 }: {
   s: HetcifState;
@@ -275,9 +326,19 @@ function StateRow({
   isWater: boolean;
   pressed: boolean;
   disabled?: boolean;
+  /** null when the maps are not built; undefined never */
+  twoFo: StateSupportRow | null;
+  fofc: StateSupportRow | null;
   onChoose: (variable: string, state: string) => void;
 }) {
   const stats = useMemo(() => stateStats(table, rows), [table, rows]);
+  // exclusive atoms when the state has any, else every atom (marked with an asterisk)
+  const supportCell = (r: StateSupportRow | null) => {
+    if (!r) return "";
+    if (r.exclusiveCount > 0) return `${r.exclusiveMean.toFixed(2)} (${r.exclusiveCount})`;
+    if (r.atomCount > 0) return `${r.mean.toFixed(2)}*`;
+    return "-";
+  };
   const what =
     s.details ??
     (stats.heavy === 0
@@ -300,6 +361,16 @@ function StateRow({
         {stats.heavy}
         {stats.meanB !== null ? ` · ${stats.meanB.toFixed(0)}` : ""}
       </span>
+      {twoFo !== null && (
+        <>
+          <span className={`text-right ${pressed ? "text-ink" : "text-ink-secondary"}`} title={twoFo.exclusiveCount ? `${twoFo.exclusiveCount} exclusive atoms` : "no exclusive atoms: mean over all atoms"}>
+            {supportCell(twoFo)}
+          </span>
+          <span className={`text-right ${fofc && fofc.exclusiveCount > 0 && fofc.exclusiveMean < -1 ? "text-danger" : "text-ink-secondary"}`}>
+            {supportCell(fofc)}
+          </span>
+        </>
+      )}
     </>
   );
 }
@@ -467,6 +538,8 @@ export default function WorldPanel({
   world,
   overridden,
   selectedVariables,
+  densitySampler = null,
+  fofcSampler = null,
   disabled,
   onChoose,
   onChooseMany,
@@ -592,6 +665,8 @@ export default function WorldPanel({
                 world={world}
                 moved={overridden.has(vid)}
                 disabled={disabled}
+                densitySampler={densitySampler}
+                fofcSampler={fofcSampler}
                 onChoose={onChoose}
               />
             ) : null;

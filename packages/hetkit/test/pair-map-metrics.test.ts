@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildAtomTable, parseCifText } from "../src/model";
-import { conformerSupport, makeTrack, mapSupportDelta, mapValueTracks, scopeTrack, trackDelta } from "../src/metrics";
+import { conformerSupport, makeTrack, mapSupportDelta, mapValueTracks, scopeTrack, stateSupport, trackDelta } from "../src/metrics";
 
 // Same hand-computable synthetic as synthetic.test.ts: residue A/1 with CA split A/B at
 // 0.5/0.5 one Angstrom apart in x, A/2 a lone CA, A/3 backbone unsplit with CB split
@@ -94,6 +94,29 @@ describe("map-sampler metrics", () => {
     expect(r3[0].mean).toBeCloseTo(8.5, 6);
     expect(r3[1].occupancy).toBeCloseTo(0.7, 6);
     expect(r3[2].occupancy).toBeCloseTo(0.3, 6);
+  });
+
+  it("samples per-state support over all and over exclusive atoms", async () => {
+    const table = buildAtomTable(await parseCifText(SYNTH))!;
+    // residue A/1 as a two-state variable: state A = CA alt A (x=0), state B = CA alt B (x=1)
+    const r1 = table.residues[0].rows;
+    const rowsA = r1.filter((r) => table.altId[r] === "A");
+    const rowsB = r1.filter((r) => table.altId[r] === "B");
+    const states = new Map([["A", rowsA], ["B", rowsB]]);
+    const s = stateSupport(table, states, sampleX);
+    expect(s.map((r) => r.state)).toEqual(["A", "B"]);
+    expect(s[0]).toMatchObject({ atomCount: 1, exclusiveCount: 1 });
+    expect(s[0].mean).toBeCloseTo(0, 6);
+    expect(s[1].exclusiveMean).toBeCloseTo(1, 6);
+    // one Angstrom apart: not exclusive at a 2 A threshold
+    const wide = stateSupport(table, states, sampleX, { exclusiveDistance: 2 });
+    expect(wide[0].exclusiveCount).toBe(0);
+    expect(Number.isNaN(wide[0].exclusiveMean)).toBe(true);
+    expect(wide[0].mean).toBeCloseTo(0, 6);
+    // a row shared by both states is never exclusive
+    const shared = stateSupport(table, new Map([["A", [...rowsA, rowsB[0]]], ["B", rowsB]]), sampleX);
+    expect(shared[0].exclusiveCount).toBe(1);
+    expect(shared[1].exclusiveCount).toBe(0);
   });
 
   it("computes the support delta between two models in the same frame", async () => {

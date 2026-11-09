@@ -131,6 +131,6 @@ export type { Level, Track, TrackJSON } from "./tracks";
 export { conformerCount, occupancyEntropy, altlocRmsf } from "./altloc-metrics";
 export { bIsoMean } from "./bfactor";
 export { ensembleRmsf } from "./ensemble-rmsf";
-export { conformerSupport, mapSupportDelta, mapValueTracks } from "./map";
-export type { ConformerSupportRow, MapSampler } from "./map";
+export { conformerSupport, mapSupportDelta, mapValueTracks, stateSupport } from "./map";
+export type { ConformerSupportRow, MapSampler, StateSupportRow } from "./map";
 export { modelRmsd } from "./rmsd";

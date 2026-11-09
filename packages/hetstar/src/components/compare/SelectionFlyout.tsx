@@ -283,7 +283,7 @@ export default function SelectionFlyout({
 
       <div className="border-t border-line pt-1.5">
         {world ? (
-          <WorldPanel {...world} disabled={!primaryLoaded} />
+          <WorldPanel {...world} densitySampler={densitySampler} fofcSampler={fofcSampler} disabled={!primaryLoaded} />
         ) : (
           <>
             <ConformerStatesPanel letters={stateLetters} active={globalAlt} disabled={!primaryLoaded} onChange={onGlobalAlt} />
