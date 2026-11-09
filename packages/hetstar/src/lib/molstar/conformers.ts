@@ -103,6 +103,20 @@ export interface ConformerStyleState {
    * cartoon marks transparency per RESIDUE, so the altloc transparency-1 layer would knock
    * whole residues out of the trace and shred it into fragments */
   polymerAsTrace?: boolean;
+  /** a world from the file's hetcif categories (one state per variable): it decides the
+   * hidden conformers of every residue a variable covers; residues with altlocs that no
+   * variable covers fall back to the per-residue collapse; globalAlt is ignored */
+  world?: WorldStyle;
+}
+
+export interface WorldStyle {
+  /** atoms hidden by the chosen states (hetkit hiddenRowsForWorld, as selectors) */
+  hidden: AltGroupSelector[];
+  /** residueKeys (chain|seq|ins) touched by any variable */
+  covered: ReadonlySet<string>;
+  /** the visible atoms of variables the user moved off the top world, by altloc letter, for
+   * the accent overpaint (same role as the globalAlt accent) */
+  accent: Map<string, AltGroupSelector[]>;
 }
 
 // matches both the lab expression component ("lab-polymer") and Mol*'s static component
@@ -136,7 +150,15 @@ export function isOverlayComponent(c: StructureComponentRef): boolean {
  */
 export function hiddenConformerSelectors(plan: ConformerPlan, state: ConformerStyleState): AltGroupSelector[] {
   const hidden: AltGroupSelector[] = [];
+  if (state.world) {
+    // the world's hidden atoms, except on expanded residues (which show every letter)
+    for (const h of state.world.hidden) {
+      if (state.shown.has(`${h.chain}|${h.seqStart}|`)) continue;
+      hidden.push(h);
+    }
+  }
   for (const [key, res] of plan.byKey) {
+    if (state.world?.covered.has(key) && !state.shown.has(key)) continue; // the world decided
     if (state.shown.has(key)) {
       // expanded residue: every letter visible EXCEPT the individually muted ones
       if (state.muted?.size) {
@@ -154,7 +176,7 @@ export function hiddenConformerSelectors(plan: ConformerPlan, state: ConformerSt
       continue;
     }
     const kept =
-      state.globalAlt && res.altIds.includes(state.globalAlt) ? state.globalAlt : plan.kept.get(key);
+      !state.world && state.globalAlt && res.altIds.includes(state.globalAlt) ? state.globalAlt : plan.kept.get(key);
     for (const letter of res.altIds) {
       if (letter === kept) continue;
       hidden.push({
@@ -215,7 +237,13 @@ export async function applyConformerStyling(
   // active global state: the residues the state actually switched (they carry the letter)
   // get their visible letter atoms painted in the letter color — the rest of the model
   // (unsplit residues, fallback residues) stays base, so the state reads at a glance
-  if (state.globalAlt) {
+  if (state.world) {
+    for (const [letter, selectors] of state.world.accent) {
+      const list = byLetter.get(letter) ?? [];
+      list.push(...selectors);
+      byLetter.set(letter, list);
+    }
+  } else if (state.globalAlt) {
     const letter = state.globalAlt;
     const list = byLetter.get(letter) ?? [];
     for (const [key, res] of plan.byKey) {

@@ -45,7 +45,9 @@ import {
   representationRefsForStructure,
   residueIdKey,
   type ResidueRange,
+  type WorldStyle,
 } from "./lib/molstar/conformers";
+import type { WorldPanelProps } from "./components/compare/WorldPanel";
 import { MetricProjector, samplerForVolume, trackToPoints } from "./lib/molstar/project";
 import {
   buildAltGroupExpression,
@@ -96,8 +98,15 @@ import { resolveEntry } from "./lib/dpdb/resolve";
 import { configureDpdb, toFetchableUrl, type DpdbConfig } from "./lib/dpdb/client";
 import {
   buildAtomTable,
+  buildHetcifRowIndex,
   buildSequenceModel,
   describeEntry,
+  hetcifMarginals,
+  hetcifStateRows,
+  hetcifTopWorld,
+  hiddenRowsForWorld,
+  parseHetcif,
+  rowsToSelectors,
   isHeavy,
   parseCifText,
   pdbToCifText,
@@ -109,6 +118,7 @@ import {
   type MolCifFile,
   type ResidueRef,
 } from "@dynamic-pdb/hetkit/model";
+import type { AltGroupSelector } from "./lib/molstar/queries";
 import {
   altlocRmsf,
   bIsoMean,
@@ -348,6 +358,8 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
   const [hoverInfo, setHoverInfo] = useState<PickInfo | null>(null);
   const [shownConformers, setShownConformers] = useState<ReadonlySet<string>>(new Set());
   const [globalAlt, setGlobalAlt] = useState<string | null>(null);
+  // hetcif world overrides: variable id -> state id the user chose; empty = the top world
+  const [worldChoice, setWorldChoice] = useState<Record<string, string>>({});
   // individually toggled-off conformers of expanded residues (`${residueKey}|${letter}`);
   // the structure layers, the selection marker and the bonds overlay all subtract them
   const [mutedAlts, setMutedAlts] = useState<ReadonlySet<string>>(new Set());
@@ -542,6 +554,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
       setHoverInfo(null);
       setShownConformers(new Set());
       setGlobalAlt(null);
+      setWorldChoice({});
       setMutedAlts(new Set());
       setClip(null);
       setPopup(null);
@@ -725,6 +738,35 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
   const altSummary = useMemo(() => (aTable ? summarizeAltlocs(aTable) : null), [aTable]);
   const confPlan = useMemo(() => planConformers(altSummary), [altSummary]);
 
+  // --- hetcif world: one state per variable decides the visible conformers ---
+  // A file with hetcif categories (~/dev/hetcif) names the variables its altlocs belong to
+  // and the joint over them. The viewer shows one world: the most probable by default, with
+  // the user's per-variable or per-group overrides. Residues covered by a variable take
+  // their visibility from the world; the per-residue collapse keeps handling the rest.
+  const hetcifModel = useMemo(() => (aFile ? parseHetcif(aFile) : null), [aFile]);
+  const hetcifIndex = useMemo(
+    () => (hetcifModel && aTable ? buildHetcifRowIndex(aTable, hetcifModel) : null),
+    [hetcifModel, aTable],
+  );
+  const hetcifTop = useMemo(() => (hetcifModel ? hetcifTopWorld(hetcifModel) : null), [hetcifModel]);
+  const hetcifMarg = useMemo(() => (hetcifModel ? hetcifMarginals(hetcifModel) : null), [hetcifModel]);
+  const effectiveWorld = useMemo(() => (hetcifTop ? { ...hetcifTop, ...worldChoice } : null), [hetcifTop, worldChoice]);
+  const worldStyle = useMemo<WorldStyle | undefined>(() => {
+    if (!hetcifModel || !hetcifIndex || !aTable || !effectiveWorld) return undefined;
+    const hidden = rowsToSelectors(aTable, hiddenRowsForWorld(hetcifIndex, effectiveWorld));
+    const accent = new Map<string, AltGroupSelector[]>();
+    for (const vid of Object.keys(worldChoice)) {
+      if (!hetcifModel.variables.has(vid)) continue;
+      const state = effectiveWorld[vid];
+      const rows = hetcifStateRows(hetcifIndex, vid).get(state) ?? [];
+      if (!rows.length) continue;
+      const list = accent.get(state) ?? [];
+      list.push(...rowsToSelectors(aTable, rows));
+      accent.set(state, list);
+    }
+    return { hidden, covered: new Set(hetcifIndex.byResidue.keys()), accent };
+  }, [hetcifModel, hetcifIndex, aTable, effectiveWorld, worldChoice]);
+
   useEffect(() => {
     const ctx = viewer?.ctx;
     if (!ctx || !primaryLoaded) return;
@@ -737,13 +779,14 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
         globalAlt,
         muted: mutedAlts,
         polymerAsTrace: repStyle.type === "cartoon",
+        world: worldStyle,
       });
     });
     // memberIndex: a frame scrub rebuilds the structure in place, dropping the layers;
     // aSplit: a component rebuild drops them too; repStyle.type: cartoon excludes the
     // polymer from the collapse layers, so a type switch re-applies them;
     // selRepOverlays: a fresh override component needs the layers applied to it
-  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, mutedAlts, memberIndex, aSplit, repStyle.type, selRepOverlays, runStyling]);
+  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, mutedAlts, worldStyle, memberIndex, aSplit, repStyle.type, selRepOverlays, runStyling]);
 
   // --- representation style (tray): in-place state-tree updates on both models ---
 
@@ -822,8 +865,8 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
   // hover asks at pointer rate.
 
   const hiddenSelectors = useMemo(
-    () => hiddenConformerSelectors(confPlan, { shown: shownConformers, globalAlt, muted: mutedAlts }),
-    [confPlan, shownConformers, globalAlt, mutedAlts],
+    () => hiddenConformerSelectors(confPlan, { shown: shownConformers, globalAlt, muted: mutedAlts, world: worldStyle }),
+    [confPlan, shownConformers, globalAlt, mutedAlts, worldStyle],
   );
   const hiddenLociCacheRef = useRef<{
     structure: Structure;
@@ -1972,6 +2015,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
     setPopup(null);
     setShownConformers(new Set());
     setGlobalAlt(null);
+    setWorldChoice({});
     setMutedAlts(new Set());
     setRepStyle(sanitizeRepStyle(null));
     setClip(null);
@@ -2054,6 +2098,33 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
       residueCount: altSummary.residues.filter((r) => r.altIds.includes(letter)).length,
     }));
   }, [altSummary]);
+
+  // variables touching the selected residues, in file order (the world panel's rows)
+  const selectedVariables = useMemo(() => {
+    if (!hetcifIndex || !aTable || !residueRanges.length) return [];
+    const out: string[] = [];
+    for (const res of aTable.residues) {
+      const inSel = residueRanges.some((r) => r.chain === res.ref.chain && res.ref.seq >= r.from && res.ref.seq <= r.to);
+      if (!inSel) continue;
+      for (const vid of hetcifIndex.byResidue.get(residueKey(res.ref)) ?? []) if (!out.includes(vid)) out.push(vid);
+    }
+    return out;
+  }, [hetcifIndex, aTable, residueRanges]);
+
+  const worldPanel = useMemo<WorldPanelProps | null>(() => {
+    if (!hetcifModel || !hetcifMarg || !hetcifTop || !effectiveWorld) return null;
+    const overridden = new Set(Object.keys(worldChoice).filter((v) => worldChoice[v] !== hetcifTop[v]));
+    return {
+      model: hetcifModel,
+      marginals: hetcifMarg,
+      world: effectiveWorld,
+      overridden,
+      selectedVariables,
+      onChoose: (v: string, st: string) => setWorldChoice((prev) => ({ ...prev, [v]: st })),
+      onChooseMany: (states: Record<string, string>) => setWorldChoice((prev) => ({ ...prev, ...states })),
+      onReset: () => setWorldChoice({}),
+    };
+  }, [hetcifModel, hetcifMarg, hetcifTop, effectiveWorld, worldChoice, selectedVariables]);
 
   // --- sequence lanes: the structure-sequence bridge ---
   // The deposited file carries the polymer scheme (SEQRES with author numbering) and the
@@ -2254,6 +2325,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
       stateLetters={stateLetters}
       globalAlt={globalAlt}
       onGlobalAlt={setGlobalAlt}
+      world={worldPanel}
       primaryLoaded={primaryLoaded}
       memberNums={ensembleInfo?.modelNums ?? []}
       memberIndex={memberIndex}

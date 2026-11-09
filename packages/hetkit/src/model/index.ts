@@ -3,6 +3,7 @@ import { buildAtomTable, type AtomTable } from "./atoms";
 import { asMolCifFile, type MolCifFile } from "./cif";
 import { summarizeEnsemble, type EnsembleSummary } from "./ensemble";
 import { parseHeterogeneity, type HetModel } from "./het-ext";
+import { parseHetcif, type HetcifModel } from "./hetcif";
 import { summarizeMotion, type MotionSummary } from "./motion";
 
 // One call from parsed CIF to a normalized description of everything this file
@@ -18,6 +19,8 @@ export interface HeterogeneityDescription {
   motion: MotionSummary;
   /** networks/states from the extension categories; null when absent (all of today's corpus) */
   extensions: HetModel | null;
+  /** state variables and tables from the hetcif categories (~/dev/hetcif); null when absent */
+  hetcif: HetcifModel | null;
 }
 
 export function describeHeterogeneity(raw: unknown, opts: { blockIndex?: number } = {}): HeterogeneityDescription {
@@ -30,6 +33,7 @@ export function describeHeterogeneity(raw: unknown, opts: { blockIndex?: number 
     ensemble: summarizeEnsemble(file, blockIndex),
     motion: summarizeMotion(file, table, blockIndex),
     extensions: parseHeterogeneity(file, table, blockIndex),
+    hetcif: parseHetcif(file, blockIndex),
   };
 }
 
@@ -59,6 +63,19 @@ export type {
   AtomKey,
   StateSource,
 } from "./het-ext";
+export {
+  parseHetcif,
+  components as hetcifComponents,
+  worlds as hetcifWorlds,
+  marginals as hetcifMarginals,
+  topWorld as hetcifTopWorld,
+  tableFor as hetcifTableFor,
+  stateRows as hetcifStateRows,
+  buildRowIndex as buildHetcifRowIndex,
+  hiddenRowsForWorld,
+  rowsToSelectors,
+} from "./hetcif";
+export type { HetcifModel, HetcifVariable, HetcifState, HetcifTable, HetcifTableRow, HetcifWorld, HetcifRowIndex } from "./hetcif";
 export { describeEntry } from "./entry";
 export type { EntryDescription, EntryEntity } from "./entry";
 export {

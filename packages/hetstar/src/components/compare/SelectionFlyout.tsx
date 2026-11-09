@@ -8,6 +8,7 @@ import type { AtomTable } from "@dynamic-pdb/hetkit/model";
 import type { BondPair } from "../../lib/molstar/interactions";
 import BondList, { type BondRow } from "./BondList";
 import ConformerStatesPanel, { type StateLetter } from "./ConformerStatesPanel";
+import WorldPanel, { type WorldPanelProps } from "./WorldPanel";
 import { GroupLabel, SliderRow, TinyText } from "./ui";
 
 // The conformers/selection flyout on the icon tray: reports WHATEVER is selected — a
@@ -51,6 +52,7 @@ export default function SelectionFlyout({
   stateLetters,
   globalAlt,
   onGlobalAlt,
+  world,
   primaryLoaded,
   memberNums,
   memberIndex,
@@ -76,6 +78,8 @@ export default function SelectionFlyout({
   stateLetters: StateLetter[];
   globalAlt: string | null;
   onGlobalAlt: (letter: string | null) => void;
+  /** the hetcif world chooser; null when model A carries no hetcif categories */
+  world: WorldPanelProps | null;
   primaryLoaded: boolean;
   /** pdbx_PDB_model_num of each ensemble member of model A; length < 2 hides the section */
   memberNums: number[];
@@ -278,8 +282,14 @@ export default function SelectionFlyout({
       )}
 
       <div className="border-t border-line pt-1.5">
-        <ConformerStatesPanel letters={stateLetters} active={globalAlt} disabled={!primaryLoaded} onChange={onGlobalAlt} />
-        {!stateLetters.length && <TinyText>conformer states appear when model A carries altloc letters</TinyText>}
+        {world ? (
+          <WorldPanel {...world} disabled={!primaryLoaded} />
+        ) : (
+          <>
+            <ConformerStatesPanel letters={stateLetters} active={globalAlt} disabled={!primaryLoaded} onChange={onGlobalAlt} />
+            {!stateLetters.length && <TinyText>conformer states appear when model A carries altloc letters</TinyText>}
+          </>
+        )}
       </div>
     </div>
   );

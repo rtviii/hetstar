@@ -1,0 +1,105 @@
+data_constructed_two_pocket
+#
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+_atom_site.pdbx_formal_charge
+_atom_site.auth_seq_id
+_atom_site.auth_comp_id
+_atom_site.auth_asym_id
+_atom_site.auth_atom_id
+_atom_site.pdbx_PDB_model_num
+ATOM 1 N N . ASN A 1 14 ? 6.892 4.356 3.906 1.00 1.62 ? 14 ASN A N 1
+ATOM 2 C CA . ASN A 1 14 ? 7.323 3.600 2.746 1.00 1.56 ? 14 ASN A CA 1
+ATOM 3 C C . ASN A 1 14 ? 6.137 3.150 1.887 1.00 1.55 ? 14 ASN A C 1
+ATOM 4 O O . ASN A 1 14 ? 6.248 3.117 0.663 1.00 2.17 ? 14 ASN A O 1
+ATOM 5 C CB . ASN A 1 14 ? 8.188 2.417 3.167 1.00 1.96 ? 14 ASN A CB 1
+ATOM 6 C CG . ASN A 1 14 ? 9.563 2.858 3.654 1.00 2.40 ? 14 ASN A CG 1
+ATOM 7 O OD1 . ASN A 1 14 ? 10.051 3.925 3.246 1.00 3.33 ? 14 ASN A OD1 1
+ATOM 8 N ND2 . ASN A 1 14 ? 10.180 2.025 4.475 1.00 3.15 ? 14 ASN A ND2 1
+ATOM 9 N N . VAL A 1 15 ? 4.992 2.817 2.503 1.00 1.46 ? 15 VAL A N 1
+ATOM 10 C CA . VAL A 1 15 ? 3.809 2.515 1.695 1.00 1.45 ? 15 VAL A CA 1
+ATOM 11 C C . VAL A 1 15 ? 3.309 3.772 0.970 1.00 1.47 ? 15 VAL A C 1
+ATOM 12 O O . VAL A 1 15 ? 2.967 3.733 -0.207 1.00 1.77 ? 15 VAL A O 1
+ATOM 13 C CB . VAL A 1 15 ? 2.718 1.853 2.546 1.00 1.79 ? 15 VAL A CB 1
+ATOM 14 C CG1 . VAL A 1 15 ? 1.390 1.798 1.795 1.00 2.75 ? 15 VAL A CG1 1
+ATOM 15 C CG2 . VAL A 1 15 ? 3.171 0.458 2.966 1.00 2.43 ? 15 VAL A CG2 1
+ATOM 16 N N . CYS A 1 16 ? 3.265 4.910 1.697 1.00 1.55 ? 16 CYS A N 1
+ATOM 17 C CA . CYS A 1 16 ? 2.853 6.168 1.085 1.00 1.54 ? 16 CYS A CA 1
+ATOM 18 C C . CYS A 1 16 ? 3.680 6.497 -0.171 1.00 1.45 ? 16 CYS A C 1
+ATOM 19 O O . CYS A 1 16 ? 3.159 7.037 -1.146 1.00 1.80 ? 16 CYS A O 1
+ATOM 20 C CB . CYS A 1 16 ? 2.981 7.257 2.155 1.00 1.93 ? 16 CYS A CB 1
+ATOM 21 S SG . CYS A 1 16 ? 2.571 8.931 1.593 1.00 2.20 ? 16 CYS A SG 1
+HETATM 22 C C1 A IPH B 2 . ? 6.411 -1.363 -1.765 0.50 25.00 ? 501 IPH A C1 1
+HETATM 23 C C2 A IPH B 2 . ? 5.716 -0.159 -1.765 0.50 25.00 ? 501 IPH A C2 1
+HETATM 24 C C3 A IPH B 2 . ? 4.326 -0.159 -1.765 0.50 25.00 ? 501 IPH A C3 1
+HETATM 25 C C4 A IPH B 2 . ? 3.631 -1.363 -1.765 0.50 25.00 ? 501 IPH A C4 1
+HETATM 26 C C5 A IPH B 2 . ? 4.326 -2.567 -1.765 0.50 25.00 ? 501 IPH A C5 1
+HETATM 27 C C6 A IPH B 2 . ? 5.716 -2.567 -1.765 0.50 25.00 ? 501 IPH A C6 1
+HETATM 28 O O1 A IPH B 2 . ? 7.786 -1.363 -1.765 0.50 25.00 ? 501 IPH A O1 1
+HETATM 29 C C1 B EDO C 3 . ? 4.321 -1.763 -1.765 0.50 25.00 ? 501 EDO A C1 1
+HETATM 30 C C2 B EDO C 3 . ? 5.833 -1.763 -1.765 0.50 25.00 ? 501 EDO A C2 1
+HETATM 31 O O1 B EDO C 3 . ? 3.846 -0.423 -1.765 0.50 25.00 ? 501 EDO A O1 1
+HETATM 32 O O2 B EDO C 3 . ? 6.308 -3.103 -1.765 0.50 25.00 ? 501 EDO A O2 1
+HETATM 33 C C1 C EDO D 3 . ? -1.479 -0.708 -1.306 0.30 30.00 ? 502 EDO A C1 1
+HETATM 34 C C2 C EDO D 3 . ? 0.033 -0.708 -1.306 0.30 30.00 ? 502 EDO A C2 1
+HETATM 35 O O1 C EDO D 3 . ? -1.954 0.632 -1.306 0.30 30.00 ? 502 EDO A O1 1
+HETATM 36 O O2 C EDO D 3 . ? 0.508 -2.048 -1.306 0.30 30.00 ? 502 EDO A O2 1
+HETATM 37 C C1 D EDO E 3 . ? -1.129 -0.408 -1.306 0.20 32.00 ? 502 EDO A C1 1
+HETATM 38 C C2 D EDO E 3 . ? 0.383 -0.408 -1.306 0.20 32.00 ? 502 EDO A C2 1
+HETATM 39 O O1 D EDO E 3 . ? -1.604 0.932 -1.306 0.20 32.00 ? 502 EDO A O1 1
+HETATM 40 O O2 D EDO E 3 . ? 0.858 0.932 -1.306 0.20 32.00 ? 502 EDO A O2 1
+#
+_hetcif.version 0.1
+_hetcif.details 'converted from the mmcif-browser heterogeneity proposal categories by hetcif from-proposal'
+#
+_hetcif_variable.id 'edo_site'
+_hetcif_variable.kind compositional
+_hetcif_variable.provenance assert
+_hetcif_variable.details 'joint states of bundle edo_site from _pdbx_het_state'
+#
+loop_
+_hetcif_state.variable_id
+_hetcif_state.id
+_hetcif_state.p
+_hetcif_state.details
+'edo_site' 1 0.0500 'Ligand + EDO2 -- rare, the phenol ring crowds the lower pocket'
+'edo_site' 2 0.1500 'Ligand + EDO3'
+'edo_site' 3 0.3000 'Ligand, lower pocket empty'
+'edo_site' 4 0.2500 'EDO1 + EDO2 -- the majority species'
+'edo_site' 5 0.0500 'EDO1 + EDO3'
+'edo_site' 6 0.2000 'EDO1, lower pocket empty'
+#
+loop_
+_hetcif_member.id
+_hetcif_member.variable_id
+_hetcif_member.state_id
+_hetcif_member.auth_asym_id
+_hetcif_member.auth_seq_id_start
+_hetcif_member.auth_seq_id_end
+_hetcif_member.label_alt_id
+_hetcif_member.label_atom_id
+1 'edo_site' 1 A 501 501 A .
+2 'edo_site' 1 A 502 502 C .
+3 'edo_site' 2 A 501 501 A .
+4 'edo_site' 2 A 502 502 D .
+5 'edo_site' 3 A 501 501 A .
+6 'edo_site' 4 A 501 501 B .
+7 'edo_site' 4 A 502 502 C .
+8 'edo_site' 5 A 501 501 B .
+9 'edo_site' 5 A 502 502 D .
+10 'edo_site' 6 A 501 501 B .
+#

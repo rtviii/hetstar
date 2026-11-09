@@ -63,6 +63,27 @@ export const ENTRIES: readonly EntryDef[] = [
       note: "RDC ensemble probing correlated backbone motions, 640 MODEL frames — the heavy scrubber/RMSF stress case, fetched from RCSB at load time",
     },
   },
+  {
+    // hetcif exercise entry: the 7A1X qFit model converted to hetcif plus the flagship's
+    // synthetic correlation layer (~/dev/hetcif, docs/flagship.md). Served by the dev app
+    // from app/public/hetcif/; the world panel appears because the file carries
+    // _hetcif_* categories.
+    id: "7A1X-HETCIF",
+    label: "7A1X-HETCIF (qFit as state variables + 4 asserted tables)",
+    qfit: {
+      url: "/hetcif/7a1x_flagship.cif",
+      note: "7A1X qFit multiconformer model converted to hetcif (382 variables; backbone segments as one variable each) plus four asserted conditional tables from the flagship case; local file from the hetcif repo",
+    },
+    deposited: {
+      url: "https://files.rcsb.org/download/7A1X.cif",
+      note: "deposited 7A1X model, fetched from RCSB at load time",
+    },
+    sf: {
+      url: "https://files.rcsb.org/download/7A1X-sf.cif",
+      approxMB: 5.6,
+      note: "deposited 7A1X structure factors with map coefficients, fetched from RCSB at load time",
+    },
+  },
 ];
 
 export function findEntry(id: string): EntryDef | null {
