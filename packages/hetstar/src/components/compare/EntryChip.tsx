@@ -77,6 +77,7 @@ export default function EntryChip({
   entryInput,
   onEntryInput,
   onLoad,
+  onPick,
   loading,
   stages,
   provenance,
@@ -88,6 +89,8 @@ export default function EntryChip({
   entryInput: string;
   onEntryInput: (v: string) => void;
   onLoad: () => void;
+  /** load one of the listed examples straight from the dropdown */
+  onPick: (id: string) => void;
   /** the model half of the pipeline is in flight (density chains in its own effect) */
   loading: boolean;
   stages: Record<StageId, StageState>;
@@ -113,8 +116,38 @@ export default function EntryChip({
     <span className="text-ink-muted">{loading && entryInput ? entryInput : "load entry"}</span>
   );
 
+  const loadedDef = entry ? ENTRIES.find((e) => e.id === entry.pdbId || e.id === entry.id) ?? null : null;
   const popover = (
     <div className="flex flex-col gap-2">
+      <label className="flex flex-col gap-1">
+        <span className="text-ink-muted">examples</span>
+        <select
+          value={loadedDef?.id ?? ""}
+          disabled={loading}
+          onChange={(e) => {
+            if (e.target.value) onPick(e.target.value);
+          }}
+          className="w-full rounded border border-line-strong bg-white px-1.5 py-0.5 text-[11px] text-ink focus:border-accent focus:outline-none focus:shadow-ring-accent disabled:opacity-40"
+          aria-label="load an example entry"
+        >
+          <option value="">pick an example...</option>
+          <optgroup label="hetcif: state variables and tables">
+            {ENTRIES.filter((e) => e.group === "hetcif").map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.label}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="deposited ensembles (multi-model)">
+            {ENTRIES.filter((e) => e.group === "ensemble").map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.label}
+              </option>
+            ))}
+          </optgroup>
+        </select>
+      </label>
+      {loadedDef?.blurb && <TinyText>{loadedDef.blurb}</TinyText>}
       <form
         className="flex items-center gap-1.5"
         onSubmit={(e) => {
@@ -172,9 +205,10 @@ export default function EntryChip({
         </div>
       )}
       <TinyText className="border-t border-line pt-1.5">
-        RCSB examples: {ENTRIES.map((e) => e.id).join(", ")} (deposited NMR ensembles). Dynamic PDB catalogue:
-        any dpdb_... id, or {Object.keys(PDB_ALIASES).join(", ")} by PDB id. Deposited models and structure factors
-        come from RCSB; qFit models from files.dynamicpdb.com (through the local /api proxy in dev).
+        Or type an id: any of the examples above by id, any dpdb_... id from the Dynamic PDB catalogue, or{" "}
+        {Object.keys(PDB_ALIASES).join(", ")} by PDB id. hetcif examples are local files from the hetcif repo; deposited
+        models and structure factors come from RCSB; qFit models from files.dynamicpdb.com (through the local /api proxy
+        in dev).
       </TinyText>
     </div>
   );

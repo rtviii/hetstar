@@ -1,0 +1,144 @@
+data_5E1N_gln8_split
+#
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+_atom_site.pdbx_formal_charge
+_atom_site.auth_seq_id
+_atom_site.auth_comp_id
+_atom_site.auth_asym_id
+_atom_site.auth_atom_id
+_atom_site.pdbx_PDB_model_num
+ATOM 1 N N A GLU A 1 6 ? 52.146 16.034 12.399 0.64 23.67 ? 6 GLU A N 1
+ATOM 2 N N B GLU A 1 6 ? 52.120 16.071 12.393 0.19 23.00 ? 6 GLU A N 1
+ATOM 3 N N C GLU A 1 6 ? 52.142 16.061 12.431 0.17 22.85 ? 6 GLU A N 1
+ATOM 4 C CA A GLU A 1 6 ? 52.897 15.725 11.187 0.64 24.43 ? 6 GLU A CA 1
+ATOM 5 C CA B GLU A 1 6 ? 52.745 15.898 11.094 0.19 22.87 ? 6 GLU A CA 1
+ATOM 6 C CA C GLU A 1 6 ? 52.903 15.860 11.203 0.17 22.88 ? 6 GLU A CA 1
+ATOM 7 C C A GLU A 1 6 ? 53.153 14.222 11.062 0.64 21.26 ? 6 GLU A C 1
+ATOM 8 C C B GLU A 1 6 ? 53.300 14.483 10.949 0.19 21.01 ? 6 GLU A C 1
+ATOM 9 C C C GLU A 1 6 ? 53.193 14.378 11.010 0.17 21.42 ? 6 GLU A C 1
+ATOM 10 O O A GLU A 1 6 ? 53.022 13.691 9.943 0.64 19.82 ? 6 GLU A O 1
+ATOM 11 O O B GLU A 1 6 ? 53.672 14.057 9.850 0.19 19.69 ? 6 GLU A O 1
+ATOM 12 O O C GLU A 1 6 ? 53.136 13.863 9.890 0.17 20.93 ? 6 GLU A O 1
+ATOM 13 C CB A GLU A 1 6 ? 54.224 16.505 11.125 0.64 27.85 ? 6 GLU A CB 1
+ATOM 14 C CB B GLU A 1 6 ? 53.819 16.960 10.881 0.19 24.16 ? 6 GLU A CB 1
+ATOM 15 C CB C GLU A 1 6 ? 54.217 16.641 11.260 0.17 24.37 ? 6 GLU A CB 1
+ATOM 16 C CG A GLU A 1 6 ? 54.087 18.005 10.871 0.64 29.92 ? 6 GLU A CG 1
+ATOM 17 C CG B GLU A 1 6 ? 53.233 18.361 10.802 0.19 25.41 ? 6 GLU A CG 1
+ATOM 18 C CG C GLU A 1 6 ? 54.033 18.138 11.405 0.17 25.48 ? 6 GLU A CG 1
+ATOM 19 C CD A GLU A 1 6 ? 55.384 18.631 10.358 0.64 32.47 ? 6 GLU A CD 1
+ATOM 20 C CD B GLU A 1 6 ? 52.108 18.455 9.776 0.19 26.07 ? 6 GLU A CD 1
+ATOM 21 C CD C GLU A 1 6 ? 55.324 18.855 11.727 0.17 26.27 ? 6 GLU A CD 1
+ATOM 22 O OE1 A GLU A 1 6 ? 56.476 18.241 10.836 0.64 33.86 ? 6 GLU A OE1 1
+ATOM 23 O OE1 B GLU A 1 6 ? 52.235 17.834 8.695 0.19 27.35 ? 6 GLU A OE1 1
+ATOM 24 O OE1 C GLU A 1 6 ? 56.087 18.365 12.589 0.17 27.01 ? 6 GLU A OE1 1
+ATOM 25 O OE2 A GLU A 1 6 ? 55.317 19.500 9.463 0.64 33.35 ? 6 GLU A OE2 1
+ATOM 26 O OE2 B GLU A 1 6 ? 51.089 19.125 10.054 0.19 25.43 ? 6 GLU A OE2 1
+ATOM 27 O OE2 C GLU A 1 6 ? 55.573 19.914 11.117 0.17 26.48 ? 6 GLU A OE2 1
+ATOM 28 N N A GLU A 1 7 ? 53.480 13.533 12.155 0.64 18.75 ? 7 GLU A N 1
+ATOM 29 N N B GLU A 1 7 ? 53.303 13.744 12.055 0.19 20.75 ? 7 GLU A N 1
+ATOM 30 N N C GLU A 1 7 ? 53.494 13.701 12.112 0.17 20.75 ? 7 GLU A N 1
+ATOM 31 C CA A GLU A 1 7 ? 53.767 12.124 12.055 0.64 16.22 ? 7 GLU A CA 1
+ATOM 32 C CA B GLU A 1 7 ? 53.723 12.355 12.047 0.19 19.51 ? 7 GLU A CA 1
+ATOM 33 C CA C GLU A 1 7 ? 53.750 12.271 12.101 0.17 19.63 ? 7 GLU A CA 1
+ATOM 34 C C A GLU A 1 7 ? 52.509 11.331 11.685 0.64 16.86 ? 7 GLU A C 1
+ATOM 35 C C B GLU A 1 7 ? 52.559 11.428 11.691 0.19 18.43 ? 7 GLU A C 1
+ATOM 36 C C C GLU A 1 7 ? 52.532 11.492 11.606 0.17 18.21 ? 7 GLU A C 1
+ATOM 37 O O A GLU A 1 7 ? 52.574 10.381 10.918 0.64 16.81 ? 7 GLU A O 1
+ATOM 38 O O B GLU A 1 7 ? 52.732 10.464 10.960 0.19 18.22 ? 7 GLU A O 1
+ATOM 39 O O C GLU A 1 7 ? 52.637 10.702 10.672 0.17 17.90 ? 7 GLU A O 1
+ATOM 40 C CB A GLU A 1 7 ? 54.420 11.635 13.335 0.64 17.33 ? 7 GLU A CB 1
+ATOM 41 C CB B GLU A 1 7 ? 54.332 11.980 13.398 0.19 20.10 ? 7 GLU A CB 1
+ATOM 42 C CB C GLU A 1 7 ? 54.166 11.815 13.501 0.17 20.91 ? 7 GLU A CB 1
+ATOM 43 C CG A GLU A 1 7 ? 54.497 10.142 13.404 0.64 20.43 ? 7 GLU A CG 1
+ATOM 44 C CG B GLU A 1 7 ? 55.339 10.846 13.320 0.19 21.33 ? 7 GLU A CG 1
+ATOM 45 C CG C GLU A 1 7 ? 54.310 10.319 13.668 0.17 22.26 ? 7 GLU A CG 1
+ATOM 46 C CD A GLU A 1 7 ? 55.437 9.492 12.399 0.64 24.28 ? 7 GLU A CD 1
+ATOM 47 C CD B GLU A 1 7 ? 56.245 10.960 12.106 0.19 22.84 ? 7 GLU A CD 1
+ATOM 48 C CD C GLU A 1 7 ? 53.008 9.635 14.061 0.17 23.88 ? 7 GLU A CD 1
+ATOM 49 O OE1 A GLU A 1 7 ? 56.442 10.113 11.967 0.64 26.38 ? 7 GLU A OE1 1
+ATOM 50 O OE1 B GLU A 1 7 ? 57.124 11.845 12.064 0.19 23.51 ? 7 GLU A OE1 1
+ATOM 51 O OE1 C GLU A 1 7 ? 52.515 9.832 15.193 0.17 24.56 ? 7 GLU A OE1 1
+ATOM 52 O OE2 A GLU A 1 7 ? 55.179 8.327 12.058 0.64 26.19 ? 7 GLU A OE2 1
+ATOM 53 O OE2 B GLU A 1 7 ? 56.032 10.188 11.154 0.19 23.30 ? 7 GLU A OE2 1
+ATOM 54 O OE2 C GLU A 1 7 ? 52.471 8.889 13.230 0.17 25.22 ? 7 GLU A OE2 1
+ATOM 55 N N . GLN A 1 8 ? 51.379 11.727 12.224 1.00 17.98 ? 8 GLN A N 1
+ATOM 56 C CA . GLN A 1 8 ? 50.139 11.060 11.819 1.00 17.38 ? 8 GLN A CA 1
+ATOM 57 C C . GLN A 1 8 ? 49.870 11.264 10.339 1.00 16.09 ? 8 GLN A C 1
+ATOM 58 O O . GLN A 1 8 ? 49.502 10.341 9.627 1.00 17.98 ? 8 GLN A O 1
+ATOM 59 C CB A GLN A 1 8 ? 48.952 11.673 12.569 0.56 17.57 ? 8 GLN A CB 1
+ATOM 60 C CB B GLN A 1 8 ? 48.927 11.473 12.673 0.44 18.03 ? 8 GLN A CB 1
+ATOM 61 C CG A GLN A 1 8 ? 48.958 11.409 14.060 0.56 16.93 ? 8 GLN A CG 1
+ATOM 62 C CG B GLN A 1 8 ? 48.823 10.655 13.999 0.44 17.09 ? 8 GLN A CG 1
+ATOM 63 C CD A GLN A 1 8 ? 47.830 12.103 14.711 0.56 16.70 ? 8 GLN A CD 1
+ATOM 64 C CD B GLN A 1 8 ? 47.638 11.081 14.853 0.44 16.02 ? 8 GLN A CD 1
+ATOM 65 O OE1 A GLN A 1 8 ? 47.891 13.306 14.907 0.56 18.52 ? 8 GLN A OE1 1
+ATOM 66 O OE1 B GLN A 1 8 ? 47.413 12.269 15.075 0.44 17.24 ? 8 GLN A OE1 1
+ATOM 67 N NE2 A GLN A 1 8 ? 46.768 11.366 15.035 0.56 18.18 ? 8 GLN A NE2 1
+ATOM 68 N NE2 B GLN A 1 8 ? 46.834 10.100 15.288 0.44 18.93 ? 8 GLN A NE2 1
+ATOM 69 H H A GLN A 1 8 ? 51.291 12.354 12.806 0.64 21.58 ? 8 GLN A H 1
+ATOM 70 H H B GLN A 1 8 ? 51.266 12.323 12.834 0.19 21.58 ? 8 GLN A H 1
+ATOM 71 H H C GLN A 1 8 ? 51.285 12.269 12.885 0.17 21.58 ? 8 GLN A H 1
+#
+_hetcif.version 0.1
+_hetcif.details 'converted from the mmcif-browser heterogeneity proposal categories by hetcif from-proposal'
+#
+loop_
+_hetcif_variable.id
+_hetcif_variable.kind
+_hetcif_variable.provenance
+_hetcif_variable.details
+'backbone_6_7' conformational fit 'coexistence group backbone_6_7: marginal occupancies from _atom_site'
+'sidechain_8' conformational fit 'coexistence group sidechain_8: marginal occupancies from _atom_site'
+#
+loop_
+_hetcif_state.variable_id
+_hetcif_state.id
+_hetcif_state.p
+_hetcif_state.details
+'backbone_6_7' 'bb_A' 0.6400 .
+'backbone_6_7' 'bb_B' 0.1900 .
+'backbone_6_7' 'bb_C' 0.1700 .
+'sidechain_8' 'sc_A' 0.5600 .
+'sidechain_8' 'sc_B' 0.4400 .
+#
+loop_
+_hetcif_member.id
+_hetcif_member.variable_id
+_hetcif_member.state_id
+_hetcif_member.auth_asym_id
+_hetcif_member.auth_seq_id_start
+_hetcif_member.auth_seq_id_end
+_hetcif_member.label_alt_id
+_hetcif_member.label_atom_id
+1 'backbone_6_7' 'bb_A' A 6 7 A .
+2 'backbone_6_7' 'bb_A' A 8 8 A H
+3 'backbone_6_7' 'bb_B' A 6 7 B .
+4 'backbone_6_7' 'bb_B' A 8 8 B H
+5 'backbone_6_7' 'bb_C' A 6 7 C .
+6 'backbone_6_7' 'bb_C' A 8 8 C H
+7 'sidechain_8' 'sc_A' A 8 8 A CB
+8 'sidechain_8' 'sc_A' A 8 8 A CG
+9 'sidechain_8' 'sc_A' A 8 8 A CD
+10 'sidechain_8' 'sc_A' A 8 8 A OE1
+11 'sidechain_8' 'sc_A' A 8 8 A NE2
+12 'sidechain_8' 'sc_B' A 8 8 B CB
+13 'sidechain_8' 'sc_B' A 8 8 B CG
+14 'sidechain_8' 'sc_B' A 8 8 B CD
+15 'sidechain_8' 'sc_B' A 8 8 B OE1
+16 'sidechain_8' 'sc_B' A 8 8 B NE2
+#

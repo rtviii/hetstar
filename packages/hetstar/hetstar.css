@@ -513,6 +513,10 @@
   height: 100%;
 }
 
+.hetstar .h-2\.5 {
+  height: 0.625rem;
+}
+
 .hetstar .max-h-\[140px\] {
   max-height: 140px;
 }
@@ -567,6 +571,14 @@
 
 .hetstar .w-full {
   width: 100%;
+}
+
+.hetstar .w-2\.5 {
+  width: 0.625rem;
+}
+
+.hetstar .w-40 {
+  width: 10rem;
 }
 
 .hetstar .min-w-0 {
@@ -658,6 +670,10 @@
   grid-template-columns: auto 1fr;
 }
 
+.hetstar .grid-cols-\[auto_auto_1fr_auto_auto_auto\] {
+  grid-template-columns: auto auto 1fr auto auto auto;
+}
+
 .hetstar .flex-col {
   flex-direction: column;
 }
@@ -722,6 +738,10 @@
   gap: 3px;
 }
 
+.hetstar .gap-px {
+  gap: 1px;
+}
+
 .hetstar .gap-x-2 {
   -moz-column-gap: 0.5rem;
        column-gap: 0.5rem;
@@ -738,6 +758,11 @@
 
 .hetstar .gap-y-1 {
   row-gap: 0.25rem;
+}
+
+.hetstar .gap-x-1\.5 {
+  -moz-column-gap: 0.375rem;
+       column-gap: 0.375rem;
 }
 
 .hetstar .self-start {
@@ -827,6 +852,10 @@
   border-top-width: 1px;
 }
 
+.hetstar .border-dashed {
+  border-style: dashed;
+}
+
 .hetstar .border-accent {
   --tw-border-opacity: 1;
   border-color: rgb(102 59 228 / var(--tw-border-opacity, 1));
@@ -864,6 +893,14 @@
 
 .hetstar .border-line\/70 {
   border-color: rgb(234 235 244 / 0.7);
+}
+
+.hetstar .border-accent\/60 {
+  border-color: rgb(102 59 228 / 0.6);
+}
+
+.hetstar .border-line-strong\/50 {
+  border-color: rgb(213 215 228 / 0.5);
 }
 
 .hetstar .border-t-accent {
@@ -925,6 +962,14 @@
 
 .hetstar .bg-white\/85 {
   background-color: rgb(255 255 255 / 0.85);
+}
+
+.hetstar .bg-accent-soft\/40 {
+  background-color: rgb(241 237 253 / 0.4);
+}
+
+.hetstar .bg-white\/60 {
+  background-color: rgb(255 255 255 / 0.6);
 }
 
 .hetstar .p-1\.5 {
@@ -997,6 +1042,11 @@
 .hetstar .py-px {
   padding-top: 1px;
   padding-bottom: 1px;
+}
+
+.hetstar .py-1 {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
 }
 
 .hetstar .pr-1 {
@@ -1108,6 +1158,10 @@
   text-transform: none;
 }
 
+.hetstar .italic {
+  font-style: italic;
+}
+
 .hetstar .tabular-nums {
   --tw-numeric-spacing: tabular-nums;
   font-variant-numeric: var(--tw-ordinal) var(--tw-slashed-zero) var(--tw-numeric-figure) var(--tw-numeric-spacing) var(--tw-numeric-fraction);
@@ -1196,6 +1250,10 @@
   color: rgb(255 255 255 / var(--tw-text-opacity, 1));
 }
 
+.hetstar .text-ink-muted\/70 {
+  color: rgb(95 97 107 / 0.7);
+}
+
 .hetstar .line-through {
   text-decoration-line: line-through;
 }
@@ -1281,6 +1339,14 @@
 
 .hetstar .will-change-transform {
   will-change: transform;
+}
+
+.hetstar .placeholder\:text-ink-muted\/60::-moz-placeholder {
+  color: rgb(95 97 107 / 0.6);
+}
+
+.hetstar .placeholder\:text-ink-muted\/60::placeholder {
+  color: rgb(95 97 107 / 0.6);
 }
 
 .hetstar .hover\:border-accent\/40:hover {

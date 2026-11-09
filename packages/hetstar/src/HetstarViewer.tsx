@@ -779,14 +779,16 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
         globalAlt,
         muted: mutedAlts,
         polymerAsTrace: repStyle.type === "cartoon",
+        polymerFade: repStyle.colorMode === "conformer" ? repStyle.ramp : null,
         world: worldStyle,
       });
     });
     // memberIndex: a frame scrub rebuilds the structure in place, dropping the layers;
     // aSplit: a component rebuild drops them too; repStyle.type: cartoon excludes the
     // polymer from the collapse layers, so a type switch re-applies them;
-    // selRepOverlays: a fresh override component needs the layers applied to it
-  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, mutedAlts, worldStyle, memberIndex, aSplit, repStyle.type, selRepOverlays, runStyling]);
+    // selRepOverlays: a fresh override component needs the layers applied to it;
+    // colorMode/ramp: the card look's polymer fade is one of these layers
+  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, mutedAlts, worldStyle, memberIndex, aSplit, repStyle.type, repStyle.colorMode, repStyle.ramp, selRepOverlays, runStyling]);
 
   // --- representation style (tray): in-place state-tree updates on both models ---
 
@@ -2352,6 +2354,10 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
               entryInput={entryInput}
               onEntryInput={setEntryInput}
               onLoad={() => startLoad(entryInput)}
+              onPick={(id) => {
+                setEntryInput(id);
+                startLoad(id);
+              }}
               loading={loading}
               stages={stages}
               provenance={provenance}

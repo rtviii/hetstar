@@ -1,0 +1,121 @@
+data_5E1N_arg74_clash
+#
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+_atom_site.pdbx_formal_charge
+_atom_site.auth_seq_id
+_atom_site.auth_comp_id
+_atom_site.auth_asym_id
+_atom_site.auth_atom_id
+_atom_site.pdbx_PDB_model_num
+ATOM 1 N N . ALA A 1 73 ? 39.938 8.593 9.838 1.00 22.33 ? 73 ALA A N 1
+ATOM 2 C CA . ALA A 1 73 ? 39.544 9.076 11.151 1.00 25.33 ? 73 ALA A CA 1
+ATOM 3 C C . ALA A 1 73 ? 38.285 8.340 11.584 1.00 24.49 ? 73 ALA A C 1
+ATOM 4 O O . ALA A 1 73 ? 38.177 7.937 12.763 1.00 28.06 ? 73 ALA A O 1
+ATOM 5 C CB . ALA A 1 73 ? 39.330 10.550 11.099 1.00 28.37 ? 73 ALA A CB 1
+ATOM 6 N N B ARG A 1 74 ? 37.344 8.102 10.684 0.35 22.44 ? 74 ARG A N 1
+ATOM 7 N N C ARG A 1 74 ? 37.351 8.113 10.663 0.27 22.63 ? 74 ARG A N 1
+ATOM 8 N N D ARG A 1 74 ? 37.337 8.174 10.669 0.38 22.44 ? 74 ARG A N 1
+ATOM 9 C CA B ARG A 1 74 ? 36.126 7.424 11.102 0.35 21.66 ? 74 ARG A CA 1
+ATOM 10 C CA C ARG A 1 74 ? 36.098 7.443 11.008 0.27 22.06 ? 74 ARG A CA 1
+ATOM 11 C CA D ARG A 1 74 ? 36.132 7.428 10.975 0.38 21.77 ? 74 ARG A CA 1
+ATOM 12 C C B ARG A 1 74 ? 36.389 5.947 11.358 0.35 21.38 ? 74 ARG A C 1
+ATOM 13 C C C ARG A 1 74 ? 36.331 5.952 11.293 0.27 21.48 ? 74 ARG A C 1
+ATOM 14 C C D ARG A 1 74 ? 36.574 6.062 11.452 0.38 20.33 ? 74 ARG A C 1
+ATOM 15 O O B ARG A 1 74 ? 35.809 5.347 12.270 0.35 20.66 ? 74 ARG A O 1
+ATOM 16 O O C ARG A 1 74 ? 35.687 5.360 12.169 0.27 20.98 ? 74 ARG A O 1
+ATOM 17 O O D ARG A 1 74 ? 36.299 5.671 12.606 0.38 19.93 ? 74 ARG A O 1
+ATOM 18 C CB B ARG A 1 74 ? 35.014 7.601 10.070 0.35 21.35 ? 74 ARG A CB 1
+ATOM 19 C CB C ARG A 1 74 ? 35.044 7.645 9.900 0.27 22.20 ? 74 ARG A CB 1
+ATOM 20 C CB D ARG A 1 74 ? 35.223 7.306 9.737 0.38 22.31 ? 74 ARG A CB 1
+ATOM 21 C CG B ARG A 1 74 ? 34.611 9.074 9.860 0.35 22.44 ? 74 ARG A CG 1
+ATOM 22 C CG C ARG A 1 74 ? 34.624 9.126 9.701 0.27 23.06 ? 74 ARG A CG 1
+ATOM 23 C CG D ARG A 1 74 ? 34.178 6.199 9.786 0.38 25.13 ? 74 ARG A CG 1
+ATOM 24 C CD B ARG A 1 74 ? 33.190 9.260 9.383 0.35 22.92 ? 74 ARG A CD 1
+ATOM 25 C CD C ARG A 1 74 ? 33.370 9.333 8.846 0.27 23.99 ? 74 ARG A CD 1
+ATOM 26 C CD D ARG A 1 74 ? 33.950 5.599 8.391 0.38 27.31 ? 74 ARG A CD 1
+ATOM 27 N NE B ARG A 1 74 ? 32.951 8.465 8.194 0.35 23.57 ? 74 ARG A NE 1
+ATOM 28 N NE C ARG A 1 74 ? 32.261 8.533 9.349 0.27 23.33 ? 74 ARG A NE 1
+ATOM 29 N NE D ARG A 1 74 ? 33.106 4.410 8.451 0.38 28.91 ? 74 ARG A NE 1
+ATOM 30 C CZ B ARG A 1 74 ? 33.312 8.802 6.961 0.35 25.24 ? 74 ARG A CZ 1
+ATOM 31 C CZ C ARG A 1 74 ? 31.631 7.610 8.650 0.27 23.23 ? 74 ARG A CZ 1
+ATOM 32 C CZ D ARG A 1 74 ? 32.798 3.643 7.413 0.38 28.78 ? 74 ARG A CZ 1
+ATOM 33 N NH1 B ARG A 1 74 ? 33.953 9.950 6.683 0.35 24.91 ? 74 ARG A NH1 1
+ATOM 34 N NH1 C ARG A 1 74 ? 31.977 7.385 7.389 0.27 23.89 ? 74 ARG A NH1 1
+ATOM 35 N NH1 D ARG A 1 74 ? 33.270 3.921 6.207 0.38 28.48 ? 74 ARG A NH1 1
+ATOM 36 N NH2 B ARG A 1 74 ? 33.048 7.975 5.964 0.35 26.66 ? 74 ARG A NH2 1
+ATOM 37 N NH2 C ARG A 1 74 ? 30.671 6.901 9.217 0.27 23.32 ? 74 ARG A NH2 1
+ATOM 38 N NH2 D ARG A 1 74 ? 32.012 2.588 7.589 0.38 29.04 ? 74 ARG A NH2 1
+ATOM 39 N N . LYS A 1 75 ? 37.256 5.341 10.567 1.00 21.00 ? 75 LYS A N 1
+ATOM 40 C CA . LYS A 1 75 ? 37.591 3.942 10.783 1.00 23.76 ? 75 LYS A CA 1
+ATOM 41 C C . LYS A 1 75 ? 38.316 3.720 12.081 1.00 24.45 ? 75 LYS A C 1
+ATOM 42 O O . LYS A 1 75 ? 38.063 2.713 12.790 1.00 24.97 ? 75 LYS A O 1
+ATOM 43 C CB B LYS A 1 75 ? 38.377 3.357 9.596 0.29 25.39 ? 75 LYS A CB 1
+ATOM 44 C CB C LYS A 1 75 ? 38.390 3.390 9.598 0.47 25.71 ? 75 LYS A CB 1
+ATOM 45 C CB D LYS A 1 75 ? 38.381 3.381 9.592 0.24 25.08 ? 75 LYS A CB 1
+ATOM 46 C CG B LYS A 1 75 ? 37.780 2.036 9.085 0.29 26.13 ? 75 LYS A CG 1
+ATOM 47 C CG C LYS A 1 75 ? 37.537 3.165 8.358 0.47 26.72 ? 75 LYS A CG 1
+ATOM 48 C CG D LYS A 1 75 ? 37.474 2.848 8.489 0.24 25.85 ? 75 LYS A CG 1
+ATOM 49 C CD B LYS A 1 75 ? 38.587 1.405 7.969 0.29 26.43 ? 75 LYS A CD 1
+ATOM 50 C CD C LYS A 1 75 ? 36.437 2.091 8.551 0.47 27.45 ? 75 LYS A CD 1
+ATOM 51 C CD D LYS A 1 75 ? 38.242 2.240 7.327 0.24 25.84 ? 75 LYS A CD 1
+ATOM 52 C CE B LYS A 1 75 ? 39.900 0.868 8.485 0.29 25.61 ? 75 LYS A CE 1
+ATOM 53 C CE C LYS A 1 75 ? 35.610 1.935 7.269 0.47 28.64 ? 75 LYS A CE 1
+ATOM 54 C CE D LYS A 1 75 ? 37.312 1.474 6.387 0.24 26.62 ? 75 LYS A CE 1
+ATOM 55 N NZ B LYS A 1 75 ? 40.628 0.093 7.450 0.29 25.28 ? 75 LYS A NZ 1
+ATOM 56 N NZ C LYS A 1 75 ? 34.461 0.989 7.388 0.47 29.21 ? 75 LYS A NZ 1
+ATOM 57 N NZ D LYS A 1 75 ? 38.045 0.951 5.198 0.24 27.16 ? 75 LYS A NZ 1
+HETATM 58 O O E HOH I 4 . ? 34.705 8.768 4.862 0.54 22.88 ? 468 HOH A O 1
+HETATM 59 O O E HOH I 4 . ? 42.490 4.462 -13.984 0.35 19.92 ? 469 HOH A O 1
+#
+_hetcif.version 0.1
+_hetcif.details 'converted from the mmcif-browser heterogeneity proposal categories by hetcif from-proposal'
+#
+_hetcif_variable.id arg74+water468
+_hetcif_variable.kind conformational
+_hetcif_variable.provenance assert
+_hetcif_variable.details
+'joint of arg74, water468 over the combinations allowed by 1 exclusion(s) from _pdbx_state_coexistence / nesting; p is the maximum-entropy joint consistent with the _atom_site marginals (IPF residual 1.5e-12); any preference among allowed combinations is an assumption'
+#
+loop_
+_hetcif_state.variable_id
+_hetcif_state.id
+_hetcif_state.p
+_hetcif_state.details
+arg74+water468 'arg74_B+absent' 0.3500 .
+arg74+water468 'arg74_C+wat468_E' 0.2243 .
+arg74+water468 'arg74_C+absent' 0.0457 .
+arg74+water468 'arg74_D+wat468_E' 0.3157 .
+arg74+water468 'arg74_D+absent' 0.0643 .
+#
+loop_
+_hetcif_member.id
+_hetcif_member.variable_id
+_hetcif_member.state_id
+_hetcif_member.auth_asym_id
+_hetcif_member.auth_seq_id_start
+_hetcif_member.auth_seq_id_end
+_hetcif_member.label_alt_id
+_hetcif_member.label_atom_id
+1 arg74+water468 'arg74_B+absent' A 74 74 B .
+2 arg74+water468 'arg74_C+wat468_E' A 74 74 C .
+3 arg74+water468 'arg74_C+wat468_E' A 468 468 E .
+4 arg74+water468 'arg74_C+absent' A 74 74 C .
+5 arg74+water468 'arg74_D+wat468_E' A 74 74 D .
+6 arg74+water468 'arg74_D+wat468_E' A 468 468 E .
+7 arg74+water468 'arg74_D+absent' A 74 74 D .
+#
