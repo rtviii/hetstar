@@ -70,6 +70,8 @@ export {
   marginals as hetcifMarginals,
   topWorld as hetcifTopWorld,
   tableFor as hetcifTableFor,
+  rowFor as hetcifRowFor,
+  worldCount as hetcifWorldCount,
   stateRows as hetcifStateRows,
   buildRowIndex as buildHetcifRowIndex,
   hiddenRowsForWorld,

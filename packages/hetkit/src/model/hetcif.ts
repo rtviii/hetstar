@@ -248,7 +248,8 @@ function topological(model: HetcifModel, vids: string[]): string[] {
   return out;
 }
 
-function rowFor(t: HetcifTable, assignment: Record<string, string>): HetcifTableRow | null {
+/** The table row an assignment of the parents selects: the conditioned row that matches, else the default row. */
+export function rowFor(t: HetcifTable, assignment: Record<string, string>): HetcifTableRow | null {
   let dflt: HetcifTableRow | null = null;
   for (const r of t.rows) {
     const keys = Object.keys(r.condition);

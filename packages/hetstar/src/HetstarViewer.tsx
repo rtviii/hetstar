@@ -2112,10 +2112,12 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
   }, [hetcifIndex, aTable, residueRanges]);
 
   const worldPanel = useMemo<WorldPanelProps | null>(() => {
-    if (!hetcifModel || !hetcifMarg || !hetcifTop || !effectiveWorld) return null;
+    if (!hetcifModel || !hetcifIndex || !aTable || !hetcifMarg || !hetcifTop || !effectiveWorld) return null;
     const overridden = new Set(Object.keys(worldChoice).filter((v) => worldChoice[v] !== hetcifTop[v]));
     return {
       model: hetcifModel,
+      table: aTable,
+      index: hetcifIndex,
       marginals: hetcifMarg,
       world: effectiveWorld,
       overridden,
@@ -2124,7 +2126,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
       onChooseMany: (states: Record<string, string>) => setWorldChoice((prev) => ({ ...prev, ...states })),
       onReset: () => setWorldChoice({}),
     };
-  }, [hetcifModel, hetcifMarg, hetcifTop, effectiveWorld, worldChoice, selectedVariables]);
+  }, [hetcifModel, hetcifIndex, aTable, hetcifMarg, hetcifTop, effectiveWorld, worldChoice, selectedVariables]);
 
   // --- sequence lanes: the structure-sequence bridge ---
   // The deposited file carries the polymer scheme (SEQRES with author numbering) and the
@@ -2400,6 +2402,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
                 onShowB={setShowB}
                 densityFlyout={densityFlyout}
                 selectionFlyout={selectionFlyout}
+                selectionFlyoutWidth={worldPanel ? 480 : 300}
               />
             </div>
             {hoverInfo && (

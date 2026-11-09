@@ -85,6 +85,7 @@ export default function StyleTray({
   onShowB,
   densityFlyout,
   selectionFlyout,
+  selectionFlyoutWidth = 300,
 }: {
   /** primary structure loaded (representation controls enable) */
   ready: boolean;
@@ -100,6 +101,8 @@ export default function StyleTray({
   /** flyout content, parent-built (DensityFlyout / SelectionFlyout) */
   densityFlyout: ReactNode;
   selectionFlyout: ReactNode;
+  /** card width of the selection flyout; the world panel asks for more room */
+  selectionFlyoutWidth?: number;
 }) {
   const patch = (p: Partial<RepStyle>) => onStyle({ ...style, ...p });
   const scale = SCALE_RANGE[style.type];
@@ -190,7 +193,7 @@ export default function StyleTray({
           <DensityIcon />
         </TrayButton>
       </HoverFlyout>
-      <HoverFlyout content={selectionFlyout} width={300} align="end" pinOnClick>
+      <HoverFlyout content={selectionFlyout} width={selectionFlyoutWidth} align="end" pinOnClick>
         <TrayButton active={false} label="selection and conformer states">
           <ConformersIcon />
         </TrayButton>
