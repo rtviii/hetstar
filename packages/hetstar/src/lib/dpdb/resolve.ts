@@ -13,8 +13,8 @@ export const PDB_ALIASES: Record<string, { dpdb: string; sfBytesHint?: number }>
   "5R8T": { dpdb: "dpdb_eknnmj7a", sfBytesHint: 445e6 }, // PanDDA deposit, unmerged data in the sf-cif
 };
 
-export function knownEntryIds(): string[] {
-  return [...ENTRIES.map((e) => e.id), ...Object.keys(PDB_ALIASES)];
+export function knownEntryIds(entries: readonly EntryDef[] = ENTRIES): string[] {
+  return [...entries.map((e) => e.id), ...Object.keys(PDB_ALIASES)];
 }
 
 function manifestFromExample(def: EntryDef): EntryManifest {
@@ -35,9 +35,9 @@ function manifestFromExample(def: EntryDef): EntryManifest {
   };
 }
 
-export async function resolveEntry(input: string): Promise<EntryManifest> {
+export async function resolveEntry(input: string, entries: readonly EntryDef[] = ENTRIES): Promise<EntryManifest> {
   const id = input.trim();
-  const local = findEntry(id);
+  const local = findEntry(id, entries);
   if (local) return manifestFromExample(local);
   if (/^dpdb_/i.test(id)) return fetchEntryManifest(id.toLowerCase());
   const alias = PDB_ALIASES[id.toUpperCase()];
@@ -46,5 +46,5 @@ export async function resolveEntry(input: string): Promise<EntryManifest> {
     if (alias.sfBytesHint && m.sf && m.sf.sizeBytes == null) m.sf.sizeBytes = alias.sfBytesHint;
     return m;
   }
-  throw new Error(`unknown entry "${id}": use a dpdb_... id or one of ${knownEntryIds().join(", ")}`);
+  throw new Error(`unknown entry "${id}": use a dpdb_... id or one of ${knownEntryIds(entries).join(", ")}`);
 }

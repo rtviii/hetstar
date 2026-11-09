@@ -1,3 +1,4 @@
+import { CONFORMER_RAMP_NAMES } from "../molstar/ghost-theme";
 import { DEFAULT_REP_STYLE, type RepStyle } from "../molstar/repstyle";
 import { normalizeSelection, EMPTY_SELECTION, type LabSelection } from "./selection";
 
@@ -17,9 +18,8 @@ export const MAX_BOOKMARKS = 9;
 
 const storageKey = (entryId: string) => `hetstar.lab.bookmarks.${entryId}`;
 
-/** Merge over DEFAULT_REP_STYLE, nested groups individually, so schema drift can't feed undefined size factors into applyRepStyle. */
-export function sanitizeRepStyle(s: unknown): RepStyle {
-  const d = DEFAULT_REP_STYLE;
+/** Merge over the defaults (the preset's rep style), nested groups individually, so schema drift can't feed undefined size factors into applyRepStyle. */
+export function sanitizeRepStyle(s: unknown, d: RepStyle = DEFAULT_REP_STYLE): RepStyle {
   if (typeof s !== "object" || s === null) return { ...d };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const r = s as any;
@@ -28,7 +28,8 @@ export function sanitizeRepStyle(s: unknown): RepStyle {
     allowed.includes(v as T) ? (v as T) : fallback;
   return {
     type: oneOf(r.type, ["ball-and-stick", "spacefill", "cartoon"] as const, d.type),
-    colorMode: oneOf(r.colorMode, ["model", "element", "chain"] as const, d.colorMode),
+    colorMode: oneOf(r.colorMode, ["conformer", "model", "element", "chain"] as const, d.colorMode),
+    ramp: oneOf(r.ramp, CONFORMER_RAMP_NAMES, d.ramp),
     quality: oneOf(r.quality, ["auto", "high", "medium", "low"] as const, d.quality),
     ballStick: { sizeFactor: num(r.ballStick?.sizeFactor, d.ballStick.sizeFactor) },
     spacefill: { sizeFactor: num(r.spacefill?.sizeFactor, d.spacefill.sizeFactor) },
@@ -51,7 +52,7 @@ function sanitizeSelection(s: unknown): LabSelection {
   return normalizeSelection({ ranges, atoms });
 }
 
-export function loadBookmarks(entryId: string): SelectionBookmark[] {
+export function loadBookmarks(entryId: string, defaults: RepStyle = DEFAULT_REP_STYLE): SelectionBookmark[] {
   try {
     const raw = localStorage.getItem(storageKey(entryId));
     if (!raw) return [];
@@ -66,7 +67,7 @@ export function loadBookmarks(entryId: string): SelectionBookmark[] {
           id: b.id,
           createdAt: typeof b.createdAt === "number" ? b.createdAt : 0,
           selection: sanitizeSelection(b.selection),
-          repStyle: sanitizeRepStyle(b.repStyle),
+          repStyle: sanitizeRepStyle(b.repStyle, defaults),
         }))
         .slice(0, MAX_BOOKMARKS)
     );

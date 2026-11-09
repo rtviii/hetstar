@@ -19,6 +19,7 @@ import {
   executeQuery,
   structureToLoci,
 } from "./queries";
+import { type ConformerRamp, conformerFadeLayers, lociWhereConformerCount } from "./ghost-theme";
 import { SECONDARY_TRANSPARENCY } from "./style";
 
 // The collapse engine for the viewer. One ball-and-stick representation covers
@@ -103,6 +104,9 @@ export interface ConformerStyleState {
    * cartoon marks transparency per RESIDUE, so the altloc transparency-1 layer would knock
    * whole residues out of the trace and shred it into fragments */
   polymerAsTrace?: boolean;
+  /** the card look's per-count transparency on the polymer trace (single-conformer residues
+   * ghosted); only read with polymerAsTrace, where the collapse layers leave the polymer alone */
+  polymerFade?: ConformerRamp | null;
   /** a world from the file's hetcif categories (one state per variable): it decides the
    * hidden conformers of every residue a variable covers; residues with altlocs that no
    * variable covers fall back to the per-residue collapse; globalAlt is ignored */
@@ -211,6 +215,12 @@ export async function applyConformerStyling(
   await clearStructureTransparency(ctx, comps);
   await clearStructureOverpaint(ctx, comps);
   const baseComps = comps.filter((c) => !isBondsComponent(c));
+  if (state.polymerAsTrace && state.polymerFade) {
+    const polymerComps = baseComps.filter(isPolymerComponent);
+    for (const { test, value } of conformerFadeLayers(state.polymerFade)) {
+      await setStructureTransparency(ctx, polymerComps, value, async (root) => lociWhereConformerCount(root, test));
+    }
+  }
   const layerComps = state.polymerAsTrace ? baseComps.filter((c) => !isPolymerComponent(c)) : baseComps;
   if (!layerComps.length) return;
 

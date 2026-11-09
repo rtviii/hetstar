@@ -2,6 +2,7 @@
 import type { MouseEvent, ReactNode } from "react";
 
 import type { RepColorMode, RepQuality, RepStyle, RepType } from "../../lib/molstar/repstyle";
+import { CONFORMER_RAMP_NAMES } from "../../lib/molstar/ghost-theme";
 import { GroupLabel, HoverFlyout, SliderRow, SwitchButton, TinyText } from "./ui";
 import { ConformersIcon, DensityIcon, StyleIcon } from "./icons";
 
@@ -28,6 +29,7 @@ const SCALE_RANGE: Record<RepType, { min: number; max: number; step: number }> =
 };
 
 const COLOR_MODES: { id: RepColorMode; label: string }[] = [
+  { id: "conformer", label: "conformers" },
   { id: "model", label: "model" },
   { id: "element", label: "element" },
   { id: "chain", label: "chain" },
@@ -86,6 +88,7 @@ export default function StyleTray({
   densityFlyout,
   selectionFlyout,
   selectionFlyoutWidth = 300,
+  colorModes,
 }: {
   /** primary structure loaded (representation controls enable) */
   ready: boolean;
@@ -103,7 +106,10 @@ export default function StyleTray({
   selectionFlyout: ReactNode;
   /** card width of the selection flyout; the world panel asks for more room */
   selectionFlyoutWidth?: number;
+  /** colour modes the preset offers, in order; default every mode */
+  colorModes?: readonly RepColorMode[];
 }) {
+  const offeredModes = colorModes ? COLOR_MODES.filter((m) => colorModes.includes(m.id)) : COLOR_MODES;
   const patch = (p: Partial<RepStyle>) => onStyle({ ...style, ...p });
   const scale = SCALE_RANGE[style.type];
   const scaleValue =
@@ -156,13 +162,25 @@ export default function StyleTray({
 
       <div className="flex flex-col gap-1 border-t border-line pt-1.5">
         <GroupLabel>color</GroupLabel>
-        <div className="flex items-center gap-1">
-          {COLOR_MODES.map((m) => (
+        <div className="flex flex-wrap items-center gap-1">
+          {offeredModes.map((m) => (
             <SwitchButton key={m.id} pressed={style.colorMode === m.id} onClick={() => patch({ colorMode: m.id })}>
               {m.label}
             </SwitchButton>
           ))}
         </div>
+        {style.colorMode === "conformer" && (
+          <>
+            <div className="flex flex-wrap items-center gap-1">
+              {CONFORMER_RAMP_NAMES.map((r) => (
+                <SwitchButton key={r} pressed={style.ramp === r} onClick={() => patch({ ramp: r })}>
+                  {r}
+                </SwitchButton>
+              ))}
+            </div>
+            <TinyText>pale chains; purple deepens with the number of conformers per residue{style.ramp === "fade" ? ", and solidifies with it on the cartoon" : ""}; ligands by compound</TinyText>
+          </>
+        )}
         {style.colorMode === "element" && (
           <TinyText>heteroatoms in CPK; carbons keep each model&apos;s identity color</TinyText>
         )}

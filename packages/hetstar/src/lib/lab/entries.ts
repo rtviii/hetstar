@@ -27,7 +27,7 @@ export interface EntryDef {
   sf?: EntrySource & { approxMB: number };
 }
 
-export const ENTRIES: readonly EntryDef[] = [
+const ALL_ENTRIES: readonly EntryDef[] = [
   {
     // multi-MODEL exercise entry: ubiquitin NMR bundle, 10 members, no structure factors.
     id: "1D3Z",
@@ -156,9 +156,19 @@ export const ENTRIES: readonly EntryDef[] = [
   },
 ];
 
-export function findEntry(id: string): EntryDef | null {
+/** every example entry, both groups; the dev app lists them all, each preset its own group */
+export const ENTRIES: readonly EntryDef[] = ALL_ENTRIES;
+export const HETCIF_ENTRIES: readonly EntryDef[] = ALL_ENTRIES.filter((e) => e.group === "hetcif");
+export const ENSEMBLE_ENTRIES: readonly EntryDef[] = ALL_ENTRIES.filter((e) => e.group === "ensemble");
+
+export const ENTRY_GROUP_LABELS: Record<EntryGroup, string> = {
+  hetcif: "hetcif: state variables and tables",
+  ensemble: "deposited ensembles (multi-model)",
+};
+
+export function findEntry(id: string, entries: readonly EntryDef[] = ENTRIES): EntryDef | null {
   const norm = id.trim().toUpperCase();
-  return ENTRIES.find((e) => e.id === norm) ?? null;
+  return entries.find((e) => e.id === norm) ?? null;
 }
 
 /** water component ids, excluded from residue aggregates and ligand listings */

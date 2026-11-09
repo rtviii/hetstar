@@ -1,5 +1,5 @@
 "use client";
-import { ENTRIES, STAGE_LABELS, STAGES, type ProvenanceRecord, type StageId, type StageState } from "../../lib/lab/entries";
+import { ENTRY_GROUP_LABELS, STAGE_LABELS, STAGES, type EntryDef, type EntryGroup, type ProvenanceRecord, type StageId, type StageState } from "../../lib/lab/entries";
 import { knownEntryIds, PDB_ALIASES } from "../../lib/dpdb/resolve";
 import type { EntryManifest } from "../../lib/dpdb/types";
 import { PinPopover, Spinner, TinyText, Tooltip } from "./ui";
@@ -78,6 +78,7 @@ export default function EntryChip({
   onEntryInput,
   onLoad,
   onPick,
+  examples,
   loading,
   stages,
   provenance,
@@ -91,6 +92,8 @@ export default function EntryChip({
   onLoad: () => void;
   /** load one of the listed examples straight from the dropdown */
   onPick: (id: string) => void;
+  /** the preset's example entries: the dropdown's options and the accepted typed ids */
+  examples: readonly EntryDef[];
   /** the model half of the pipeline is in flight (density chains in its own effect) */
   loading: boolean;
   stages: Record<StageId, StageState>;
@@ -116,7 +119,8 @@ export default function EntryChip({
     <span className="text-ink-muted">{loading && entryInput ? entryInput : "load entry"}</span>
   );
 
-  const loadedDef = entry ? ENTRIES.find((e) => e.id === entry.pdbId || e.id === entry.id) ?? null : null;
+  const loadedDef = entry ? examples.find((e) => e.id === entry.pdbId || e.id === entry.id) ?? null : null;
+  const groups = (["hetcif", "ensemble"] as EntryGroup[]).map((g) => ({ g, items: examples.filter((e) => e.group === g) })).filter((x) => x.items.length);
   const popover = (
     <div className="flex flex-col gap-2">
       <label className="flex flex-col gap-1">
@@ -131,20 +135,15 @@ export default function EntryChip({
           aria-label="load an example entry"
         >
           <option value="">pick an example...</option>
-          <optgroup label="hetcif: state variables and tables">
-            {ENTRIES.filter((e) => e.group === "hetcif").map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.label}
-              </option>
-            ))}
-          </optgroup>
-          <optgroup label="deposited ensembles (multi-model)">
-            {ENTRIES.filter((e) => e.group === "ensemble").map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.label}
-              </option>
-            ))}
-          </optgroup>
+          {groups.map(({ g, items }) => (
+            <optgroup key={g} label={ENTRY_GROUP_LABELS[g]}>
+              {items.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
         </select>
       </label>
       {loadedDef?.blurb && <TinyText>{loadedDef.blurb}</TinyText>}
@@ -164,7 +163,7 @@ export default function EntryChip({
           className="w-36 rounded border border-line-strong bg-white px-1.5 py-0.5 tracking-wide focus:border-accent focus:outline-none focus:shadow-ring-accent"
         />
         <datalist id="hetstar-entries">
-          {knownEntryIds().map((id) => (
+          {knownEntryIds(examples).map((id) => (
             <option key={id} value={id} />
           ))}
         </datalist>
@@ -206,9 +205,9 @@ export default function EntryChip({
       )}
       <TinyText className="border-t border-line pt-1.5">
         Or type an id: any of the examples above by id, any dpdb_... id from the Dynamic PDB catalogue, or{" "}
-        {Object.keys(PDB_ALIASES).join(", ")} by PDB id. hetcif examples are local files from the hetcif repo; deposited
-        models and structure factors come from RCSB; qFit models from files.dynamicpdb.com (through the local /api proxy
-        in dev).
+        {Object.keys(PDB_ALIASES).join(", ")} by PDB id. Deposited models and structure factors come from RCSB; qFit models
+        from files.dynamicpdb.com (through the local /api proxy in dev); hetcif examples are local files from the hetcif
+        repo.
       </TinyText>
     </div>
   );

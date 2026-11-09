@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
+import type { ColorTheme } from "molstar/lib/mol-theme/color";
 import { useMolstarViewer } from "../hooks/useMolstarViewer";
 import type { MolstarViewer as MolstarViewerInstance } from "../lib/molstar/viewer";
 import type { StructureView } from "../lib/molstar/style";
@@ -12,15 +13,19 @@ export default function MolstarViewer({
   view,
   onReady,
   onLoaded,
+  colorThemes,
 }: {
   data: string | Uint8Array | null;
   binary: boolean;
   view?: StructureView;
   onReady?: (viewer: MolstarViewerInstance | null) => void;
   onLoaded?: (info: { modelCount: number }) => void;
+  /** the preset's Mol* colour themes, registered at plugin init */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  colorThemes?: readonly ColorTheme.Provider<any, any>[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { viewer, ready } = useMolstarViewer(containerRef);
+  const { viewer, ready } = useMolstarViewer(containerRef, colorThemes);
 
   // Keep latest onLoaded without making it a load-effect dependency (it changes identity each render).
   const onLoadedRef = useRef(onLoaded);

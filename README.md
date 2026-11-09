@@ -64,6 +64,14 @@ import "@dynamic-pdb/hetstar/styles.css";
 - `dpdb.apiBase` is the JSON:API base (default `/api/dpdb`, the dev proxy).
 - `dpdb.fileProxy` is a route that takes `?u=<artifact uri>` and returns the file (default
   `/api/dpdb-file`). An empty string fetches artifact URIs directly.
+- `preset` carries a consumer's opinions and nothing else: the representation the viewer
+  opens with, the colour modes the style tray offers, the Mol* colour themes to register, and
+  the example entries the entry chip lists (`packages/hetstar/src/presets/`). Omitted, the
+  viewer uses `dynamicpdbPreset`, the structure-card look (ghost cartoon, purple ramp by
+  conformer count, ligand hues), so the website passes nothing. `hetcifPreset` is
+  ball-and-stick with letter colours and the hetcif example files. Everything the viewer does
+  because of what a file carries (altlocs, model numbers, hetcif state variables) is the same
+  under every preset; a preset must not be the place where engine behaviour changes.
 - It is client-only. Mol* needs `window` and WebGL, so render it through
   `next/dynamic(..., { ssr: false })`.
 - It ships raw TypeScript (like hetkit), so a Next host needs both packages in

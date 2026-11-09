@@ -27,7 +27,6 @@ import { CARVE_RADIUS, carveDensityToStructure } from "./lib/molstar/carve";
 import {
   applyRepStyle,
   compSplitFromTable,
-  DEFAULT_REP_STYLE,
   ensureLabComponents,
   NO_HYDROGENS,
   reprSpecForRole,
@@ -85,6 +84,8 @@ import SelectionActionsPopup, { type ActionTarget, type ClipMode, type PickMode 
 import SelectionFlyout, { type SelectionSummary } from "./components/compare/SelectionFlyout";
 import type { BondRow } from "./components/compare/BondList";
 import StyleTray from "./components/compare/StyleTray";
+import { dynamicpdbPreset } from "./presets/dynamicpdb";
+import type { HetstarPreset } from "./presets/types";
 import BookmarkTray from "./components/compare/BookmarkTray";
 import { CARD_SHELL, CardBoundsContext, Spinner } from "./components/compare/ui";
 import SequenceLanes from "./components/lanes/SequenceLanes";
@@ -294,6 +295,9 @@ export interface HetstarViewerProps {
   /** the lanes strip's height whenever it changes, so a host whose box is fixed can grow it;
    * the strip starts at DEFAULT_LANES_HEIGHT */
   onLanesHeight?: (px: number) => void;
+  /** the consumer's look and example list (presets/); default the dynamicpdb card look. Read
+   * at mount: the rep style and colour themes do not follow later changes. */
+  preset?: HetstarPreset;
 }
 
 /** the lanes strip's height before any lane is toggled or the divider dragged, px */
@@ -306,7 +310,7 @@ function clampLanes(h: number): number {
   return Math.round(Math.min(max, Math.max(LANES_MIN, h)));
 }
 
-export default function HetstarViewer({ entryId, modelId = null, dpdb, className, onLanesHeight }: HetstarViewerProps) {
+export default function HetstarViewer({ entryId, modelId = null, dpdb, className, onLanesHeight, preset = dynamicpdbPreset }: HetstarViewerProps) {
   configureDpdb(dpdb);
   const [viewer, setViewer] = useState<ViewerInstance | null>(null);
 
@@ -437,7 +441,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
   const [planeVersion, setPlaneVersion] = useState(0);
 
   // --- style (tray) ---
-  const [repStyle, setRepStyle] = useState<RepStyle>(DEFAULT_REP_STYLE);
+  const [repStyle, setRepStyle] = useState<RepStyle>(preset.repStyle);
   const [densityOpacity, setDensityOpacity] = useState(1);
   const [densityQuality, setDensityQuality] = useState<DensityQuality>("auto");
   const [densityBusy, setDensityBusy] = useState(false);
@@ -574,7 +578,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
 
       void (async () => {
         try {
-          const manifest = await resolveEntry(id);
+          const manifest = await resolveEntry(id, preset.entries);
           const chosen = pickPair(manifest, pickedModelId);
           const { a, b } = chosen;
           setPair(chosen);
@@ -612,7 +616,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
         }
       })();
     },
-    [setStage],
+    [setStage, preset.entries],
   );
 
   // load the host's entry and model on mount and whenever either changes (StrictMode's double
@@ -2019,12 +2023,12 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
     setGlobalAlt(null);
     setWorldChoice({});
     setMutedAlts(new Set());
-    setRepStyle(sanitizeRepStyle(null));
+    setRepStyle(sanitizeRepStyle(null, preset.repStyle));
     setClip(null);
     setBondOverlays([]);
     setSelRepOverlays([]);
     clearAllMeasurements();
-  }, [clearAllMeasurements]);
+  }, [clearAllMeasurements, preset.repStyle]);
 
   const measureCount = useMemo(
     () => (viewer?.ctx ? measurementCount(viewer.ctx) : 0),
@@ -2055,8 +2059,8 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
   // save-on-change effect would clobber storage with [] during the entry switch) ---
 
   useEffect(() => {
-    setBookmarks(entry ? loadBookmarks(entry.pdbId) : []);
-  }, [entry]);
+    setBookmarks(entry ? loadBookmarks(entry.pdbId, preset.repStyle) : []);
+  }, [entry, preset.repStyle]);
 
   const addBookmark = useCallback(() => {
     const entryId = entry?.pdbId;
@@ -2358,6 +2362,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
                 setEntryInput(id);
                 startLoad(id);
               }}
+              examples={preset.entries}
               loading={loading}
               stages={stages}
               provenance={provenance}
@@ -2375,7 +2380,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
           </aside>
 
           <div className="relative min-w-0 flex-1" onContextMenu={(e) => e.preventDefault()}>
-            <MolstarViewer data={aText} binary={false} view={VIEW} onReady={setViewer} onLoaded={onPrimaryLoaded} />
+            <MolstarViewer data={aText} binary={false} view={VIEW} onReady={setViewer} onLoaded={onPrimaryLoaded} colorThemes={preset.colorThemes} />
             {/* faint scrim while the bundle loads: covers the fetch/table phase AND the
                 window where Mol* is still parsing/building (loading is already false,
                 primaryLoaded not yet true — the slow part for big ensembles) */}
@@ -2409,6 +2414,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
                 densityFlyout={densityFlyout}
                 selectionFlyout={selectionFlyout}
                 selectionFlyoutWidth={worldPanel ? 480 : 300}
+                colorModes={preset.colorModes}
               />
             </div>
             {hoverInfo && (

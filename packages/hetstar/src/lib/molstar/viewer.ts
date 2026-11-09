@@ -80,18 +80,23 @@ export class MolstarViewer {
   // target its hierarchy components (transparency/overpaint/clip) without guessing indices.
   private primaryStructureRef: string | null = null;
 
-  async init(container: HTMLElement): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async init(container: HTMLElement, colorThemes: readonly ColorTheme.Provider<any, any>[] = []): Promise<void> {
     if (this.ctx) return;
     if (this.initPromise) return this.initPromise;
-    this.initPromise = this.doInit(container);
+    this.initPromise = this.doInit(container, colorThemes);
     return this.initPromise;
   }
 
-  private async doInit(container: HTMLElement): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async doInit(container: HTMLElement, extraThemes: readonly ColorTheme.Provider<any, any>[]): Promise<void> {
     this.ctx = await createPluginUI({ target: container, spec: labViewerSpec, render: renderReact18 });
-    // Register our custom alt-loc color theme so `color: 'alt-loc'` resolves on representations.
-    if (!this.ctx.representation.structure.themes.colorThemeRegistry.has(AltLocColorThemeProvider)) {
-      this.ctx.representation.structure.themes.colorThemeRegistry.add(AltLocColorThemeProvider);
+    // Register the alt-loc theme the engine always needs plus the preset's themes, so
+    // `color: 'alt-loc'` etc. resolve on representations.
+    const colorThemes = this.ctx.representation.structure.themes.colorThemeRegistry;
+    for (const provider of [AltLocColorThemeProvider, ...extraThemes]) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (!colorThemes.has(provider as any)) colorThemes.add(provider as any);
     }
     this.applyDefaultStyling();
     // Ghost sticks: translucent geometry must stay hoverable/pickable (alpha above 0.1

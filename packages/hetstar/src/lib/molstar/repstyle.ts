@@ -5,6 +5,7 @@ import { Color } from "molstar/lib/mol-util/color";
 import { isHeavy, isPolymerComp, type AtomTable } from "@dynamic-pdb/hetkit/model";
 import { WATER_COMPS } from "../lab/entries";
 import { componentsForStructure, isOverlayComponent } from "./conformers";
+import { type ConformerRamp, ION_COLOR } from "./ghost-theme";
 import { setReprsPickable } from "./density";
 import { buildComponentQuery, mergeExpressions } from "./queries";
 
@@ -27,22 +28,27 @@ import { buildComponentQuery, mergeExpressions } from "./queries";
 // lab-polymer / lab-het / lab-ion so applyRepStyle knows each component's role.
 
 export type RepType = "ball-and-stick" | "spacefill" | "cartoon";
-export type RepColorMode = "model" | "element" | "chain";
+/** "conformer": the structure-card look — ghost chains, purple ramp by conformer count, ligand hues */
+export type RepColorMode = "conformer" | "model" | "element" | "chain";
 export type RepQuality = "auto" | "high" | "medium" | "low";
 
 export interface RepStyle {
   type: RepType;
   colorMode: RepColorMode;
+  /** the conformer-count ramp of colorMode "conformer" */
+  ramp: ConformerRamp;
   quality: RepQuality;
   ballStick: { sizeFactor: number };
   spacefill: { sizeFactor: number };
   cartoon: { sizeFactor: number };
 }
 
-/** Mol* defaults for each representation's size params (the sliders' resting values). */
+/** The engine's neutral default (the hetcif preset uses it as is); the dynamicpdb preset
+ * overrides type and colour mode for the card look. Size params at Mol*'s defaults. */
 export const DEFAULT_REP_STYLE: RepStyle = {
   type: "ball-and-stick",
   colorMode: "model",
+  ramp: "fade",
   quality: "auto",
   ballStick: { sizeFactor: 0.15 },
   spacefill: { sizeFactor: 1 },
@@ -54,6 +60,8 @@ const BALL_STICK_SIZE_ASPECT_RATIO = 2 / 3;
 const CARTOON_ASPECT_RATIO = 5;
 /** ions render as small spheres regardless of the polymer's spacefill scale */
 const ION_SIZE_FACTOR = 0.35;
+/** ligands and ions in the conformer (card) look: thin flat sticks at a fixed size */
+const CARD_SMALL_MOLECULE_SIZE = 0.3;
 /** per-selection representation overrides: fixed sizes, deliberately far below the
  * global spacefill default (vdW-scale 1.0 swallows the neighborhood) */
 export const SELREP_SPACEFILL_SIZE = 0.4;
@@ -162,6 +170,7 @@ const uniformOnly = (uniformColor: number) => ({
  * follow the role rules so the silhouette matches the primary).
  */
 export function reprSpecForRole(role: LabRole, style: RepStyle, opts: { uniformColor: number; ghost?: boolean }) {
+  if (style.colorMode === "conformer") return cardSpecForRole(role, style, opts);
   const type: RepType = role === "ion" ? "spacefill" : role === "het" ? "ball-and-stick" : style.type;
   const typeParams =
     role === "ion"
@@ -181,11 +190,47 @@ export function reprSpecForRole(role: LabRole, style: RepStyle, opts: { uniformC
   return { type, typeParams, ...color };
 }
 
+const ghostConformerColor = (style: RepStyle) => ({
+  color: "ghost-conformer" as const,
+  colorParams: { ramp: style.ramp },
+});
+
+/**
+ * The structure-card look: the polymer in the active type, coloured ghost-conformer (the
+ * per-count transparency rides the conformer layers, see applyConformerStyling); ligands as
+ * thin ball-and-stick in their hashed hue; ions as the same sticks in one grey. Ghosts keep
+ * their uniform colour.
+ */
+function cardSpecForRole(role: LabRole, style: RepStyle, opts: { uniformColor: number; ghost?: boolean }) {
+  const type: RepType = role === "polymer" ? style.type : "ball-and-stick";
+  const typeParams =
+    role === "polymer"
+      ? typeParamsFor(type, style)
+      : {
+          ignoreLight: true,
+          ...NO_HYDROGENS,
+          quality: style.quality,
+          sizeFactor: CARD_SMALL_MOLECULE_SIZE,
+          sizeAspectRatio: BALL_STICK_SIZE_ASPECT_RATIO,
+        };
+  const color = opts.ghost
+    ? uniformOnly(opts.uniformColor)
+    : role === "polymer"
+      ? ghostConformerColor(style)
+      : role === "het"
+        ? { color: "ligand-hue" as const }
+        : uniformOnly(ION_COLOR);
+  return { type, typeParams, ...color };
+}
+
 // Untagged (static) components — other screens, or the window before the expression
 // components replace the initial build: the old behavior. Cartoon has no meaning on
 // isolated ligands/ions, so under cartoon the non-polymer components keep
 // ball-and-stick; color follows colorMode.
 function reprSpecLegacy(kind: string | null, style: RepStyle, opts: { uniformColor: number; ghost?: boolean }) {
+  if (style.colorMode === "conformer") {
+    return cardSpecForRole(kind === "polymer" ? "polymer" : kind === "ion" ? "ion" : "het", style, opts);
+  }
   const type = style.type === "cartoon" && kind !== "polymer" ? "ball-and-stick" : style.type;
   const colorMode = opts.ghost ? "model" : style.colorMode;
   const color =

@@ -1,9 +1,16 @@
 "use client";
 import { type RefObject, useEffect, useRef, useState } from "react";
+import type { ColorTheme } from "molstar/lib/mol-theme/color";
 import { MolstarViewer } from "../lib/molstar/viewer";
 
-export function useMolstarViewer(containerRef: RefObject<HTMLDivElement | null>) {
+export function useMolstarViewer(
+  containerRef: RefObject<HTMLDivElement | null>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  colorThemes: readonly ColorTheme.Provider<any, any>[] = [],
+) {
   const viewerRef = useRef<MolstarViewer | null>(null);
+  const themesRef = useRef(colorThemes);
+  themesRef.current = colorThemes;
   const disposeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -19,7 +26,7 @@ export function useMolstarViewer(containerRef: RefObject<HTMLDivElement | null>)
 
     const viewer = viewerRef.current ?? (viewerRef.current = new MolstarViewer());
     let cancelled = false;
-    viewer.init(container).then(() => {
+    viewer.init(container, themesRef.current).then(() => {
       if (!cancelled) setReady(true);
     });
 
