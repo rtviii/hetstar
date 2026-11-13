@@ -47,7 +47,7 @@ export default function BookmarkTray({
                   onDelete(b.id);
                 }}
               >
-                <span className="text-[10.5px] tabular-nums">{i + 1}</span>
+                <span className="text-[10px] tabular-nums">{i + 1}</span>
               </TrayButton>
               <button
                 type="button"
@@ -56,7 +56,7 @@ export default function BookmarkTray({
                   e.stopPropagation();
                   onDelete(b.id);
                 }}
-                className="absolute -right-1 -top-1 hidden h-3 w-3 items-center justify-center rounded-full border border-line-strong bg-white text-[8px] leading-none text-ink-muted hover:border-danger hover:text-danger group-hover:flex"
+                className="absolute -right-1 -top-1 z-[2] hidden h-3 w-3 items-center justify-center rounded-sm border border-line-strong bg-white text-[8px] leading-none text-ink-muted hover:border-danger hover:text-danger group-hover:flex"
               >
                 {"×"}
               </button>

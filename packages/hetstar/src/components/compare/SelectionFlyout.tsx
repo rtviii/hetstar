@@ -33,9 +33,9 @@ export interface SelectionSummary {
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-2 tabular-nums">
-      <span className="text-ink-muted">{label}</span>
-      <span>{value}</span>
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="hs-label">{label}</span>
+      <span className="hs-value">{value}</span>
     </div>
   );
 }
@@ -119,7 +119,7 @@ export default function SelectionFlyout({
           <button
             type="button"
             title="back to the freshly-loaded look: collapse conformers, default style, remove bond/representation overlays, clip and measurements. Bookmarks persist."
-            className="rounded border border-line-strong bg-white/70 px-1.5 py-px text-[10px] text-ink-secondary transition-colors hover:border-danger/50 hover:text-danger"
+            className="hs-btn hs-btn-danger"
             onClick={onResetAll}
           >
             reset all
@@ -130,12 +130,13 @@ export default function SelectionFlyout({
         )}
 
         {picked && (
-          <div className="text-[12px] text-ink-secondary">
-            {picked.compId} {picked.chainId}/{picked.authSeqId}
+          <div className="flex items-baseline gap-2">
+            <span className="hs-value text-[11.5px] font-medium">
+              {picked.compId} {picked.chainId}/{picked.authSeqId}
+            </span>
             {conformerCount != null && (
-              <span className="text-ink-muted/75">
-                {" "}
-                — {conformerCount > 1 ? `${conformerCount} conformers${conformersShown ? " (shown)" : ""}` : "unsplit"}
+              <span className="hs-label">
+                {conformerCount > 1 ? `${conformerCount} conformers${conformersShown ? ", shown" : ""}` : "unsplit"}
               </span>
             )}
           </div>
@@ -143,15 +144,15 @@ export default function SelectionFlyout({
 
         {picked && supportRows && (
           <>
-            <div className="text-[11px] text-ink-muted">Conformer support (model A)</div>
-            <table className="w-full text-left tabular-nums">
+            <GroupLabel>Conformer support, model A</GroupLabel>
+            <table className="hs-table">
               <thead>
-                <tr className="text-[11px] text-ink-muted">
-                  <th className="font-normal">conf</th>
-                  <th className="font-normal">occ</th>
-                  <th className="font-normal">atoms</th>
-                  <th className="font-normal">2Fo-Fc</th>
-                  <th className="font-normal">Fo-Fc</th>
+                <tr>
+                  <th>conf</th>
+                  <th className="hs-num">occ</th>
+                  <th className="hs-num">atoms</th>
+                  <th className="hs-num">2Fo-Fc</th>
+                  <th className="hs-num">Fo-Fc</th>
                 </tr>
               </thead>
               <tbody>
@@ -162,30 +163,27 @@ export default function SelectionFlyout({
                     return Number.isNaN(x) ? "-" : x.toFixed(2);
                   };
                   return (
-                    <tr key={row.alt || "shared"} className={belowFloor ? "text-ink-muted/75" : undefined}>
+                    <tr key={row.alt || "shared"} className={belowFloor ? "opacity-50" : undefined}>
                       <td>
                         {row.alt ? (
                           <span className="inline-flex items-center gap-1">
-                            <span
-                              className="inline-block h-2 w-2 rounded-[2px]"
-                              style={{ background: altColorCss(row.alt) }}
-                            />
+                            <span className="hs-pip" style={{ background: altColorCss(row.alt) }} />
                             {row.alt}
                           </span>
                         ) : (
                           "shared"
                         )}
                       </td>
-                      <td>{Number.isNaN(row.occupancy) ? "-" : row.occupancy.toFixed(2)}</td>
-                      <td>{row.atomCount}</td>
-                      <td>{show(row.mean)}</td>
-                      <td>{show(row.fofcMean)}</td>
+                      <td className="hs-num">{Number.isNaN(row.occupancy) ? "-" : row.occupancy.toFixed(2)}</td>
+                      <td className="hs-num">{row.atomCount}</td>
+                      <td className="hs-num">{show(row.mean)}</td>
+                      <td className="hs-num">{show(row.fofcMean)}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-            <label className="flex items-center gap-2 text-[11px] text-ink-secondary">
+            <label className="flex items-center gap-1.5 text-[10.5px] text-ink-secondary">
               <input type="checkbox" checked={occNormalize} onChange={(e) => setOccNormalize(e.target.checked)} />
               <span>per unit occupancy (value / occ)</span>
             </label>
@@ -205,9 +203,9 @@ export default function SelectionFlyout({
 
         {!picked && summary && (
           <div className="flex flex-col gap-1">
-            <div className="text-[12px] text-ink-secondary">
-              {summary.label}
-              <span className="text-ink-muted/75"> — {summary.residueCount} residues</span>
+            <div className="flex items-baseline gap-2">
+              <span className="hs-value text-[11.5px] font-medium">{summary.label}</span>
+              <span className="hs-label">{summary.residueCount} residues</span>
             </div>
             <Fact
               label="residues with alternates"
@@ -243,11 +241,11 @@ export default function SelectionFlyout({
       {memberNums.length > 1 && (
         <div className="flex flex-col gap-1.5 border-t border-line pt-1.5">
           <GroupLabel>Ensemble members</GroupLabel>
-          <div className="flex items-center gap-1.5 tabular-nums">
-            <span className="inline-flex overflow-hidden rounded border border-line-strong bg-white" role="group" aria-label="ensemble member">
+          <div className="flex items-center gap-1.5">
+            <span className="hs-seg" role="group" aria-label="ensemble member">
               <button
                 type="button"
-                className="px-1.5 py-0.5 text-ink-secondary hover:bg-accent-soft disabled:opacity-40"
+                className="hs-btn hs-btn-icon"
                 onClick={() => onMember(memberIndex - 1)}
                 disabled={memberIndex <= 0}
                 aria-label="previous member"
@@ -256,7 +254,7 @@ export default function SelectionFlyout({
               </button>
               <button
                 type="button"
-                className="border-l border-line-strong px-1.5 py-0.5 text-ink-secondary hover:bg-accent-soft disabled:opacity-40"
+                className="hs-btn hs-btn-icon"
                 onClick={() => onMember(memberIndex + 1)}
                 disabled={memberIndex >= memberNums.length - 1}
                 aria-label="next member"
@@ -264,9 +262,12 @@ export default function SelectionFlyout({
                 +
               </button>
             </span>
-            <span>
+            <span className="hs-value">
               model {memberNums[memberIndex] ?? memberIndex + 1}
-              <span className="text-ink-muted"> · {memberIndex + 1}/{memberNums.length}</span>
+              <span className="hs-unit">
+                {" "}
+                {memberIndex + 1}/{memberNums.length}
+              </span>
             </span>
           </div>
           <SliderRow

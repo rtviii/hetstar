@@ -19,7 +19,7 @@ import {
 } from "@dynamic-pdb/hetkit/model";
 import { stateSupport, type MapSampler, type StateSupportRow } from "@dynamic-pdb/hetkit/metrics";
 import { altColorCss } from "../../lib/molstar/altloc-theme";
-import { GroupLabel, SectionLabel, SwitchButton, TinyText } from "./ui";
+import { GroupLabel, Help, SectionLabel, SwitchButton, TinyText } from "./ui";
 
 // The world chooser for a file that carries hetcif categories (~/dev/hetcif, docs/format.md).
 // A world is one state per variable; the viewer shows exactly one. This panel explains the
@@ -167,11 +167,11 @@ function stateStats(table: AtomTable, rows: number[]): StateStats {
 }
 
 function Swatch({ letters }: { letters: string[] }) {
-  if (!letters.length) return <span className="inline-block h-2.5 w-2.5 rounded-[2px] border border-dashed border-line-strong" title="no atoms" />;
+  if (!letters.length) return <span className="hs-pip border border-dashed border-line-strong" title="no atoms" />;
   return (
     <span className="inline-flex gap-px">
       {letters.slice(0, 4).map((l) => (
-        <span key={l} className="inline-block h-2.5 w-2.5 rounded-[2px]" style={{ background: altColorCss(l) }} title={`altloc ${l}`} />
+        <span key={l} className="hs-pip" style={{ background: altColorCss(l) }} title={`altloc ${l}`} />
       ))}
     </span>
   );
@@ -227,47 +227,55 @@ function VariableCard({
   const children = [...model.tables.values()].filter((t) => t.parents.includes(v.id)).map((t) => t.child);
 
   return (
-    <div className={`flex flex-col gap-1 rounded border px-1.5 py-1 ${moved ? "border-accent/60 bg-accent-soft/40" : "border-line bg-white/40"}`}>
-      <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="font-mono text-[11px] text-ink">{v.id}</span>
+    <div className={`flex flex-col gap-1 border-l-2 pl-2 ${moved ? "border-accent" : "border-line"}`}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="hs-value">{v.id}</span>
         <span className="text-[11px] text-ink-secondary">{words.label}</span>
-        {moved && <span className="text-[10px] text-accent">moved off the top world</span>}
+        {moved && <span className="hs-tag hs-tag-accent">moved</span>}
+        <span className="ml-auto" />
+        <Help label={`about ${v.id}`}>
+          {words.sentence} {KIND_WORDS[v.kind ?? "unknown"] ?? v.kind}; {PROVENANCE_WORDS[v.provenance ?? "unknown"] ?? v.provenance}.
+          {owner && (
+            <>
+              {" "}
+              Its probabilities are not its own: table {owner.id} gives them given {owner.parents.join(" and ")}
+              {rowInForce ? `, and the row in force now is "${rowInForce.id}"` : ""}.
+            </>
+          )}
+          {children.length > 0 && <> It is a parent of {children.join(", ")}.</>}
+          {hasMaps && (
+            <>
+              {" "}
+              Density columns are plain map means at the state&apos;s atoms, not a correlation: a state with a high 2mFo-DFc on its
+              exclusive atoms has density of its own; a low value with a negative Fo-Fc says the map does not want it there.
+              Occupancy is not divided out.
+            </>
+          )}
+        </Help>
       </div>
-      <TinyText>{words.sentence}</TinyText>
-      <TinyText>
-        {KIND_WORDS[v.kind ?? "unknown"] ?? v.kind}; {PROVENANCE_WORDS[v.provenance ?? "unknown"] ?? v.provenance}.
-        {owner && (
-          <>
-            {" "}
-            Its probabilities are not its own: table {owner.id} gives them given {owner.parents.join(" and ")}
-            {rowInForce ? `, and the row in force now is "${rowInForce.id}"` : ""}.
-          </>
-        )}
-        {children.length > 0 && <> It is a parent of {children.join(", ")}.</>}
-      </TinyText>
       {v.details && <TinyText className="italic">{v.details}</TinyText>}
       <div
         className={`grid items-center gap-x-2 gap-y-0.5 text-[10.5px] tabular-nums ${
           hasMaps ? "grid-cols-[auto_auto_1fr_auto_auto_auto_auto_auto]" : "grid-cols-[auto_auto_1fr_auto_auto_auto]"
         }`}
       >
-        <span className="text-ink-muted/70">state</span>
+        <span className="hs-label text-[8.5px]">state</span>
         <span />
-        <span className="text-ink-muted/70">what it is</span>
-        <span className="text-right text-ink-muted/70" title="marginal probability over all worlds">p</span>
-        <span className="text-right text-ink-muted/70" title={owner ? "probability given the parents' current states" : "the variable's own probability"}>
+        <span className="hs-label text-[8.5px]">what it is</span>
+        <span className="hs-label text-right text-[8.5px]" title="marginal probability over all worlds">p</span>
+        <span className="hs-label text-right text-[8.5px]" title={owner ? "probability given the parents' current states" : "the variable's own probability"}>
           {owner ? "p | parents" : ""}
         </span>
-        <span className="text-right text-ink-muted/70">atoms · B</span>
+        <span className="hs-label text-right text-[8.5px]">atoms · B</span>
         {hasMaps && (
           <>
             <span
-              className="text-right text-ink-muted/70"
+              className="hs-label text-right text-[8.5px]"
               title="mean 2mFo-DFc (sigma) over the atoms exclusive to this state (farther than 0.5 A from every other state); in brackets the count of such atoms; when none, over all its atoms"
             >
               2mFo-DFc
             </span>
-            <span className="text-right text-ink-muted/70" title="mean Fo-Fc (sigma) over the same atoms: negative means the state is over-modelled here, positive under-modelled">
+            <span className="hs-label text-right text-[8.5px]" title="mean Fo-Fc (sigma) over the same atoms: negative means the state is over-modelled here, positive under-modelled">
               Fo-Fc
             </span>
           </>
@@ -290,15 +298,7 @@ function VariableCard({
           />
         ))}
       </div>
-      {hasMaps ? (
-        <TinyText>
-          Density columns are plain map means at the state's atoms, not a correlation: a state with a high 2mFo-DFc on its exclusive
-          atoms has density of its own; a low value with a negative Fo-Fc says the map does not want it there. Occupancy is not divided
-          out.
-        </TinyText>
-      ) : (
-        <TinyText>per-state density support appears once the maps are built</TinyText>
-      )}
+      {!hasMaps && <TinyText>per-state density support appears once the maps are built</TinyText>}
     </div>
   );
 }
@@ -350,23 +350,23 @@ function StateRow({
         : "the rows with no altloc");
   return (
     <>
-      <SwitchButton pressed={pressed} disabled={disabled} title={`show ${vid} = ${s.id}`} onClick={() => onChoose(vid, s.id)}>
-        <span className="font-mono">{s.id}</span>
+      <SwitchButton value pressed={pressed} disabled={disabled} title={`show ${vid} = ${s.id}`} onClick={() => onChoose(vid, s.id)}>
+        {s.id}
       </SwitchButton>
       <Swatch letters={stats.letters} />
       <span className={`truncate ${pressed ? "text-ink" : "text-ink-secondary"}`}>{what}</span>
-      <span className="text-right">{fmtP(marginal)}</span>
-      <span className="text-right text-ink-muted">{conditional === null ? "" : fmtP(conditional)}</span>
-      <span className="text-right text-ink-muted">
+      <span className="text-right font-mono text-ink">{fmtP(marginal)}</span>
+      <span className="text-right font-mono text-ink-muted">{conditional === null ? "" : fmtP(conditional)}</span>
+      <span className="text-right font-mono text-ink-muted">
         {stats.heavy}
         {stats.meanB !== null ? ` · ${stats.meanB.toFixed(0)}` : ""}
       </span>
       {twoFo !== null && (
         <>
-          <span className={`text-right ${pressed ? "text-ink" : "text-ink-secondary"}`} title={twoFo.exclusiveCount ? `${twoFo.exclusiveCount} exclusive atoms` : "no exclusive atoms: mean over all atoms"}>
+          <span className={`text-right font-mono ${pressed ? "text-ink" : "text-ink-secondary"}`} title={twoFo.exclusiveCount ? `${twoFo.exclusiveCount} exclusive atoms` : "no exclusive atoms: mean over all atoms"}>
             {supportCell(twoFo)}
           </span>
-          <span className={`text-right ${fofc && fofc.exclusiveCount > 0 && fofc.exclusiveMean < -1 ? "text-danger" : "text-ink-secondary"}`}>
+          <span className={`text-right font-mono ${fofc && fofc.exclusiveCount > 0 && fofc.exclusiveMean < -1 ? "text-danger" : "text-ink-secondary"}`}>
             {supportCell(fofc)}
           </span>
         </>
@@ -432,7 +432,7 @@ function StateChips({ states, vids, labels }: { states: Record<string, string>; 
         const letter = /^[A-Z]$/.test(s);
         return (
           <span key={v} className="inline-flex items-center gap-0.5 font-mono text-[10.5px]" title={labels.get(v) ?? v}>
-            {letter && <span className="inline-block h-2 w-2 rounded-[2px]" style={{ background: altColorCss(s) }} />}
+            {letter && <span className="hs-pip" style={{ background: altColorCss(s) }} />}
             <span className="text-ink-muted">{v}=</span>
             <span>{s}</span>
           </span>
@@ -461,11 +461,11 @@ function GroupCard({
   const shown = showAll ? g.worlds : g.worlds.slice(0, MAX_WORLDS);
   const inForce = g.worlds.find((w) => g.variables.every((v) => world[v] === w.states[v]));
   return (
-    <div className="flex flex-col gap-1 rounded border border-line bg-white/40 px-1.5 py-1">
+    <div className="flex flex-col gap-1 border-l-2 border-line pl-2">
       <div className="flex flex-col gap-0.5">
         {g.variables.map((v) => (
           <div key={v} className="flex flex-wrap items-baseline gap-x-1.5 text-[11px]">
-            <span className="font-mono text-ink">{v}</span>
+            <span className="hs-value">{v}</span>
             <span className="text-ink-secondary">{labels.get(v)}</span>
           </div>
         ))}
@@ -493,11 +493,11 @@ function GroupCard({
               aria-pressed={active}
               onClick={() => onChooseMany(w.states)}
               className={`flex items-center gap-2 rounded border px-1.5 py-0.5 text-left transition-colors disabled:cursor-default disabled:opacity-40 ${
-                active ? "border-accent bg-accent-soft text-accent" : "border-line-strong/50 bg-white/60 text-ink-secondary hover:bg-line/70"
+                active ? "border-accent bg-accent-soft text-accent-hover" : "border-line bg-white text-ink-secondary hover:border-accent-line hover:bg-surface-hover"
               }`}
             >
               <StateChips states={w.states} vids={g.variables} labels={labels} />
-              <span className="ml-auto whitespace-nowrap tabular-nums text-[10.5px]">
+              <span className="ml-auto whitespace-nowrap font-mono text-[10px] tabular-nums">
                 {fmtP(w.p)}
                 <span className="text-ink-muted"> · {couplingWords(w.p, indep)}</span>
               </span>
@@ -505,7 +505,7 @@ function GroupCard({
           );
         })}
         {g.worlds.length > MAX_WORLDS && (
-          <button type="button" className="self-start text-[10.5px] text-accent hover:underline" onClick={() => setShowAll((v) => !v)}>
+          <button type="button" className="hs-btn hs-btn-sm self-start" onClick={() => setShowAll((v) => !v)}>
             {showAll ? "fewer" : `+${g.worlds.length - MAX_WORLDS} more worlds`}
           </button>
         )}
@@ -600,26 +600,23 @@ export default function WorldPanel({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <SectionLabel>World</SectionLabel>
-          <SwitchButton pressed={overridden.size === 0} disabled={disabled} onClick={onReset}>
-            top world
-          </SwitchButton>
-          {overridden.size > 0 && (
-            <TinyText>
-              {overridden.size} variable{overridden.size === 1 ? "" : "s"} moved
-            </TinyText>
-          )}
-        </div>
-        <TinyText>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <SectionLabel>World</SectionLabel>
+        <SwitchButton pressed={overridden.size === 0} disabled={disabled} onClick={onReset}>
+          top world
+        </SwitchButton>
+        {overridden.size > 0 && <span className="hs-tag hs-tag-accent">{overridden.size} moved</span>}
+        <span className="hs-label ml-auto text-ink-faint">
+          {nVars} variables{nTables ? ` · ${nTables} table${nTables === 1 ? "" : "s"}` : ""}
+        </span>
+        <Help label="what a world is">
           The file names {nVars} state variables: {census.segments} backbone segments (several residues that move as one unit),{" "}
           {census.singles} single residues and {census.waters} partial waters
           {nTables ? `, and ${nTables} conditional table${nTables === 1 ? "" : "s"} saying how some of them depend on others` : ""}. A world is
           one state for every variable, and the 3D view shows exactly one: by default the most probable world
           {groups.length ? " of each correlated group" : ""}, with every other variable at its most probable state. Moving a variable here
           hides the atoms of its other states; expanded residues (selection actions) show every conformer regardless.
-        </TinyText>
+        </Help>
       </div>
 
       {groups.length > 0 && (
@@ -647,7 +644,7 @@ export default function WorldPanel({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="find: 102, A97, Arg, water"
-            className="w-40 rounded border border-line bg-white/70 px-1.5 py-px text-[10.5px] text-ink placeholder:text-ink-muted/60 focus:border-accent focus:outline-none"
+            className="hs-field w-40"
             aria-label="find a variable by id, residue number or residue name"
           />
         </div>

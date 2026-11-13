@@ -79,8 +79,8 @@ function BondChip({
     .join("; ");
   return (
     <span
-      className={`inline-flex cursor-pointer items-center overflow-hidden rounded border font-mono text-[10px] leading-none transition-colors hover:border-accent/40 ${
-        row.dependent ? "border-amber-400/70" : "border-line/70"
+      className={`inline-flex cursor-pointer items-center overflow-hidden rounded border font-mono text-[10px] leading-none transition-colors hover:border-accent ${
+        row.dependent ? "border-amber-400/70" : "border-line"
       } ${row.ghost ? "opacity-50" : ""}`}
       onMouseEnter={() => onHover(pair)}
       onMouseLeave={() => onHover(null)}
@@ -92,14 +92,14 @@ function BondChip({
       <span className={endClass(pair.a)}>
         {endLabel(pair.a, withChain)}
       </span>
-      <span className="border-x border-line/50 bg-surface-muted/60 px-[3px] py-[2px] font-sans text-[9px] text-ink-muted/80">
+      <span className="border-x border-line bg-surface-muted px-[3px] py-[2px] text-[8.5px] uppercase tracking-wide text-ink-muted">
         {shortType(pair.type)}
       </span>
       <span className={endClass(pair.b)}>
         {endLabel(pair.b, withChain)}
       </span>
       {pair.alts.length > 0 && (
-        <span className="flex gap-[2px] border-l border-line/50 px-[3px] py-[2px] font-semibold">
+        <span className="flex gap-[2px] border-l border-line px-[3px] py-[2px] font-semibold">
           {pair.alts.map((l) => (
             <span key={l} style={{ color: altColorCss(l) }}>
               {l}
@@ -108,7 +108,7 @@ function BondChip({
         </span>
       )}
       {partial && (
-        <span className="border-l border-line/50 px-[3px] py-[2px] text-[9px] text-ink-muted/80 tabular-nums">
+        <span className="border-l border-line px-[3px] py-[2px] text-[9px] tabular-nums text-ink-muted">
           {row.presentIn}/{row.memberCount}
         </span>
       )}
@@ -156,11 +156,12 @@ export default function BondList({
     <div className="flex flex-col gap-1">
       <button
         type="button"
-        className="self-start rounded border border-line-strong bg-white/70 px-1.5 py-px text-[10.5px] text-ink-secondary transition-colors hover:bg-line"
+        className="hs-btn self-start"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
-        {rows.length} bonds {open ? "▴" : "▾"}
+        <span className="hs-chevron" aria-hidden />
+        {rows.length} bonds
       </button>
       {open && <div className="max-h-[140px] overflow-y-auto pr-1">{chips(rows)}</div>}
     </div>

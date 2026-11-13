@@ -1,29 +1,26 @@
 "use client";
 import { useMemo, type ReactNode } from "react";
 
-import { WATER_COMPS } from "../../lib/lab/entries";
+import { WATER_COMPS, type ProvenanceRecord } from "../../lib/lab/entries";
 import { ROLE_LABELS, type EntryManifest } from "../../lib/dpdb/types";
 import { isHeavy, isPolymerComp, type AltlocSummary, type AtomTable, type EntryDescription } from "@dynamic-pdb/hetkit/model";
-import { SectionLabel, TinyText } from "./ui";
+import { Num, Section, TinyText } from "./ui";
 
-// The sidebar's entry card: what this structure IS — ids, title, experiment facts,
-// per-model global metrics, composition — in compact landing-page form. Facts come from
-// the deposited CIF's header (hetkit describeEntry) with the dpdb catalogue overlaid for
-// live entries; absent fields simply do not render.
+// The rail's body: what this structure IS, grouped by concept, each group a section that
+// folds (ui.tsx Section; the fold is remembered). Experiment, source, the model on screen,
+// the entry's models with their global metrics, ligands, and the files everything was read
+// from. Facts come from the deposited CIF's header (hetkit describeEntry) with the dpdb
+// catalogue overlaid for live entries; an absent field does not render, an empty section
+// does not either. Prose (the entry's details) stays folded until asked for.
 
-function Chip({ children }: { children: ReactNode }) {
-  return (
-    <span className="rounded border border-line-strong bg-white px-1.5 py-px font-mono text-[10.5px] text-ink-secondary">
-      {children}
-    </span>
-  );
-}
+const FOLD = "hetstar.rail.";
 
-function Fact({ label, children }: { label: string; children: ReactNode }) {
+function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <span className="text-ink-muted">{label}</span>
-      <span className="min-w-0 break-words text-ink-secondary">{children}</span>
+      {/* "pH" keeps its capitals in the label voice */}
+      <dt data-case={label === "pH" ? "keep" : undefined}>{label}</dt>
+      <dd>{children}</dd>
     </>
   );
 }
@@ -33,12 +30,37 @@ function prettyMethod(m: string): string {
   return m === m.toUpperCase() ? m.charAt(0) + m.slice(1).toLowerCase() : m;
 }
 
+function metric(v: number | undefined, digits: number): string {
+  return v == null ? "-" : v.toFixed(digits);
+}
+
+function FileRow({ p }: { p: ProvenanceRecord }) {
+  const isHttp = !!p.url && /^https?:\/\//.test(p.url);
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <div className="flex items-baseline gap-2">
+        <span className="hs-label">{p.role}</span>
+        <span className="min-w-0 text-[10.5px] text-ink-secondary">{p.desc}</span>
+      </div>
+      {p.url &&
+        (isHttp ? (
+          <a href={p.url} target="_blank" rel="noreferrer" className="break-all font-mono text-[9.5px] leading-tight text-accent hover:underline">
+            {p.url}
+          </a>
+        ) : (
+          <div className="break-all font-mono text-[9.5px] leading-tight text-ink-muted">{p.url}</div>
+        ))}
+    </div>
+  );
+}
+
 export default function EntryCard({
   entry,
   desc,
   aTable,
   altSummary,
   memberCount,
+  provenance,
 }: {
   entry: EntryManifest | null;
   /** header facts from the deposited CIF (falls back to model A's own header) */
@@ -47,6 +69,8 @@ export default function EntryCard({
   altSummary: AltlocSummary | null;
   /** MODEL frames of model A; > 1 marks an ensemble */
   memberCount: number;
+  /** where each loaded file came from */
+  provenance: ProvenanceRecord[];
 }) {
   const cat = entry?.catalogue ?? null;
 
@@ -78,7 +102,7 @@ export default function EntryCard({
   }, [aTable, altSummary]);
 
   if (!entry) {
-    return <TinyText>load an entry to see its description here</TinyText>;
+    return <TinyText className="px-2.5 py-2">Load an entry to see its description here.</TinyText>;
   }
 
   const firstEntity = desc?.entities.find((e) => e.type === "polymer") ?? desc?.entities[0] ?? null;
@@ -91,101 +115,195 @@ export default function EntryCard({
   const organism = firstEntity?.organism ?? cat?.entities[0]?.organism ?? null;
   const uniprot = firstEntity?.uniprot ?? cat?.entities[0]?.uniprot ?? null;
   const modelsWithMetrics = entry.models.filter((m) => Object.keys(m.metrics).length > 0);
+  const hasExperiment = !!method || resolution != null || !!spaceGroup || tempK != null || ph != null;
+  const hasSource = !!organism || !!uniprot || !!desc?.depositedDate || !!cat?.publishedAt || !!desc?.firstAuthor;
+  const splitPercent = stats && stats.polymerResidues ? Math.round((100 * stats.splitResidues) / stats.polymerResidues) : 0;
 
   return (
-    <div className="flex flex-col gap-2.5">
-      <div className="flex flex-col gap-1.5">
-        {/* the ids live in the EntryChip right above this card — no chips repeated here */}
-        {title && <div className="text-[11.5px] leading-snug text-ink-secondary">{title}</div>}
-        {memberCount > 1 && (
-          <div className="flex flex-wrap items-center gap-1">
-            <Chip>{memberCount} members</Chip>
-          </div>
-        )}
-        {cat?.details && <TinyText>{cat.details}</TinyText>}
-      </div>
+    <div className="flex flex-col">
+      {(title || memberCount > 1) && (
+        <div className="flex flex-col gap-1.5 px-2.5 py-2">
+          {title && <div className="text-[11.5px] font-medium leading-snug text-ink">{title}</div>}
+          {memberCount > 1 && (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="hs-tag hs-tag-accent">{memberCount} members</span>
+            </div>
+          )}
+        </div>
+      )}
 
-      <div className="grid grid-cols-[auto,1fr] items-baseline gap-x-2.5 gap-y-1 text-[10.5px] tabular-nums">
-        {method && <Fact label="Method">{prettyMethod(method)}</Fact>}
-        {resolution != null && <Fact label="Resolution">{resolution.toFixed(2)} A</Fact>}
-        {spaceGroup && <Fact label="Space group">{spaceGroup}</Fact>}
-        {tempK != null && <Fact label="Temperature">{tempK.toFixed(0)} K</Fact>}
-        {ph != null && <Fact label="pH">{ph}</Fact>}
-        {organism && <Fact label="Organism">{organism}</Fact>}
-        {uniprot && <Fact label="UniProt">{uniprot}</Fact>}
-        {desc?.depositedDate && <Fact label="Deposited">{desc.depositedDate}</Fact>}
-        {cat?.publishedAt && <Fact label="Published (dpdb)">{cat.publishedAt.slice(0, 10)}</Fact>}
-        {desc?.firstAuthor && (
-          <Fact label="Authors">
-            {desc.firstAuthor}
-            {desc.authorCount > 1 ? ` et al. (${desc.authorCount})` : ""}
-          </Fact>
-        )}
-      </div>
+      {hasExperiment && (
+        <Section
+          title="Experiment"
+          storageKey={`${FOLD}experiment`}
+          summary={[method ? prettyMethod(method) : null, resolution != null ? `${resolution.toFixed(2)} Å` : null].filter(Boolean).join(" · ")}
+        >
+          <dl className="hs-kv">
+            {method && <Row label="Method">{prettyMethod(method)}</Row>}
+            {resolution != null && (
+              <Row label="Resolution">
+                <Num unit="Å">{resolution.toFixed(2)}</Num>
+              </Row>
+            )}
+            {spaceGroup && (
+              <Row label="Space group">
+                <span className="hs-value">{spaceGroup}</span>
+              </Row>
+            )}
+            {tempK != null && (
+              <Row label="Temperature">
+                <Num unit="K">{tempK.toFixed(0)}</Num>
+              </Row>
+            )}
+            {ph != null && (
+              <Row label="pH">
+                <span className="hs-value">{ph}</span>
+              </Row>
+            )}
+          </dl>
+        </Section>
+      )}
+
+      {hasSource && (
+        <Section title="Source" storageKey={`${FOLD}source`} summary={organism ?? undefined}>
+          <dl className="hs-kv">
+            {organism && <Row label="Organism">{organism}</Row>}
+            {uniprot && (
+              <Row label="UniProt">
+                <span className="hs-value">{uniprot}</span>
+              </Row>
+            )}
+            {desc?.firstAuthor && (
+              <Row label="Authors">
+                {desc.firstAuthor}
+                {desc.authorCount > 1 && <span className="hs-unit"> et al. ({desc.authorCount})</span>}
+              </Row>
+            )}
+            {desc?.depositedDate && (
+              <Row label="Deposited">
+                <span className="hs-value">{desc.depositedDate}</span>
+              </Row>
+            )}
+            {cat?.publishedAt && (
+              <Row label="In dpdb">
+                <span className="hs-value">{cat.publishedAt.slice(0, 10)}</span>
+              </Row>
+            )}
+          </dl>
+        </Section>
+      )}
 
       {stats && (
-        <div className="flex flex-col gap-1 border-t border-line pt-2">
-          <SectionLabel>Model A</SectionLabel>
-          <div className="grid grid-cols-[auto,1fr] items-baseline gap-x-2.5 gap-y-1 text-[10.5px] tabular-nums">
-            <Fact label="Atoms">{stats.atoms.toLocaleString()}</Fact>
-            <Fact label="Residues">
-              {stats.polymerResidues.toLocaleString()} in {stats.chains} chain{stats.chains === 1 ? "" : "s"}
-            </Fact>
+        <Section
+          title="Model A"
+          storageKey={`${FOLD}model`}
+          summary={`${stats.polymerResidues.toLocaleString()} res${stats.splitResidues > 0 ? ` · ${splitPercent}% alt` : ""}`}
+        >
+          <dl className="hs-kv">
+            <Row label="Atoms">
+              <span className="hs-value">{stats.atoms.toLocaleString()}</span>
+            </Row>
+            <Row label="Residues">
+              <Num unit={`in ${stats.chains} chain${stats.chains === 1 ? "" : "s"}`}>{stats.polymerResidues.toLocaleString()}</Num>
+            </Row>
             {stats.splitResidues > 0 && (
-              <Fact label="With alternates">
-                {stats.splitResidues} ({stats.polymerResidues ? Math.round((100 * stats.splitResidues) / stats.polymerResidues) : 0}%)
-              </Fact>
+              <Row label="Alternates">
+                <Num unit={`residues, ${splitPercent}%`}>{stats.splitResidues}</Num>
+              </Row>
             )}
-            {memberCount > 1 && <Fact label="Ensemble">{memberCount} MODEL frames</Fact>}
+            {memberCount > 1 && (
+              <Row label="Ensemble">
+                <Num unit="MODEL frames">{memberCount}</Num>
+              </Row>
+            )}
             {desc?.rWork != null && (
-              <Fact label="R-work / R-free">
-                {desc.rWork.toFixed(3)}
-                {desc.rFree != null ? ` / ${desc.rFree.toFixed(3)}` : ""}
-              </Fact>
+              <Row label="R-work/free">
+                <span className="hs-value">
+                  {desc.rWork.toFixed(3)}
+                  {desc.rFree != null && (
+                    <>
+                      <span className="hs-unit"> / </span>
+                      {desc.rFree.toFixed(3)}
+                    </>
+                  )}
+                </span>
+              </Row>
             )}
-          </div>
-        </div>
+          </dl>
+        </Section>
       )}
 
       {modelsWithMetrics.length > 0 && (
-        <div className="flex flex-col gap-1 border-t border-line pt-2">
-          <SectionLabel>Catalogue metrics</SectionLabel>
-          <div className="flex flex-col gap-0.5 text-[10.5px] tabular-nums text-ink-secondary">
-            {modelsWithMetrics.map((m) => {
-              const bits: string[] = [];
-              if (m.metrics.r_work != null || m.metrics.r_free != null)
-                bits.push(`R ${m.metrics.r_work?.toFixed(3) ?? "-"} / ${m.metrics.r_free?.toFixed(3) ?? "-"}`);
-              if (m.metrics.clashscore != null) bits.push(`clash ${m.metrics.clashscore.toFixed(1)}`);
-              if (m.metrics.ramachandran_outliers != null) bits.push(`rama out ${m.metrics.ramachandran_outliers.toFixed(1)}%`);
-              return (
-                <div key={m.id}>
-                  <span className="text-ink-muted">{ROLE_LABELS[m.role]}: </span>
-                  {bits.join(" · ")}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <Section title="Catalogue metrics" count={modelsWithMetrics.length} storageKey={`${FOLD}metrics`} flush>
+          <table className="hs-table">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th className="hs-num">R-work</th>
+                <th className="hs-num">R-free</th>
+                <th className="hs-num" title="clashscore">
+                  Clash
+                </th>
+                <th className="hs-num" title="Ramachandran outliers, %">
+                  Rama
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {modelsWithMetrics.map((m) => (
+                <tr key={m.id}>
+                  <td className="max-w-[84px] truncate font-sans text-[10.5px]" title={m.title}>
+                    {ROLE_LABELS[m.role]}
+                  </td>
+                  <td className="hs-num">{metric(m.metrics.r_work, 3)}</td>
+                  <td className="hs-num">{metric(m.metrics.r_free, 3)}</td>
+                  <td className="hs-num">{metric(m.metrics.clashscore, 1)}</td>
+                  <td className="hs-num">{metric(m.metrics.ramachandran_outliers, 1)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Section>
       )}
 
       {stats && stats.ligands.length > 0 && (
-        <div className="flex flex-col gap-1 border-t border-line pt-2">
-          <SectionLabel>Ligands and ions</SectionLabel>
+        <Section
+          title="Ligands and ions"
+          count={stats.ligands.length}
+          storageKey={`${FOLD}ligands`}
+          summary={stats.ligands
+            .slice(0, 4)
+            .map(([comp]) => comp)
+            .join(" ")}
+        >
           <div className="flex flex-wrap gap-1">
             {stats.ligands.map(([comp, n]) => (
-              <Chip key={comp}>
+              <span key={comp} className="hs-tag">
                 {comp}
-                {n > 1 ? ` x${n}` : ""}
-              </Chip>
+                {n > 1 && <span className="hs-unit">x{n}</span>}
+              </span>
             ))}
           </div>
-        </div>
+        </Section>
       )}
 
-      <TinyText>
-        source: {entry.source === "dpdb" ? "Dynamic PDB catalogue" : "RCSB example entry"}; facts from the deposited mmCIF
-        header{entry.source === "dpdb" ? " and the catalogue" : ""}
-      </TinyText>
+      {cat?.details && (
+        <Section title="Notes" defaultOpen={false} storageKey={`${FOLD}notes`}>
+          <div className="text-[10.5px] leading-snug text-ink-secondary">{cat.details}</div>
+        </Section>
+      )}
+
+      <Section title="Files" count={provenance.length || undefined} defaultOpen={false} storageKey={`${FOLD}files`}>
+        <div className="flex flex-col gap-2">
+          {provenance.map((p, i) => (
+            <FileRow key={i} p={p} />
+          ))}
+          <TinyText>
+            {entry.source === "dpdb" ? "Dynamic PDB catalogue entry" : "RCSB example entry"}; facts from the deposited mmCIF header
+            {entry.source === "dpdb" ? " and the catalogue" : ""}.
+          </TinyText>
+        </div>
+      </Section>
     </div>
   );
 }

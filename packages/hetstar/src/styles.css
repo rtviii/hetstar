@@ -67,5 +67,220 @@
   accent-color: #663be4;
 }
 
+/* --- The look: Harbor Mono on the Prism palette -------------------------------------
+   Voices and the few drawn pieces every panel shares. A component names one of these
+   classes and never spells a font, a case or a corner of its own. They sit before the
+   utilities at the same specificity, so a utility on the same element still wins.
+
+   Label voice: Plex Mono capitals, tracked, for labels, column heads, controls and badges.
+   Names and prose stay in Plex Sans; values in Plex Mono, never capitals. */
+
+.hetstar .hs-label {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #5f616b;
+}
+.hetstar .hs-value {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: #1a1e2a;
+}
+/* a unit or a count's noun sits a step back from its number */
+.hetstar .hs-unit { color: #9a9dab; }
+
+/* Controls: one button, 20 px tall. Pressed (aria-pressed) is the accent, tinted. */
+.hetstar .hs-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid #d0d2e0;
+  border-radius: 2px;
+  background: #ffffff;
+  color: #3d414f;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: background-color 120ms, border-color 120ms, color 120ms;
+}
+.hetstar .hs-btn:hover:not(:disabled) { border-color: #d9cffa; background: #efebfb; color: #1a1e2a; }
+.hetstar .hs-btn:focus-visible { outline: none; border-color: #663be4; box-shadow: 0 0 0 2px rgba(102, 59, 228, 0.18); }
+.hetstar .hs-btn[aria-pressed="true"] { border-color: #663be4; background: #f1edfd; color: #5730c7; }
+.hetstar .hs-btn:disabled { cursor: default; opacity: 0.4; }
+.hetstar .hs-btn-icon { width: 20px; padding: 0; }
+.hetstar .hs-btn-sm { height: 16px; padding: 0 4px; font-size: 8.5px; }
+.hetstar .hs-btn-sm.hs-btn-icon { width: 16px; padding: 0; }
+.hetstar .hs-btn-primary { border-color: #663be4; background: #663be4; color: #ffffff; }
+.hetstar .hs-btn-primary:hover:not(:disabled) { border-color: #5730c7; background: #5730c7; color: #ffffff; }
+.hetstar .hs-btn-danger:hover:not(:disabled) { border-color: #e5b3af; background: #fbecea; color: #b4231d; }
+/* a button with no box until the pointer is on it (a stripe's tools, a close cross) */
+.hetstar .hs-btn-quiet { border-color: transparent; background: transparent; }
+
+/* Segmented: buttons joined on one hairline. */
+.hetstar .hs-seg { display: inline-flex; flex: none; }
+.hetstar .hs-seg > .hs-btn { margin-left: -1px; border-radius: 0; }
+.hetstar .hs-seg > .hs-btn:first-child { margin-left: 0; border-top-left-radius: 2px; border-bottom-left-radius: 2px; }
+.hetstar .hs-seg > .hs-btn:last-child { border-top-right-radius: 2px; border-bottom-right-radius: 2px; }
+.hetstar .hs-seg > .hs-btn:hover:not(:disabled),
+.hetstar .hs-seg > .hs-btn:focus-visible,
+.hetstar .hs-seg > .hs-btn[aria-pressed="true"] { position: relative; z-index: 1; }
+
+/* Fields: inputs and selects, a value in the mono. */
+.hetstar .hs-field {
+  height: 20px;
+  min-width: 0;
+  padding: 0 5px;
+  border: 1px solid #d0d2e0;
+  border-radius: 2px;
+  background: #ffffff;
+  color: #1a1e2a;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  line-height: 18px;
+}
+.hetstar select.hs-field { padding: 0 2px 0 3px; }
+.hetstar .hs-field:hover:not(:disabled) { border-color: #b9bccf; }
+.hetstar .hs-field:focus { outline: none; border-color: #663be4; box-shadow: 0 0 0 2px rgba(102, 59, 228, 0.18); }
+.hetstar .hs-field:disabled { opacity: 0.4; }
+
+/* A panel's title stripe: pale purple, a hairline under it, the accent tick at its left
+   end. Inside a card a section is this stripe and its content, with no box of its own. */
+.hetstar .hs-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 24px;
+  padding: 0 6px 0 10px;
+  background: #f6f4fd;
+  box-shadow: 0 1px 0 #e4dff5, inset 2px 0 0 #663be4;
+  text-align: left;
+}
+.hetstar button.hs-head:hover { background: #efebfb; }
+.hetstar button.hs-head:focus-visible { outline: none; box-shadow: 0 1px 0 #e4dff5, inset 2px 0 0 #663be4, inset 0 0 0 1px #663be4; }
+.hetstar .hs-head-title {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #2b2648;
+}
+/* the fold mark of a stripe: points right when folded, down when open */
+.hetstar .hs-chevron {
+  display: inline-block;
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-right: 1.25px solid #5f616b;
+  border-bottom: 1.25px solid #5f616b;
+  transform: translateX(-1px) rotate(-45deg);
+  transition: transform 120ms;
+}
+.hetstar [aria-expanded="true"] > .hs-chevron { transform: translateY(-1.5px) rotate(45deg); }
+
+/* Key/value table of an object's properties: label column in the label voice. */
+.hetstar .hs-kv {
+  display: grid;
+  grid-template-columns: var(--hs-kv-key, 76px) minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 8px;
+  row-gap: 3px;
+  margin: 0;
+}
+.hetstar .hs-kv > dt {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #5f616b;
+}
+.hetstar .hs-kv > dt[data-case="keep"] { text-transform: none; }
+.hetstar .hs-kv > dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #1a1e2a;
+}
+
+/* A ruled table: head row on the raised ground, hairlines between rows. */
+.hetstar .hs-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.hetstar .hs-table th {
+  padding: 3px 6px;
+  border-bottom: 1px solid #e6e7f0;
+  background: #f4f4f9;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
+  color: #5f616b;
+}
+.hetstar .hs-table td {
+  padding: 3px 6px;
+  border-bottom: 1px solid #e6e7f0;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  white-space: nowrap;
+  color: #1a1e2a;
+}
+.hetstar .hs-table tr:last-child > td { border-bottom: 0; }
+.hetstar .hs-table .hs-num { text-align: right; }
+
+/* A tag: a code or a short fact as a thing of its own (a ligand, a member count). */
+.hetstar .hs-tag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+  padding: 0 4px;
+  border: 1px solid #e6e7f0;
+  border-radius: 2px;
+  background: #f4f4f9;
+  color: #3d414f;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.hetstar .hs-tag-accent { border-color: #d9cffa; background: #f1edfd; color: #5730c7; }
+
+/* State: a square pip. Running blinks. */
+.hetstar .hs-pip { display: inline-block; flex: none; width: 6px; height: 6px; border-radius: 1px; }
+@keyframes hs-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.hetstar .hs-blink { animation: hs-blink 1.6s ease-in-out infinite; }
+
+/* The one shell of every floating surface (tooltip, popover, flyout, popup, dock box):
+   a white sheet, one hairline, the only shadow in the viewer. */
+.hetstar .hs-card {
+  border: 1px solid #d0d2e0;
+  border-radius: 2px;
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(26, 30, 42, 0.1);
+}
+
 @tailwind components;
 @tailwind utilities;

@@ -4,7 +4,7 @@ import type { ResidueRange } from "../../lib/molstar/conformers";
 import type { RepType } from "../../lib/molstar/repstyle";
 import { altColorCss } from "../../lib/molstar/altloc-theme";
 import { MAX_BOOKMARKS } from "../../lib/lab/bookmarks";
-import { CARD_SHELL, IconButton, SwitchButton, Tooltip, useDismiss } from "./ui";
+import { CARD_SHELL, IconButton, Segmented, SwitchButton, Tooltip, useDismiss } from "./ui";
 import { AtomModeIcon, BondsIcon, BookmarkIcon, ConformersIcon, ResidueModeIcon, RulerIcon, SpreadIcon } from "./icons";
 
 // The Selection Actions Panel: opened by a (non-drag) right click, fixed at the cursor
@@ -43,7 +43,7 @@ const CLIP_MODES: { id: ClipMode; label: string }[] = [
 ];
 
 function Heading({ children }: { children: ReactNode }) {
-  return <div className="px-0.5 text-[9.5px] uppercase tracking-wide text-ink-muted/75">{children}</div>;
+  return <div className="hs-label">{children}</div>;
 }
 
 export default function SelectionActionsPopup({
@@ -147,16 +147,16 @@ export default function SelectionActionsPopup({
     <div
       ref={cardRef}
       data-selection-popup
-      className={`fixed z-50 flex flex-col gap-1.5 p-1.5 text-[10.5px] text-ink-secondary ${CARD_SHELL}`}
+      className={`fixed z-50 flex flex-col overflow-hidden text-[10.5px] text-ink-secondary ${CARD_SHELL}`}
       style={{ left, top, width: WIDTH }}
       onContextMenu={(e) => e.preventDefault()}
     >
       {/* header: identity left, pick/measure modes right */}
-      <div className="flex items-center justify-between gap-2 px-0.5">
-        <span className="min-w-0 truncate font-medium" title={header ?? undefined}>
-          {header ?? <span className="font-normal text-ink-muted/75">no selection</span>}
+      <div className="hs-head justify-between pr-1">
+        <span className="hs-value min-w-0 truncate font-medium" title={header ?? undefined}>
+          {header ?? <span className="hs-label">no selection</span>}
         </span>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-px">
           <Tooltip content="residue-wise selection">
             <SwitchButton pressed={pickMode === "residue"} onClick={() => onPickMode("residue")}>
               <ResidueModeIcon />
@@ -176,8 +176,8 @@ export default function SelectionActionsPopup({
       </div>
 
       {target && (
-        <div className="flex items-center justify-between gap-2 border-t border-line px-0.5 pt-1.5">
-          <span className="text-[9.5px] text-ink-muted/75">{subline}</span>
+        <div className="flex items-center justify-between gap-2 border-t border-line px-2 py-1">
+          <span className="hs-label">{subline}</span>
           <Tooltip
             content={
               onBookmark
@@ -200,14 +200,14 @@ export default function SelectionActionsPopup({
       )}
 
       {split && target && (
-        <div className="flex items-center gap-1.5 border-t border-line px-0.5 pt-1.5">
+        <div className="flex items-center gap-1.5 border-t border-line px-2 py-1">
           <div className="flex min-w-0 flex-wrap items-center gap-1">
             {target.letters.map((letter) => {
               const muted = conformersShown && mutedLetters.includes(letter);
               const chip = (
                 <>
                   <span
-                    className="inline-block h-2 w-2 rounded-[2px]"
+                    className="hs-pip"
                     style={{ background: altColorCss(letter), opacity: conformersShown ? (muted ? 0.25 : 1) : 0.3 }}
                   />
                   <span className={muted ? "line-through opacity-60" : undefined}>{letter}</span>
@@ -220,9 +220,7 @@ export default function SelectionActionsPopup({
                   <button
                     type="button"
                     onClick={() => onToggleLetter(letter)}
-                    className={`flex items-center gap-1 rounded border px-1 py-0.5 text-[9.5px] transition-colors hover:border-accent/50 ${
-                      muted ? "border-line text-ink-muted/75" : "border-line-strong text-ink-secondary"
-                    }`}
+                    className={`hs-tag bg-white hover:border-accent-line ${muted ? "text-ink-faint" : "border-line-strong"}`}
                   >
                     {chip}
                   </button>
@@ -230,14 +228,14 @@ export default function SelectionActionsPopup({
               ) : (
                 <span
                   key={letter}
-                  className="flex items-center gap-1 rounded border border-line px-1 py-0.5 text-[9.5px] text-ink-muted/75"
+                  className="hs-tag bg-white text-ink-muted"
                 >
                   {chip}
                 </span>
               );
             })}
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-1">
+          <div className="ml-auto flex shrink-0 items-center gap-px">
             <Tooltip
               content={
                 conformersShown
@@ -261,17 +259,17 @@ export default function SelectionActionsPopup({
       )}
 
       {target && (
-        <div className={`flex flex-col gap-1 border-t border-line pt-1.5 ${densityReady ? "" : "opacity-40"}`}>
+        <div className={`flex flex-col gap-1 border-t border-line px-2 py-1.5 ${densityReady ? "" : "opacity-40"}`}>
           <Heading>clip around selection</Heading>
-          <div className="flex items-center gap-1 px-0.5">
+          <Segmented label="clip around selection">
             {CLIP_MODES.map((m) => (
               <SwitchButton key={m.id} pressed={mode === m.id} disabled={!densityReady} onClick={() => setClip(m.id, radius)}>
                 {m.label}
               </SwitchButton>
             ))}
-          </div>
-          <label className="flex items-center gap-1.5 px-0.5">
-            <span className="whitespace-nowrap text-[9.5px] text-ink-muted">radius</span>
+          </Segmented>
+          <label className="flex items-center gap-1.5">
+            <span className="hs-label">radius</span>
             <input
               type="range"
               className="h-2 min-w-0 flex-1"
@@ -286,14 +284,17 @@ export default function SelectionActionsPopup({
                 if (mode !== "off") onClip(mode, r);
               }}
             />
-            <span className="whitespace-nowrap text-right text-[9.5px] tabular-nums text-ink-muted">{radius.toFixed(1)} A</span>
+            <span className="hs-value whitespace-nowrap text-right text-[9.5px]">
+              {radius.toFixed(1)}
+              <span className="hs-unit"> Å</span>
+            </span>
           </label>
         </div>
       )}
 
       {target && (
-        <div className="flex items-center justify-between border-t border-line px-0.5 pt-1.5">
-          <span className="text-[9.5px] text-ink-muted">
+        <div className="flex items-center justify-between border-t border-line px-2 py-1">
+          <span className="hs-label">
             {!bondsReady ? "computing bonds…" : `${bondCount} bond${bondCount === 1 ? "" : "s"}`}
           </span>
           <Tooltip content="paint this selection's bonds in the 3D view as dashed contacts, colored by the conformer that forms them (gray = shared atoms); stays on after the selection clears, until toggled off here">
@@ -305,9 +306,9 @@ export default function SelectionActionsPopup({
       )}
 
       {target && (
-        <div className="flex items-center justify-between border-t border-line px-0.5 pt-1.5">
-          <span className="text-[9.5px] text-ink-muted">representation</span>
-          <div className="flex items-center gap-1">
+        <div className="flex items-center justify-between border-t border-line px-2 py-1">
+          <span className="hs-label">representation</span>
+          <div className="hs-seg">
             <Tooltip content="draw this selection as atoms (spacefill) on top of the global style; press again to remove — persists until then">
               <SwitchButton
                 pressed={selRep === "spacefill"}
@@ -321,19 +322,19 @@ export default function SelectionActionsPopup({
                 pressed={selRep === "ball-and-stick"}
                 onClick={() => onSelRep(selRep === "ball-and-stick" ? null : "ball-and-stick")}
               >
-                sticks&balls
+                sticks
               </SwitchButton>
             </Tooltip>
           </div>
         </div>
       )}
 
-      <div className="flex items-center justify-between border-t border-line px-0.5 pt-1.5">
-        <span className="text-[9.5px] text-ink-muted/75">structure changes</span>
+      <div className="flex items-center justify-between border-t border-line px-2 py-1">
+        <span className="hs-label">structure changes</span>
         <Tooltip content="back to the freshly-loaded look: collapse conformers, default style, remove bond/representation overlays, clip and measurements. Bookmarks persist.">
           <button
             type="button"
-            className="rounded border border-line-strong bg-white/70 px-1.5 py-px text-[9.5px] text-ink-secondary transition-colors hover:border-danger/50 hover:text-danger"
+            className="hs-btn hs-btn-danger"
             onClick={() => {
               onResetAll();
               onClose();
@@ -345,8 +346,8 @@ export default function SelectionActionsPopup({
       </div>
 
       {measureCount > 0 && (
-        <div className="flex items-center justify-between border-t border-line px-0.5 pt-1.5">
-          <span className="text-[9.5px] text-ink-muted">
+        <div className="flex items-center justify-between border-t border-line px-2 py-1">
+          <span className="hs-label">
             {measureCount} distance{measureCount === 1 ? "" : "s"}
           </span>
           <Tooltip content="remove every distance measurement">

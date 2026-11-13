@@ -1,69 +1,29 @@
 "use client";
-import { ENTRY_GROUP_LABELS, STAGE_LABELS, STAGES, type EntryDef, type EntryGroup, type ProvenanceRecord, type StageId, type StageState } from "../../lib/lab/entries";
+import { ENTRY_GROUP_LABELS, STAGE_LABELS, STAGES, type EntryDef, type EntryGroup, type StageId, type StageState } from "../../lib/lab/entries";
 import { knownEntryIds, PDB_ALIASES } from "../../lib/dpdb/resolve";
 import type { EntryManifest } from "../../lib/dpdb/types";
-import { PinPopover, Spinner, TinyText, Tooltip } from "./ui";
+import { PinPopover, SectionLabel, Spinner, TinyText, Tooltip } from "./ui";
 
-// The entry chip at the top of the sidebar, above the entry card. Prints the loaded
-// entry the way dynamicpdb.com does ("PDB 7APT | dpdb_kytgultv": the code a reader scans
-// for emphasized, the source/id muted), shows one spinner while the pipeline runs — its
-// hover card lists the stages — and opens, on click, the loader popover: id input, known
-// ids, errors, retry, and the per-file provenance.
+// The entry's identity on the rail's title line (and on the canvas while the rail is
+// hidden). Prints the loaded entry the way dynamicpdb.com does ("PDB 7APT  dpdb_kytgultv":
+// the code a reader scans for in the sans, the id muted in the mono), shows one spinner
+// while the pipeline runs (its hover card lists the stages) and opens, on click, the
+// loader popover: examples, id input, errors, retry, and the pipeline's stages. Where the
+// files came from is the rail's Files section.
 
 const DOT_CLASS: Record<StageState, string> = {
   pending: "bg-line-strong",
-  active: "bg-accent animate-pulse",
+  active: "bg-accent hs-blink",
   done: "bg-ink-muted",
   error: "bg-danger",
 };
-
-function ProvRow({ p }: { p: ProvenanceRecord }) {
-  const isHttp = !!p.url && /^https?:\/\//.test(p.url);
-  return (
-    <div className="flex flex-col gap-0.5">
-      <div>
-        <span className="text-ink-muted/75">{p.role}:</span> {p.desc}
-      </div>
-      {p.url &&
-        (isHttp ? (
-          <a
-            href={p.url}
-            target="_blank"
-            rel="noreferrer"
-            className="break-all font-mono text-[10px] leading-tight text-accent hover:underline"
-          >
-            {p.url}
-          </a>
-        ) : (
-          <div className="break-all font-mono text-[10px] leading-tight text-ink-muted">{p.url}</div>
-        ))}
-    </div>
-  );
-}
-
-// one line of what the catalogue said about a live entry, so the cross-talk is visible
-function CatalogueLine({ m }: { m: EntryManifest }) {
-  const fmt = (v: number | undefined) => (v == null ? "?" : v.toFixed(3));
-  const qfit = m.models.find((x) => x.role === "qfit");
-  const listed = m.models.map((x) => x.title.replace(/ model$/i, "")).join(", ");
-  return (
-    <div className="text-ink-muted">
-      catalogue: {m.title}
-      {m.resolution != null ? `, ${m.resolution.toFixed(2)} Å` : ""}
-      {qfit && (qfit.metrics.r_work != null || qfit.metrics.r_free != null)
-        ? `; qFit R-work ${fmt(qfit.metrics.r_work)} / R-free ${fmt(qfit.metrics.r_free)}`
-        : ""}
-      ; models listed: {listed}
-    </div>
-  );
-}
 
 function StageList({ stages, error }: { stages: Record<StageId, StageState>; error: string | null }) {
   return (
     <div className="flex flex-col gap-0.5">
       {STAGES.map((s) => (
         <div key={s} className="flex items-center gap-1.5">
-          <span className={`inline-block h-1.5 w-1.5 rounded-full ${DOT_CLASS[stages[s]]}`} />
+          <span className={`hs-pip ${DOT_CLASS[stages[s]]}`} />
           <span className={stages[s] === "error" ? "text-danger" : undefined}>{STAGE_LABELS[s]}</span>
         </div>
       ))}
@@ -81,7 +41,6 @@ export default function EntryChip({
   examples,
   loading,
   stages,
-  provenance,
   error,
   showRetryDensity,
   onRetryDensity,
@@ -97,7 +56,6 @@ export default function EntryChip({
   /** the model half of the pipeline is in flight (density chains in its own effect) */
   loading: boolean;
   stages: Record<StageId, StageState>;
-  provenance: ProvenanceRecord[];
   error: string | null;
   showRetryDensity: boolean;
   onRetryDensity: () => void;
@@ -111,12 +69,11 @@ export default function EntryChip({
 
   const identity = entry ? (
     <>
-      <span className="font-semibold text-ink-secondary">PDB {entry.pdbId}</span>
-      <span className="mx-1.5 opacity-50">|</span>
-      <span className="text-ink-muted">{entry.source === "dpdb" ? entry.id : "RCSB example"}</span>
+      <span className="text-[12.5px] font-semibold text-ink">PDB {entry.pdbId}</span>
+      <span className="truncate font-mono text-[10px] text-ink-muted">{entry.source === "dpdb" ? entry.id : "RCSB example"}</span>
     </>
   ) : (
-    <span className="text-ink-muted">{loading && entryInput ? entryInput : "load entry"}</span>
+    <span className="hs-label">{loading && entryInput ? entryInput : "load entry"}</span>
   );
 
   const loadedDef = entry ? examples.find((e) => e.id === entry.pdbId || e.id === entry.id) ?? null : null;
@@ -124,14 +81,14 @@ export default function EntryChip({
   const popover = (
     <div className="flex flex-col gap-2">
       <label className="flex flex-col gap-1">
-        <span className="text-ink-muted">examples</span>
+        <SectionLabel>Example</SectionLabel>
         <select
           value={loadedDef?.id ?? ""}
           disabled={loading}
           onChange={(e) => {
             if (e.target.value) onPick(e.target.value);
           }}
-          className="w-full rounded border border-line-strong bg-white px-1.5 py-0.5 text-[11px] text-ink focus:border-accent focus:outline-none focus:shadow-ring-accent disabled:opacity-40"
+          className="hs-field w-full"
           aria-label="load an example entry"
         >
           <option value="">pick an example...</option>
@@ -148,75 +105,57 @@ export default function EntryChip({
       </label>
       {loadedDef?.blurb && <TinyText>{loadedDef.blurb}</TinyText>}
       <form
-        className="flex items-center gap-1.5"
+        className="flex flex-col gap-1"
         onSubmit={(e) => {
           e.preventDefault();
           onLoad();
         }}
       >
-        <input
-          list="hetstar-entries"
-          value={entryInput}
-          onChange={(e) => onEntryInput(e.target.value)}
-          placeholder="PDB or dpdb id"
-          spellCheck={false}
-          className="w-36 rounded border border-line-strong bg-white px-1.5 py-0.5 tracking-wide focus:border-accent focus:outline-none focus:shadow-ring-accent"
-        />
-        <datalist id="hetstar-entries">
-          {knownEntryIds(examples).map((id) => (
-            <option key={id} value={id} />
-          ))}
-        </datalist>
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded border border-line-strong bg-white px-2 py-0.5 hover:bg-line disabled:opacity-40"
-        >
-          {loading ? "loading..." : "load"}
-        </button>
+        <SectionLabel>Entry id</SectionLabel>
+        <div className="flex items-center gap-1.5">
+          <input
+            list="hetstar-entries"
+            value={entryInput}
+            onChange={(e) => onEntryInput(e.target.value)}
+            placeholder="PDB or dpdb id"
+            spellCheck={false}
+            className="hs-field min-w-0 flex-1"
+          />
+          <datalist id="hetstar-entries">
+            {knownEntryIds(examples).map((id) => (
+              <option key={id} value={id} />
+            ))}
+          </datalist>
+          <button type="submit" disabled={loading} className="hs-btn hs-btn-primary">
+            {loading ? "loading" : "load"}
+          </button>
+        </div>
       </form>
       {error && <div className="text-danger">{error}</div>}
       {showRetryDensity && (
-        <button
-          type="button"
-          onClick={onRetryDensity}
-          className="self-start rounded border border-line-strong bg-white px-2 py-0.5 hover:bg-line"
-        >
+        <button type="button" onClick={onRetryDensity} className="hs-btn self-start">
           retry density
         </button>
       )}
-      {provenance.length > 0 && (
-        <div className="flex flex-col gap-1.5 border-t border-line pt-1.5">
-          <div className="font-medium text-ink-secondary">
-            {entry?.pdbId}
-            {entry?.source === "dpdb" ? ` (${entry.id})` : ""} files
-          </div>
-          {entry?.source === "dpdb" && <CatalogueLine m={entry} />}
-          {provenance.map((p, i) => (
-            <ProvRow key={i} p={p} />
-          ))}
+      {started && (
+        <div className="flex flex-col gap-1 border-t border-line pt-2">
+          <SectionLabel>Pipeline</SectionLabel>
+          <StageList stages={stages} error={null} />
         </div>
       )}
-      {settled && (
-        <div className="border-t border-line pt-1.5 text-ink-muted/75">
-          pipeline: {STAGES.map((s) => STAGE_LABELS[s]).join(" - ")}
-          {failed ? " (some stages failed)" : " (all done)"}
-        </div>
-      )}
-      <TinyText className="border-t border-line pt-1.5">
-        Or type an id: any of the examples above by id, any dpdb_... id from the Dynamic PDB catalogue, or{" "}
-        {Object.keys(PDB_ALIASES).join(", ")} by PDB id. Deposited models and structure factors come from RCSB; qFit models
-        from files.dynamicpdb.com (through the local /api proxy in dev); hetcif examples are local files from the hetcif
-        repo.
+      <TinyText className="border-t border-line pt-2">
+        Any example above by id, any dpdb_... id from the Dynamic PDB catalogue, or {Object.keys(PDB_ALIASES).join(", ")} by PDB id.
+        Deposited models and structure factors come from RCSB; qFit models from files.dynamicpdb.com (through the local /api proxy
+        in dev); hetcif examples are local files from the hetcif repo.
       </TinyText>
     </div>
   );
 
   return (
-    <div className="flex h-6 items-center gap-1.5 self-start rounded border border-line bg-white/85 px-2 font-mono text-[11px]">
-      <PinPopover content={popover} align="start" closeKey={entry?.id}>
+    <div className="flex min-w-0 items-center gap-1.5">
+      <PinPopover content={popover} align="start" width={300} closeKey={entry?.id}>
         <span
-          className="flex items-center whitespace-nowrap"
+          className="flex min-w-0 items-baseline gap-1.5 whitespace-nowrap hover:text-accent"
           title={entry ? `${entry.title} (click to load another entry)` : "click to load an entry"}
         >
           {identity}
@@ -229,7 +168,7 @@ export default function EntryChip({
       )}
       {failed && (
         <Tooltip content={<StageList stages={stages} error={error} />}>
-          <span className="inline-block h-2 w-2 rounded-full bg-danger" aria-label="load failed" />
+          <span className="hs-pip bg-danger" aria-label="load failed" />
         </Tooltip>
       )}
     </div>

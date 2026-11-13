@@ -171,8 +171,8 @@ export default function SwitchboardBox({
 
   return (
     <div className={`pointer-events-auto flex w-40 flex-col overflow-hidden ${CARD_SHELL}`}>
-      <div className="flex h-5 items-center gap-1 border-b border-line px-1.5 text-[10.5px] text-ink-secondary">
-        <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: hexCss(color) }} />
+      <div className="flex h-[22px] items-center gap-1 border-b border-line pl-1.5 pr-0.5 text-[10.5px] text-ink">
+        <span className="hs-pip" style={{ background: hexCss(color) }} />
         <Tooltip
           content={
             <div className="flex flex-col gap-0.5">
@@ -183,7 +183,7 @@ export default function SwitchboardBox({
             </div>
           }
         >
-          <span className="block max-w-[92px] truncate">{name}</span>
+          <span className="block max-w-[84px] truncate">{name}</span>
         </Tooltip>
         <button
           type="button"
@@ -193,9 +193,8 @@ export default function SwitchboardBox({
               : "compare the other models against this one"
           }
           onClick={onReference}
-          className={`ml-auto rounded px-1 text-[9.5px] leading-tight ${
-            isReference ? "bg-accent-soft text-accent" : "text-ink-muted/70 hover:text-ink-secondary"
-          }`}
+          aria-pressed={isReference}
+          className={`hs-btn hs-btn-sm ml-auto ${isReference ? "" : "hs-btn-quiet"}`}
         >
           ref
         </button>
@@ -203,8 +202,9 @@ export default function SwitchboardBox({
           <button
             type="button"
             title="remove this box"
+            aria-label="remove this box"
             onClick={onRemove}
-            className="leading-none text-ink-muted hover:text-ink-secondary"
+            className="hs-btn hs-btn-sm hs-btn-icon hs-btn-quiet"
           >
             {"×"}
           </button>
@@ -218,14 +218,14 @@ export default function SwitchboardBox({
           </div>
         )}
         {problem && (
-          <div className="absolute inset-0 overflow-hidden bg-white/80 p-1.5 text-[10px] leading-snug text-danger">{problem}</div>
+          <div className="absolute inset-0 overflow-hidden bg-white/90 p-1.5 text-[10px] leading-snug text-danger">{problem}</div>
         )}
       </div>
       {legend && (
-        <div className="flex items-center gap-1 border-t border-line px-1.5 py-0.5 text-[9px] tabular-nums text-ink-muted">
+        <div className="flex items-center gap-1 border-t border-line px-1.5 py-0.5 font-mono text-[9px] tabular-nums text-ink-muted">
           <span>{formatBound(legend.domain[0])}</span>
           <span
-            className="h-1.5 flex-1 rounded-sm"
+            className="h-1.5 flex-1"
             style={{ background: `linear-gradient(to right, ${legend.colors.map(hexCss).join(", ")})` }}
           />
           <span>
@@ -236,7 +236,7 @@ export default function SwitchboardBox({
       )}
       <select
         title="what the replica is painted with"
-        className="h-5 border-0 border-t border-line bg-transparent px-1 text-[10.5px] text-ink-secondary focus:outline-none"
+        className="h-[22px] border-0 border-t border-line bg-transparent px-1 font-mono text-[10px] text-ink-secondary hover:bg-surface-hover focus:bg-surface-hover focus:outline-none"
         value={facetId}
         onChange={(e) => onFacet(e.target.value)}
       >

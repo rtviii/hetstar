@@ -313,27 +313,30 @@ export default function ModelsSwitchboard({
       : `${segment.chain} ${segment.start.seq}-${segment.end.seq}`;
   const hotspotMenu = (
     <div className="flex flex-col gap-1">
-      <span className="text-[10px] font-medium uppercase tracking-wider text-ink-muted/80">
-        where the compared models disagree about motion
-      </span>
-      {hotspots.map((segment, index) => (
-        <button
-          key={`${segment.chain}|${segment.start.seq}|${segment.end.seq}`}
-          type="button"
-          onClick={() => goToHotspot(index)}
-          className={`flex items-baseline justify-between gap-3 rounded border px-1.5 py-0.5 text-left hover:bg-line/50 ${
-            index === hotspotAt ? "border-accent/40 bg-accent-soft" : "border-line"
-          }`}
-        >
-          <span className="text-ink">
-            {index + 1}. {hotspotName(segment)}
-          </span>
-          <span className="tabular-nums text-[10px] text-ink-muted">
-            up to {segment.peak.toFixed(2)} {hotspotUnit}
-          </span>
-        </button>
-      ))}
-      <span className="text-[10px] text-ink-muted">
+      <span className="hs-label whitespace-normal">where the compared models disagree about motion</span>
+      <div className="flex flex-col">
+        {hotspots.map((segment, index) => (
+          <button
+            key={`${segment.chain}|${segment.start.seq}|${segment.end.seq}`}
+            type="button"
+            onClick={() => goToHotspot(index)}
+            className={`flex w-full border-b border-line px-1.5 py-1 text-left last:border-b-0 hover:bg-surface-hover items-baseline justify-between gap-3 ${
+              index === hotspotAt ? "bg-accent-soft shadow-[inset_2px_0_0_#663be4]" : ""
+            }`}
+          >
+            <span className="hs-value">
+              <span className="hs-unit">{index + 1} </span>
+              {hotspotName(segment)}
+            </span>
+            <span className="hs-value text-[10px]">
+              <span className="hs-unit">up to </span>
+              {segment.peak.toFixed(2)}
+              <span className="hs-unit"> {hotspotUnit}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+      <span className="text-[10px] leading-snug text-ink-muted">
         runs of polymer residues in the top tenth of the motion disagreement, ranked by their highest value
       </span>
     </div>
@@ -345,7 +348,8 @@ export default function ModelsSwitchboard({
   const full = boxes.length >= maxBoxes;
   const addMenu = (
     <div className="flex flex-col gap-1">
-      <span className="text-[10px] font-medium uppercase tracking-wider text-ink-muted/80">models of {entry.pdbId || entry.id}</span>
+      <span className="hs-label">models of {entry.pdbId || entry.id}</span>
+      <div className="flex flex-col">
       {models.map((model) => {
         const loadable = isLoadable(model);
         return (
@@ -354,65 +358,82 @@ export default function ModelsSwitchboard({
             type="button"
             disabled={!loadable || full}
             onClick={() => addBox(model.id)}
-            className="flex flex-col items-start rounded border border-line px-1.5 py-1 text-left hover:bg-line/50 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
+            className="flex w-full border-b border-line px-1.5 py-1 text-left last:border-b-0 hover:bg-surface-hover flex-col items-start disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
           >
-            <span className="text-ink">
+            <span className="flex items-center gap-1.5 text-ink">
               {modelDisplayName(model, models)}
-              {model.id === primaryId ? " (in the main view)" : ""}
+              {model.id === primaryId && <span className="hs-tag hs-tag-accent">main view</span>}
             </span>
             <span className="text-[10px] text-ink-muted">{loadable ? modelDetailLines(model)[0] : "no coordinate file listed"}</span>
           </button>
         );
       })}
+      </div>
       {full && <span className="text-[10px] text-ink-muted">{maxBoxes} boxes at most; remove one to add another</span>}
     </div>
   );
 
   return (
     <div data-hetstar-part="switchboard" className="flex flex-col items-end gap-1.5">
-      <div className={`pointer-events-auto flex h-5 items-center gap-2 px-1.5 text-[10.5px] text-ink-secondary ${CARD_SHELL}`}>
-        <button type="button" title="show or hide the model replicas" onClick={() => setOpen((v) => !v)} className="hover:text-ink">
-          models {open ? "(hide)" : "(show)"}
+      {/* the dock's title stripe: the fold, then the cross-model tools */}
+      <div
+        className={`pointer-events-auto flex h-6 items-center gap-2 pl-2.5 pr-1 text-[10.5px] text-ink-secondary ${CARD_SHELL} bg-surface-head shadow-[inset_2px_0_0_#663be4,0_6px_18px_rgba(26,30,42,0.1)]`}
+      >
+        <button
+          type="button"
+          title="show or hide the model replicas"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-1.5"
+        >
+          <span className="hs-chevron" aria-hidden />
+          <span className="hs-head-title">Models</span>
         </button>
-        {active && (
-          <PinPopover content={addMenu} width={260} align="end" closeKey={boxes.length}>
-            <span title="add a box for another model of this entry" className="text-accent hover:text-accent-hover">
-              add
-            </span>
-          </PinPopover>
-        )}
         {active && (
           <span
             title="the model the others are compared against; mark another one with the ref button of its box"
-            className="max-w-[180px] truncate text-ink-muted"
+            className="flex min-w-0 items-baseline gap-1"
           >
-            reference: {referenceName ?? "none"}
+            <span className="hs-label">ref</span>
+            <span className="max-w-[150px] truncate text-ink">{referenceName ?? "none"}</span>
           </span>
         )}
+        {active && (
+          <PinPopover content={addMenu} width={260} align="end" closeKey={boxes.length}>
+            <span title="add a box for another model of this entry" className="hs-btn hs-btn-sm">
+              + add
+            </span>
+          </PinPopover>
+        )}
         {active && hotspots.length > 0 && (
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-px">
             <button
               type="button"
               title="previous hotspot"
+              aria-label="previous hotspot"
               onClick={() => stepHotspot(-1)}
-              className="leading-none text-ink-muted hover:text-ink"
+              className="hs-btn hs-btn-sm hs-btn-icon"
             >
               {"\u2039"}
             </button>
             <PinPopover content={hotspotMenu} width={260} align="end" closeKey={hotspotAt ?? -1}>
               <span
                 title="where the compared models disagree most about motion; step through them or pick one"
-                className="tabular-nums text-accent hover:text-accent-hover"
+                className="hs-btn hs-btn-sm tabular-nums"
               >
-                hotspots {hotspotAt === null ? "" : `${hotspotAt + 1}/`}
-                {hotspots.length}
+                hotspots
+                <span className="hs-unit">
+                  {hotspotAt === null ? "" : `${hotspotAt + 1}/`}
+                  {hotspots.length}
+                </span>
               </span>
             </PinPopover>
             <button
               type="button"
               title="next hotspot"
+              aria-label="next hotspot"
               onClick={() => stepHotspot(1)}
-              className="leading-none text-ink-muted hover:text-ink"
+              className="hs-btn hs-btn-sm hs-btn-icon"
             >
               {"\u203a"}
             </button>

@@ -48,7 +48,7 @@ export default function SliceControls({
           <span>slice model</span>
         </label>
         <span className="flex items-center gap-1.5">
-          <span className="text-ink-muted">normal</span>
+          <span className="hs-label">normal</span>
           {SLICE_AXES.map((a, i) => (
             <label key={a} className="flex items-center gap-1 text-ink-secondary">
               <input
@@ -64,8 +64,9 @@ export default function SliceControls({
         </span>
       </div>
       <label className="flex items-center gap-2">
-        <span className="whitespace-nowrap tabular-nums text-[10px] text-ink-muted">
-          {SLICE_AXES[axis]} = {coord == null ? "-" : `${coord.toFixed(1)} A`}
+        <span className="hs-value whitespace-nowrap text-[10px]">
+          {SLICE_AXES[axis]} = {coord == null ? "-" : coord.toFixed(1)}
+          {coord != null && <span className="hs-unit"> Å</span>}
         </span>
         <input
           type="range"

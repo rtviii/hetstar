@@ -57,15 +57,16 @@ export default function ConformerStatesPanel({
         {letters.map(({ letter, residueCount }) => (
           <SwitchButton
             key={letter}
+            value
             pressed={active === letter}
             disabled={disabled}
             title={`${residueCount} residues carry conformer ${letter}`}
             onClick={() => onChange(active === letter ? null : letter)}
           >
             <span className="flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rounded-[2px]" style={{ background: altColorCss(letter) }} />
+              <span className="hs-pip" style={{ background: altColorCss(letter) }} />
               {letter}
-              <span className="tabular-nums text-ink-muted">{residueCount}</span>
+              <span className="hs-unit tabular-nums">{residueCount}</span>
             </span>
           </SwitchButton>
         ))}

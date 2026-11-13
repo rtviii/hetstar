@@ -165,15 +165,15 @@ export default function SlicePanel({
   );
 
   if (!box || !densitySampler) {
-    return <div className="text-[11px] text-ink-muted/75">2D map: density pending</div>;
+    return <div className="hs-label">2D map: density pending</div>;
   }
 
   return (
     <div className="flex flex-col gap-1.5 text-[11px]">
       <div className="flex items-center gap-2">
-        <span className="text-ink-muted">2D map</span>
+        <span className="hs-label">2D map</span>
         <select
-          className="ml-auto rounded border border-line-strong bg-white px-1 py-0.5 focus:border-accent focus:outline-none focus:shadow-ring-accent"
+          className="hs-field ml-auto mr-5"
           value={mode}
           onChange={(e) => setMode(e.target.value as typeof mode)}
         >
@@ -183,7 +183,7 @@ export default function SlicePanel({
         </select>
       </div>
       <canvas ref={canvasRef} className="h-auto w-full rounded border border-line" onMouseMove={onMove} onMouseLeave={() => setReadout(null)} />
-      <div className="min-h-[1rem] whitespace-pre-wrap text-[10.5px] tabular-nums text-ink-muted">
+      <div className="min-h-[1rem] whitespace-pre-wrap font-mono text-[9.5px] tabular-nums text-ink-muted">
         {readout ??
           (hasMetric
             ? `${metricLabel}: ${metricDomain![0].toFixed(2)} to ${metricDomain![1].toFixed(2)}; density gray ${DENSITY_SIGMA_RANGE[0]} to ${DENSITY_SIGMA_RANGE[1]} sigma`

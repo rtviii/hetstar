@@ -3,7 +3,7 @@ import type { MouseEvent, ReactNode } from "react";
 
 import type { RepColorMode, RepQuality, RepStyle, RepType } from "../../lib/molstar/repstyle";
 import { CONFORMER_RAMP_NAMES } from "../../lib/molstar/ghost-theme";
-import { GroupLabel, HoverFlyout, SliderRow, SwitchButton, TinyText } from "./ui";
+import { GroupLabel, HoverFlyout, Segmented, SliderRow, SwitchButton, TinyText } from "./ui";
 import { ConformersIcon, DensityIcon, StyleIcon } from "./icons";
 
 // The viewer's icon tray at the canvas's top-right (positioned by the parent wrapper,
@@ -17,7 +17,7 @@ import { ConformersIcon, DensityIcon, StyleIcon } from "./icons";
 
 const REP_TYPES: { id: RepType; label: string }[] = [
   { id: "cartoon", label: "cartoon" },
-  { id: "ball-and-stick", label: "sticks&balls" },
+  { id: "ball-and-stick", label: "sticks" },
   { id: "spacefill", label: "atoms" },
 ];
 
@@ -64,11 +64,8 @@ export function TrayButton({
       disabled={disabled}
       onClick={onClick}
       onContextMenu={onContextMenu}
-      className={`flex h-6 w-6 items-center justify-center rounded border transition-colors disabled:cursor-default disabled:opacity-40 ${
-        active
-          ? "border-accent bg-accent-soft text-accent"
-          : "border-line-strong bg-white/85 text-ink-secondary hover:bg-line"
-      }`}
+      aria-pressed={active}
+      className="hs-btn h-6 w-6 p-0"
     >
       {children}
     </button>
@@ -131,13 +128,13 @@ export default function StyleTray({
     <div className="flex flex-col gap-2.5">
       <div className="flex flex-col gap-1">
         <GroupLabel>representation</GroupLabel>
-        <div className="flex items-center gap-1">
+        <Segmented label="representation">
           {REP_TYPES.map((t) => (
             <SwitchButton key={t.id} pressed={style.type === t.id} onClick={() => patch({ type: t.id })}>
               {t.label}
             </SwitchButton>
           ))}
-        </div>
+        </Segmented>
         <SliderRow
           label="scale"
           min={scale.min}
@@ -188,19 +185,19 @@ export default function StyleTray({
 
       <div className="flex flex-col gap-1 border-t border-line pt-1.5">
         <GroupLabel>model quality</GroupLabel>
-        <div className="flex items-center gap-1">
+        <Segmented label="model quality">
           {REP_QUALITIES.map((q) => (
             <SwitchButton key={q} pressed={style.quality === q} onClick={() => patch({ quality: q })}>
               {q}
             </SwitchButton>
           ))}
-        </div>
+        </Segmented>
       </div>
     </div>
   );
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-px">
       <HoverFlyout content={densityFlyout} width={300} align="end">
         <TrayButton
           active={showDensity}

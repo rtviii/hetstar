@@ -243,6 +243,375 @@
   accent-color: #663be4;
 }
 
+/* --- The look: Harbor Mono on the Prism palette -------------------------------------
+   Voices and the few drawn pieces every panel shares. A component names one of these
+   classes and never spells a font, a case or a corner of its own. They sit before the
+   utilities at the same specificity, so a utility on the same element still wins.
+
+   Label voice: Plex Mono capitals, tracked, for labels, column heads, controls and badges.
+   Names and prose stay in Plex Sans; values in Plex Mono, never capitals. */
+
+.hetstar .hs-label {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #5f616b;
+}
+
+.hetstar .hs-value {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: #1a1e2a;
+}
+
+/* a unit or a count's noun sits a step back from its number */
+
+.hetstar .hs-unit {
+  color: #9a9dab;
+}
+
+/* Controls: one button, 20 px tall. Pressed (aria-pressed) is the accent, tinted. */
+
+.hetstar .hs-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid #d0d2e0;
+  border-radius: 2px;
+  background: #ffffff;
+  color: #3d414f;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: background-color 120ms, border-color 120ms, color 120ms;
+}
+
+.hetstar .hs-btn:hover:not(:disabled) {
+  border-color: #d9cffa;
+  background: #efebfb;
+  color: #1a1e2a;
+}
+
+.hetstar .hs-btn:focus-visible {
+  outline: none;
+  border-color: #663be4;
+  box-shadow: 0 0 0 2px rgba(102, 59, 228, 0.18);
+}
+
+.hetstar .hs-btn[aria-pressed="true"] {
+  border-color: #663be4;
+  background: #f1edfd;
+  color: #5730c7;
+}
+
+.hetstar .hs-btn:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.hetstar .hs-btn-icon {
+  width: 20px;
+  padding: 0;
+}
+
+.hetstar .hs-btn-sm {
+  height: 16px;
+  padding: 0 4px;
+  font-size: 8.5px;
+}
+
+.hetstar .hs-btn-sm.hs-btn-icon {
+  width: 16px;
+  padding: 0;
+}
+
+.hetstar .hs-btn-primary {
+  border-color: #663be4;
+  background: #663be4;
+  color: #ffffff;
+}
+
+.hetstar .hs-btn-primary:hover:not(:disabled) {
+  border-color: #5730c7;
+  background: #5730c7;
+  color: #ffffff;
+}
+
+.hetstar .hs-btn-danger:hover:not(:disabled) {
+  border-color: #e5b3af;
+  background: #fbecea;
+  color: #b4231d;
+}
+
+/* a button with no box until the pointer is on it (a stripe's tools, a close cross) */
+
+.hetstar .hs-btn-quiet {
+  border-color: transparent;
+  background: transparent;
+}
+
+/* Segmented: buttons joined on one hairline. */
+
+.hetstar .hs-seg {
+  display: inline-flex;
+  flex: none;
+}
+
+.hetstar .hs-seg > .hs-btn {
+  margin-left: -1px;
+  border-radius: 0;
+}
+
+.hetstar .hs-seg > .hs-btn:first-child {
+  margin-left: 0;
+  border-top-left-radius: 2px;
+  border-bottom-left-radius: 2px;
+}
+
+.hetstar .hs-seg > .hs-btn:last-child {
+  border-top-right-radius: 2px;
+  border-bottom-right-radius: 2px;
+}
+
+.hetstar .hs-seg > .hs-btn:hover:not(:disabled),
+.hetstar .hs-seg > .hs-btn:focus-visible,
+.hetstar .hs-seg > .hs-btn[aria-pressed="true"] {
+  position: relative;
+  z-index: 1;
+}
+
+/* Fields: inputs and selects, a value in the mono. */
+
+.hetstar .hs-field {
+  height: 20px;
+  min-width: 0;
+  padding: 0 5px;
+  border: 1px solid #d0d2e0;
+  border-radius: 2px;
+  background: #ffffff;
+  color: #1a1e2a;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  line-height: 18px;
+}
+
+.hetstar select.hs-field {
+  padding: 0 2px 0 3px;
+}
+
+.hetstar .hs-field:hover:not(:disabled) {
+  border-color: #b9bccf;
+}
+
+.hetstar .hs-field:focus {
+  outline: none;
+  border-color: #663be4;
+  box-shadow: 0 0 0 2px rgba(102, 59, 228, 0.18);
+}
+
+.hetstar .hs-field:disabled {
+  opacity: 0.4;
+}
+
+/* A panel's title stripe: pale purple, a hairline under it, the accent tick at its left
+   end. Inside a card a section is this stripe and its content, with no box of its own. */
+
+.hetstar .hs-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 24px;
+  padding: 0 6px 0 10px;
+  background: #f6f4fd;
+  box-shadow: 0 1px 0 #e4dff5, inset 2px 0 0 #663be4;
+  text-align: left;
+}
+
+.hetstar button.hs-head:hover {
+  background: #efebfb;
+}
+
+.hetstar button.hs-head:focus-visible {
+  outline: none;
+  box-shadow: 0 1px 0 #e4dff5, inset 2px 0 0 #663be4, inset 0 0 0 1px #663be4;
+}
+
+.hetstar .hs-head-title {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #2b2648;
+}
+
+/* the fold mark of a stripe: points right when folded, down when open */
+
+.hetstar .hs-chevron {
+  display: inline-block;
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-right: 1.25px solid #5f616b;
+  border-bottom: 1.25px solid #5f616b;
+  transform: translateX(-1px) rotate(-45deg);
+  transition: transform 120ms;
+}
+
+.hetstar [aria-expanded="true"] > .hs-chevron {
+  transform: translateY(-1.5px) rotate(45deg);
+}
+
+/* Key/value table of an object's properties: label column in the label voice. */
+
+.hetstar .hs-kv {
+  display: grid;
+  grid-template-columns: var(--hs-kv-key, 76px) minmax(0, 1fr);
+  align-items: baseline;
+  -moz-column-gap: 8px;
+       column-gap: 8px;
+  row-gap: 3px;
+  margin: 0;
+}
+
+.hetstar .hs-kv > dt {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #5f616b;
+}
+
+.hetstar .hs-kv > dt[data-case="keep"] {
+  text-transform: none;
+}
+
+.hetstar .hs-kv > dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #1a1e2a;
+}
+
+/* A ruled table: head row on the raised ground, hairlines between rows. */
+
+.hetstar .hs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.hetstar .hs-table th {
+  padding: 3px 6px;
+  border-bottom: 1px solid #e6e7f0;
+  background: #f4f4f9;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
+  color: #5f616b;
+}
+
+.hetstar .hs-table td {
+  padding: 3px 6px;
+  border-bottom: 1px solid #e6e7f0;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  white-space: nowrap;
+  color: #1a1e2a;
+}
+
+.hetstar .hs-table tr:last-child > td {
+  border-bottom: 0;
+}
+
+.hetstar .hs-table .hs-num {
+  text-align: right;
+}
+
+/* A tag: a code or a short fact as a thing of its own (a ligand, a member count). */
+
+.hetstar .hs-tag {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+  padding: 0 4px;
+  border: 1px solid #e6e7f0;
+  border-radius: 2px;
+  background: #f4f4f9;
+  color: #3d414f;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.hetstar .hs-tag-accent {
+  border-color: #d9cffa;
+  background: #f1edfd;
+  color: #5730c7;
+}
+
+/* State: a square pip. Running blinks. */
+
+.hetstar .hs-pip {
+  display: inline-block;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+}
+
+@keyframes hs-blink {
+  0%, 100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.hetstar .hs-blink {
+  animation: hs-blink 1.6s ease-in-out infinite;
+}
+
+/* The one shell of every floating surface (tooltip, popover, flyout, popup, dock box):
+   a white sheet, one hairline, the only shadow in the viewer. */
+
+.hetstar .hs-card {
+  border: 1px solid #d0d2e0;
+  border-radius: 2px;
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(26, 30, 42, 0.1);
+}
+
 .\!container {
   width: 100% !important;
 }
@@ -387,8 +756,8 @@
   left: 0.5rem;
 }
 
-.hetstar .right-1\.5 {
-  right: 0.375rem;
+.hetstar .right-1 {
+  right: 0.25rem;
 }
 
 .hetstar .right-2 {
@@ -401,6 +770,10 @@
 
 .hetstar .top-1 {
   top: 0.25rem;
+}
+
+.hetstar .top-10 {
+  top: 2.5rem;
 }
 
 .hetstar .top-2 {
@@ -423,13 +796,12 @@
   z-index: 50;
 }
 
-.hetstar .z-\[5\] {
-  z-index: 5;
+.hetstar .z-\[2\] {
+  z-index: 2;
 }
 
-.hetstar .mx-1\.5 {
-  margin-left: 0.375rem;
-  margin-right: 0.375rem;
+.hetstar .z-\[5\] {
+  z-index: 5;
 }
 
 .hetstar .mx-auto {
@@ -437,12 +809,12 @@
   margin-right: auto;
 }
 
-.hetstar .ml-0\.5 {
-  margin-left: 0.125rem;
-}
-
 .hetstar .ml-auto {
   margin-left: auto;
+}
+
+.hetstar .mr-5 {
+  margin-right: 1.25rem;
 }
 
 .hetstar .block {
@@ -489,16 +861,16 @@
   display: none;
 }
 
+.hetstar .h-1 {
+  height: 0.25rem;
+}
+
 .hetstar .h-1\.5 {
   height: 0.375rem;
 }
 
 .hetstar .h-2 {
   height: 0.5rem;
-}
-
-.hetstar .h-2\.5 {
-  height: 0.625rem;
 }
 
 .hetstar .h-3 {
@@ -513,12 +885,20 @@
   height: 8rem;
 }
 
-.hetstar .h-5 {
-  height: 1.25rem;
-}
-
 .hetstar .h-6 {
   height: 1.5rem;
+}
+
+.hetstar .h-\[18px\] {
+  height: 18px;
+}
+
+.hetstar .h-\[22px\] {
+  height: 22px;
+}
+
+.hetstar .h-\[30px\] {
+  height: 30px;
 }
 
 .hetstar .h-auto {
@@ -541,18 +921,6 @@
   min-height: 1rem;
 }
 
-.hetstar .w-1\.5 {
-  width: 0.375rem;
-}
-
-.hetstar .w-2 {
-  width: 0.5rem;
-}
-
-.hetstar .w-2\.5 {
-  width: 0.625rem;
-}
-
 .hetstar .w-3 {
   width: 0.75rem;
 }
@@ -561,16 +929,8 @@
   width: 0.875rem;
 }
 
-.hetstar .w-36 {
-  width: 9rem;
-}
-
 .hetstar .w-40 {
   width: 10rem;
-}
-
-.hetstar .w-5 {
-  width: 1.25rem;
 }
 
 .hetstar .w-6 {
@@ -581,8 +941,8 @@
   width: 18rem;
 }
 
-.hetstar .w-80 {
-  width: 20rem;
+.hetstar .w-\[264px\] {
+  width: 264px;
 }
 
 .hetstar .w-\[300px\] {
@@ -597,8 +957,16 @@
   min-width: 0px;
 }
 
-.hetstar .max-w-\[112px\] {
-  max-width: 112px;
+.hetstar .max-w-\[150px\] {
+  max-width: 150px;
+}
+
+.hetstar .max-w-\[260px\] {
+  max-width: 260px;
+}
+
+.hetstar .max-w-\[84px\] {
+  max-width: 84px;
 }
 
 .hetstar .max-w-\[calc\(100\%-1rem\)\] {
@@ -621,6 +989,10 @@
   flex-grow: 1;
 }
 
+.hetstar .basis-full {
+  flex-basis: 100%;
+}
+
 .hetstar .origin-left {
   transform-origin: left;
 }
@@ -632,16 +1004,6 @@
 
 .hetstar .transform {
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
-}
-
-@keyframes pulse {
-  50% {
-    opacity: .5;
-  }
-}
-
-.hetstar .animate-pulse {
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 @keyframes spin {
@@ -684,10 +1046,6 @@
 
 .hetstar .resize {
   resize: both;
-}
-
-.hetstar .grid-cols-\[auto\2c 1fr\] {
-  grid-template-columns: auto 1fr;
 }
 
 .hetstar .grid-cols-\[auto_auto_1fr_auto_auto_auto\] {
@@ -823,6 +1181,10 @@
   white-space: nowrap;
 }
 
+.hetstar .whitespace-normal {
+  white-space: normal;
+}
+
 .hetstar .whitespace-nowrap {
   white-space: nowrap;
 }
@@ -840,7 +1202,7 @@
 }
 
 .hetstar .rounded {
-  border-radius: 0.25rem;
+  border-radius: 2px;
 }
 
 .hetstar .rounded-\[2px\] {
@@ -851,12 +1213,8 @@
   border-radius: 9999px;
 }
 
-.hetstar .rounded-lg {
-  border-radius: 0.5rem;
-}
-
 .hetstar .rounded-sm {
-  border-radius: 0.125rem;
+  border-radius: 1px;
 }
 
 .hetstar .border {
@@ -884,6 +1242,10 @@
   border-left-width: 1px;
 }
 
+.hetstar .border-l-2 {
+  border-left-width: 2px;
+}
+
 .hetstar .border-r {
   border-right-width: 1px;
 }
@@ -901,46 +1263,18 @@
   border-color: rgb(102 59 228 / var(--tw-border-opacity, 1));
 }
 
-.hetstar .border-accent\/30 {
-  border-color: rgb(102 59 228 / 0.3);
-}
-
-.hetstar .border-accent\/60 {
-  border-color: rgb(102 59 228 / 0.6);
-}
-
 .hetstar .border-amber-400\/70 {
   border-color: rgb(251 191 36 / 0.7);
 }
 
 .hetstar .border-line {
   --tw-border-opacity: 1;
-  border-color: rgb(234 235 244 / var(--tw-border-opacity, 1));
+  border-color: rgb(230 231 240 / var(--tw-border-opacity, 1));
 }
 
 .hetstar .border-line-strong {
   --tw-border-opacity: 1;
-  border-color: rgb(213 215 228 / var(--tw-border-opacity, 1));
-}
-
-.hetstar .border-line-strong\/50 {
-  border-color: rgb(213 215 228 / 0.5);
-}
-
-.hetstar .border-line-strong\/60 {
-  border-color: rgb(213 215 228 / 0.6);
-}
-
-.hetstar .border-line-strong\/70 {
-  border-color: rgb(213 215 228 / 0.7);
-}
-
-.hetstar .border-line\/50 {
-  border-color: rgb(234 235 244 / 0.5);
-}
-
-.hetstar .border-line\/70 {
-  border-color: rgb(234 235 244 / 0.7);
+  border-color: rgb(208 210 224 / var(--tw-border-opacity, 1));
 }
 
 .hetstar .border-t-accent {
@@ -956,10 +1290,6 @@
 .hetstar .bg-accent-soft {
   --tw-bg-opacity: 1;
   background-color: rgb(241 237 253 / var(--tw-bg-opacity, 1));
-}
-
-.hetstar .bg-accent-soft\/40 {
-  background-color: rgb(241 237 253 / 0.4);
 }
 
 .hetstar .bg-danger {
@@ -979,16 +1309,17 @@
 
 .hetstar .bg-line-strong {
   --tw-bg-opacity: 1;
-  background-color: rgb(213 215 228 / var(--tw-bg-opacity, 1));
+  background-color: rgb(208 210 224 / var(--tw-bg-opacity, 1));
+}
+
+.hetstar .bg-surface-head {
+  --tw-bg-opacity: 1;
+  background-color: rgb(246 244 253 / var(--tw-bg-opacity, 1));
 }
 
 .hetstar .bg-surface-muted {
   --tw-bg-opacity: 1;
-  background-color: rgb(242 243 248 / var(--tw-bg-opacity, 1));
-}
-
-.hetstar .bg-surface-muted\/60 {
-  background-color: rgb(242 243 248 / 0.6);
+  background-color: rgb(244 244 249 / var(--tw-bg-opacity, 1));
 }
 
 .hetstar .bg-transparent {
@@ -1004,20 +1335,12 @@
   background-color: rgb(255 255 255 / 0.4);
 }
 
-.hetstar .bg-white\/60 {
-  background-color: rgb(255 255 255 / 0.6);
+.hetstar .bg-white\/90 {
+  background-color: rgb(255 255 255 / 0.9);
 }
 
-.hetstar .bg-white\/70 {
-  background-color: rgb(255 255 255 / 0.7);
-}
-
-.hetstar .bg-white\/80 {
-  background-color: rgb(255 255 255 / 0.8);
-}
-
-.hetstar .bg-white\/85 {
-  background-color: rgb(255 255 255 / 0.85);
+.hetstar .p-0 {
+  padding: 0px;
 }
 
 .hetstar .p-1\.5 {
@@ -1026,15 +1349,6 @@
 
 .hetstar .p-2 {
   padding: 0.5rem;
-}
-
-.hetstar .p-3 {
-  padding: 0.75rem;
-}
-
-.hetstar .px-0\.5 {
-  padding-left: 0.125rem;
-  padding-right: 0.125rem;
 }
 
 .hetstar .px-1 {
@@ -1055,11 +1369,6 @@
 .hetstar .px-2\.5 {
   padding-left: 0.625rem;
   padding-right: 0.625rem;
-}
-
-.hetstar .px-3 {
-  padding-left: 0.75rem;
-  padding-right: 0.75rem;
 }
 
 .hetstar .px-\[3px\] {
@@ -1092,17 +1401,33 @@
   padding-bottom: 2px;
 }
 
-.hetstar .py-px {
-  padding-top: 1px;
-  padding-bottom: 1px;
+.hetstar .py-\[3px\] {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+.hetstar .pl-1\.5 {
+  padding-left: 0.375rem;
+}
+
+.hetstar .pl-2 {
+  padding-left: 0.5rem;
+}
+
+.hetstar .pl-2\.5 {
+  padding-left: 0.625rem;
+}
+
+.hetstar .pr-0\.5 {
+  padding-right: 0.125rem;
 }
 
 .hetstar .pr-1 {
   padding-right: 0.25rem;
 }
 
-.hetstar .pr-2\.5 {
-  padding-right: 0.625rem;
+.hetstar .pr-1\.5 {
+  padding-right: 0.375rem;
 }
 
 .hetstar .pt-1 {
@@ -1153,8 +1478,8 @@
   font-size: 11px;
 }
 
-.hetstar .text-\[12px\] {
-  font-size: 12px;
+.hetstar .text-\[12\.5px\] {
+  font-size: 12.5px;
 }
 
 .hetstar .text-\[7\.5px\] {
@@ -1244,13 +1569,14 @@
   letter-spacing: 0.025em;
 }
 
-.hetstar .tracking-wider {
-  letter-spacing: 0.05em;
-}
-
 .hetstar .text-accent {
   --tw-text-opacity: 1;
   color: rgb(102 59 228 / var(--tw-text-opacity, 1));
+}
+
+.hetstar .text-accent-hover {
+  --tw-text-opacity: 1;
+  color: rgb(87 48 199 / var(--tw-text-opacity, 1));
 }
 
 .hetstar .text-accent\/60 {
@@ -1267,6 +1593,11 @@
   color: rgb(26 30 42 / var(--tw-text-opacity, 1));
 }
 
+.hetstar .text-ink-faint {
+  --tw-text-opacity: 1;
+  color: rgb(154 157 171 / var(--tw-text-opacity, 1));
+}
+
 .hetstar .text-ink-muted {
   --tw-text-opacity: 1;
   color: rgb(95 97 107 / var(--tw-text-opacity, 1));
@@ -1274,22 +1605,6 @@
 
 .hetstar .text-ink-muted\/40 {
   color: rgb(95 97 107 / 0.4);
-}
-
-.hetstar .text-ink-muted\/60 {
-  color: rgb(95 97 107 / 0.6);
-}
-
-.hetstar .text-ink-muted\/70 {
-  color: rgb(95 97 107 / 0.7);
-}
-
-.hetstar .text-ink-muted\/75 {
-  color: rgb(95 97 107 / 0.75);
-}
-
-.hetstar .text-ink-muted\/80 {
-  color: rgb(95 97 107 / 0.8);
 }
 
 .hetstar .text-ink-secondary {
@@ -1337,9 +1652,15 @@
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
-.hetstar .shadow-sm {
-  --tw-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --tw-shadow-colored: 0 1px 2px 0 var(--tw-shadow-color);
+.hetstar .shadow-\[inset_2px_0_0_\#663be4\2c 0_6px_18px_rgba\(26\2c 30\2c 42\2c 0\.1\)\] {
+  --tw-shadow: inset 2px 0 0 #663be4,0 6px 18px rgba(26,30,42,0.1);
+  --tw-shadow-colored: inset 2px 0 0 var(--tw-shadow-color), 0 6px 18px var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+
+.hetstar .shadow-\[inset_2px_0_0_\#663be4\] {
+  --tw-shadow: inset 2px 0 0 #663be4;
+  --tw-shadow-colored: inset 2px 0 0 var(--tw-shadow-color);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
@@ -1351,11 +1672,6 @@
   --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
   --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(3px + var(--tw-ring-offset-width)) var(--tw-ring-color);
   box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
-}
-
-.hetstar .blur {
-  --tw-blur: blur(8px);
-  filter: var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow);
 }
 
 .hetstar .grayscale {
@@ -1378,12 +1694,6 @@
   backdrop-filter: var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);
 }
 
-.hetstar .backdrop-blur-sm {
-  --tw-backdrop-blur: blur(4px);
-  -webkit-backdrop-filter: var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);
-  backdrop-filter: var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);
-}
-
 .hetstar .transition-colors {
   transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
@@ -1394,20 +1704,18 @@
   will-change: transform;
 }
 
-.hetstar .placeholder\:text-ink-muted\/60::-moz-placeholder {
-  color: rgb(95 97 107 / 0.6);
+.hetstar .last\:border-b-0:last-child {
+  border-bottom-width: 0px;
 }
 
-.hetstar .placeholder\:text-ink-muted\/60::placeholder {
-  color: rgb(95 97 107 / 0.6);
+.hetstar .hover\:border-accent:hover {
+  --tw-border-opacity: 1;
+  border-color: rgb(102 59 228 / var(--tw-border-opacity, 1));
 }
 
-.hetstar .hover\:border-accent\/40:hover {
-  border-color: rgb(102 59 228 / 0.4);
-}
-
-.hetstar .hover\:border-accent\/50:hover {
-  border-color: rgb(102 59 228 / 0.5);
+.hetstar .hover\:border-accent-line:hover {
+  --tw-border-opacity: 1;
+  border-color: rgb(217 207 250 / var(--tw-border-opacity, 1));
 }
 
 .hetstar .hover\:border-danger:hover {
@@ -1415,30 +1723,18 @@
   border-color: rgb(180 35 29 / var(--tw-border-opacity, 1));
 }
 
-.hetstar .hover\:border-danger\/50:hover {
-  border-color: rgb(180 35 29 / 0.5);
-}
-
 .hetstar .hover\:bg-accent-soft:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(241 237 253 / var(--tw-bg-opacity, 1));
 }
 
-.hetstar .hover\:bg-accent\/30:hover {
-  background-color: rgb(102 59 228 / 0.3);
+.hetstar .hover\:bg-accent\/40:hover {
+  background-color: rgb(102 59 228 / 0.4);
 }
 
-.hetstar .hover\:bg-line:hover {
+.hetstar .hover\:bg-surface-hover:hover {
   --tw-bg-opacity: 1;
-  background-color: rgb(234 235 244 / var(--tw-bg-opacity, 1));
-}
-
-.hetstar .hover\:bg-line\/50:hover {
-  background-color: rgb(234 235 244 / 0.5);
-}
-
-.hetstar .hover\:bg-line\/70:hover {
-  background-color: rgb(234 235 244 / 0.7);
+  background-color: rgb(239 235 251 / var(--tw-bg-opacity, 1));
 }
 
 .hetstar .hover\:text-accent:hover {
@@ -1446,24 +1742,9 @@
   color: rgb(102 59 228 / var(--tw-text-opacity, 1));
 }
 
-.hetstar .hover\:text-accent-hover:hover {
-  --tw-text-opacity: 1;
-  color: rgb(87 48 199 / var(--tw-text-opacity, 1));
-}
-
 .hetstar .hover\:text-danger:hover {
   --tw-text-opacity: 1;
   color: rgb(180 35 29 / var(--tw-text-opacity, 1));
-}
-
-.hetstar .hover\:text-ink:hover {
-  --tw-text-opacity: 1;
-  color: rgb(26 30 42 / var(--tw-text-opacity, 1));
-}
-
-.hetstar .hover\:text-ink-secondary:hover {
-  --tw-text-opacity: 1;
-  color: rgb(61 65 79 / var(--tw-text-opacity, 1));
 }
 
 .hetstar .hover\:underline:hover {
@@ -1478,15 +1759,9 @@
   opacity: 0.8;
 }
 
-.hetstar .focus\:border-accent:focus {
-  --tw-border-opacity: 1;
-  border-color: rgb(102 59 228 / var(--tw-border-opacity, 1));
-}
-
-.hetstar .focus\:shadow-ring-accent:focus {
-  --tw-shadow: 0 0 0 3px rgba(102, 59, 228, 0.2);
-  --tw-shadow-colored: 0 0 0 3px var(--tw-shadow-color);
-  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+.hetstar .focus\:bg-surface-hover:focus {
+  --tw-bg-opacity: 1;
+  background-color: rgb(239 235 251 / var(--tw-bg-opacity, 1));
 }
 
 .hetstar .focus\:outline-none:focus {

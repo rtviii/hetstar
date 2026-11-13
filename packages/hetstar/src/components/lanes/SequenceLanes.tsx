@@ -5,12 +5,13 @@ import { positionOf, refAt, residueKey } from "@dynamic-pdb/hetkit/model";
 import type { AtomTable, ChainSequence, ResidueRef, SecondarySpan, SequenceModel } from "@dynamic-pdb/hetkit/model";
 import type { AnnotationsBySource } from "../../lib/annotations/pdbe";
 import type { ConformerPlan, ResidueRange } from "../../lib/molstar/conformers";
-import { PinPopover } from "../compare/ui";
+import { PinPopover, Segmented } from "../compare/ui";
 import { defaultEnabledLanes, LANE_MODULES } from "./registry";
 import type { LaneContext, LaneMetric, LaneModule, LaneView, PositionSpan } from "./types";
 
-// The sequence lanes host: one chain at a time, a ruler in author numbering, and one
-// row per enabled lane module, all sharing the chain's positions as x. Fitted to its
+// The sequence lanes host: a title stripe (the chain, its facts, the tools), a ruler in
+// author numbering, one ruled row per enabled lane module, all sharing the chain's
+// positions as x, and a readout line under them. Fitted to its
 // column until zoomed (buttons or trackpad pinch), then it scrolls sideways with the
 // row labels staying put. Hover and selection are painted as columns over the whole
 // board, so a column read down the rows is one residue.
@@ -20,10 +21,10 @@ import type { LaneContext, LaneMetric, LaneModule, LaneView, PositionSpan } from
 // speak), and every 3D pick arrives the same way and is placed by positionOf. Nothing
 // in the lanes knows about Mol*.
 
-const GUTTER_L = 124; // fits the longest metric label ("Density support delta") at the row-label style
+const GUTTER_L = 142; // fits the longest metric label ("Density support delta") in the label voice, with its padding
 const GUTTER_R = 12;
 const RULER_H = 20;
-const ROOT_GAP = 4; // the root column's gap-1
+const ROOT_GAP = 0; // the root column has no gap: stripe, board and readout butt against each other
 const ZOOMS = [5, 8, 11, 14, 18, 24];
 const MAX_ZOOM = ZOOMS[ZOOMS.length - 1];
 const PINCH = 100;
@@ -124,8 +125,11 @@ function Row({
   className?: string;
 }) {
   return (
-    <div className={`grid items-center ${className ?? ""}`} style={{ gridTemplateColumns: "var(--gl) var(--lane) var(--gr)" }}>
-      <span className="sticky left-0 z-10 flex h-full items-center justify-end gap-1 whitespace-nowrap bg-white pr-2.5 font-mono text-[8.5px] font-semibold uppercase tracking-wider text-ink-secondary">
+    <div
+      className={`grid items-center border-b border-line ${className ?? ""}`}
+      style={{ gridTemplateColumns: "var(--gl) var(--lane) var(--gr)" }}
+    >
+      <span className="hs-label sticky left-0 z-10 flex h-full items-center justify-between gap-1 border-r border-line bg-white pl-2.5 pr-1.5 text-[8.5px]">
         {label}
         {labelExtra}
       </span>
@@ -175,29 +179,38 @@ function LanesDrawer({
   const laneRow = (m: LaneModule) => {
     const why = ctx ? m.unavailable(ctx) : "load a model";
     return (
-      <label key={m.id} title={m.description} className={`flex items-baseline gap-1.5 ${why ? "opacity-50" : ""}`}>
+      <label key={m.id} title={m.description} className={`flex items-center gap-1.5 ${why ? "opacity-50" : ""}`}>
         <input type="checkbox" checked={enabled.has(m.id)} disabled={!!why} onChange={() => onToggle(m.id)} />
         <span className="text-ink-secondary">{m.label}</span>
-        {why && <span className="truncate text-[9.5px] text-ink-muted/75">{why}</span>}
+        {why && <span className="truncate text-[9.5px] text-ink-muted">{why}</span>}
       </label>
     );
   };
   return (
     <div className="flex flex-col gap-2 text-[10.5px]">
       <div className="flex flex-col gap-1">
-        <div className="text-[9.5px] font-medium uppercase tracking-wide text-ink-muted">Lanes</div>
+        <div className="hs-label">Lanes</div>
         {LANE_MODULES.map(laneRow)}
       </div>
       <div className="flex flex-col gap-1 border-t border-line pt-1.5">
-        <div className="text-[9.5px] font-medium uppercase tracking-wide text-ink-muted">Metrics</div>
+        <div className="hs-label">Metrics</div>
         {metricLanes.map(laneRow)}
       </div>
     </div>
   );
 }
 
-// Compact per-chain description above the board: what this chain IS (entity description
-// when the source file carries _entity) plus coverage and heterogeneity aggregates.
+// The chain's facts on the title stripe, as label/value pairs: what this chain IS (entity
+// description when the source file carries _entity) plus coverage and heterogeneity.
+function Stat({ label, title, children }: { label: string; title?: string; children: ReactNode }) {
+  return (
+    <span className="flex items-baseline gap-1" title={title}>
+      <span className="hs-label text-[8.5px]">{label}</span>
+      <span className="hs-value text-[10px]">{children}</span>
+    </span>
+  );
+}
+
 const ChainHeader = memo(function ChainHeader({
   chain,
   aTable,
@@ -233,20 +246,29 @@ const ChainHeader = memo(function ChainHeader({
   }, [chain, aTable, confPlan]);
 
   return (
-    <div className="flex shrink-0 flex-wrap items-baseline gap-x-2.5 gap-y-0.5 text-[10.5px] tabular-nums text-ink-muted">
-      <span className="font-medium text-ink-secondary">Chain {chain.chain}</span>
-      {chain.entityDescription && <span className="text-ink-secondary">{chain.entityDescription}</span>}
-      <span>
-        {chain.length} residues ({stats.modeled} modeled{stats.gaps > 0 ? `, ${stats.gaps} unmodeled` : ""})
-      </span>
-      {stats.split > 0 && (
-        <span>
-          {stats.split} with alternates ({Math.round((100 * stats.split) / Math.max(1, stats.modeled))}%)
+    <>
+      {chain.entityDescription && (
+        <span className="min-w-0 max-w-[260px] truncate text-[10.5px] text-ink-secondary" title={chain.entityDescription}>
+          {chain.entityDescription}
         </span>
       )}
-      {stats.meanB != null && <span>mean B {stats.meanB.toFixed(1)}</span>}
-      <span>{chain.source === "poly_seq_scheme" ? "SEQRES framing" : "observed residues only"}</span>
-    </div>
+      <Stat label="res" title={`${stats.modeled} modeled of ${chain.length}`}>
+        {chain.length}
+      </Stat>
+      {stats.gaps > 0 && <Stat label="unmodeled">{stats.gaps}</Stat>}
+      {stats.split > 0 && (
+        <Stat label="alt" title="residues with alternate conformers">
+          {stats.split}
+          <span className="hs-unit"> {Math.round((100 * stats.split) / Math.max(1, stats.modeled))}%</span>
+        </Stat>
+      )}
+      {stats.meanB != null && <Stat label="mean B">{stats.meanB.toFixed(1)}</Stat>}
+      {chain.source !== "poly_seq_scheme" && (
+        <span className="hs-tag" title="no sequence record in the source file: observed residues only">
+          observed only
+        </span>
+      )}
+    </>
   );
 });
 
@@ -263,7 +285,7 @@ export default function SequenceLanes({
   onHover,
   onSelect,
   onContext,
-  leading,
+  selectionChip,
   onNaturalHeight,
 }: {
   model: SequenceModel | null;
@@ -287,9 +309,9 @@ export default function SequenceLanes({
   onSelect: (range: ResidueRange, opts?: { additive?: boolean; toggle?: boolean }) => void;
   /** right click, always fired: the residue under the cursor or null — the host decides */
   onContext?: (anchor: { x: number; y: number }, ref: ResidueRef | null) => void;
-  /** rendered at the left of the toolbar (the section label, the selection chip) */
-  leading?: ReactNode;
-  /** the height the lanes would take without scrolling (toolbar, header, board, readout),
+  /** the current selection as a chip with its clear cross, shown among the stripe's tools */
+  selectionChip?: ReactNode;
+  /** the height the lanes would take without scrolling (stripe, board, readout),
    * reported whenever it changes, so the host can size the strip to the enabled lanes */
   onNaturalHeight?: (px: number) => void;
 }) {
@@ -604,77 +626,68 @@ export default function SequenceLanes({
   } as CSSProperties;
 
   return (
-    <div ref={setRootNode} className="flex h-full min-h-0 min-w-0 flex-col gap-1">
-      <div className="flex shrink-0 flex-wrap items-center gap-2 text-[11px]">
-        {leading}
+    <div ref={setRootNode} className="flex h-full min-h-0 min-w-0 flex-col">
+      <div className="hs-head flex-wrap gap-x-2.5 gap-y-1 py-[3px]">
+        <span className="hs-head-title">Sequence</span>
         {model && chain && (
           <>
-            <select
-              className="rounded border border-line-strong bg-white px-1 py-0.5 font-mono focus:border-accent focus:outline-none focus:shadow-ring-accent"
-              value={chain.chain}
-              onChange={(e) => setActiveChain(e.target.value)}
-              aria-label="chain"
-            >
+            <select className="hs-field" value={chain.chain} onChange={(e) => setActiveChain(e.target.value)} aria-label="chain">
               {model.chains.map((c) => (
                 <option key={c.chain} value={c.chain}>
-                  Chain {c.chain} · {c.length} residues{c.entityId ? ` · entity ${c.entityId}` : ""}
+                  Chain {c.chain} · {c.length}
+                  {c.entityId ? ` · entity ${c.entityId}` : ""}
                 </option>
               ))}
             </select>
-            <span className="inline-flex overflow-hidden rounded border border-line-strong bg-white" role="group" aria-label="zoom">
-              <button type="button" className="px-1.5 py-0.5 text-ink-secondary hover:bg-accent-soft disabled:opacity-40" onClick={zoomOut} disabled={zoom === null} aria-label="zoom out">
-                &minus;
-              </button>
-              <button
-                type="button"
-                className={`border-l border-line-strong px-1.5 py-0.5 hover:bg-accent-soft ${zoom === null ? "bg-accent-soft text-accent" : "text-ink-secondary"}`}
-                onClick={() => setZoom(null)}
+            <ChainHeader chain={chain} aTable={aTable} confPlan={confPlan} />
+            <span className="ml-auto flex flex-wrap items-center gap-1.5">
+              {selectionChip}
+              <label className="flex items-center gap-1">
+                <span className="hs-label">Color</span>
+                <select className="hs-field" value={colorById} onChange={(e) => setColorById(e.target.value)} aria-label="color residues by">
+                  <option value="none">None</option>
+                  {metricLanes.map((m) => (
+                    <option key={m.id} value={m.id.replace(/^metric:/, "")}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <PinPopover
+                content={<LanesDrawer ctx={ctx} metricLanes={metricLanes} enabled={enabled} onToggle={toggleLane} />}
+                width={224}
+                align="end"
               >
-                fit
-              </button>
-              <button
-                type="button"
-                className="border-l border-line-strong px-1.5 py-0.5 text-ink-secondary hover:bg-accent-soft disabled:opacity-40"
-                onClick={zoomIn}
-                disabled={zoom !== null && zoom >= MAX_ZOOM}
-                aria-label="zoom in"
-              >
-                +
-              </button>
+                <span className="hs-btn" title="choose which lanes are shown">
+                  Lanes
+                  <span className="hs-unit">{lanes.length}</span>
+                </span>
+              </PinPopover>
+              <Segmented label="zoom">
+                <button type="button" className="hs-btn hs-btn-icon" onClick={zoomOut} disabled={zoom === null} aria-label="zoom out">
+                  &minus;
+                </button>
+                <button type="button" className="hs-btn" aria-pressed={zoom === null} onClick={() => setZoom(null)}>
+                  fit
+                </button>
+                <button
+                  type="button"
+                  className="hs-btn hs-btn-icon"
+                  onClick={zoomIn}
+                  disabled={zoom !== null && zoom >= MAX_ZOOM}
+                  aria-label="zoom in"
+                >
+                  +
+                </button>
+              </Segmented>
             </span>
-            <PinPopover
-              content={<LanesDrawer ctx={ctx} metricLanes={metricLanes} enabled={enabled} onToggle={toggleLane} />}
-              width={224}
-            >
-              <span className="rounded border border-line-strong bg-white px-1.5 py-0.5 text-ink-secondary hover:bg-accent-soft">
-                Lanes ({lanes.length})
-              </span>
-            </PinPopover>
-            <label className="flex items-center gap-1 text-ink-muted">
-              Color by
-              <select
-                className="rounded border border-line-strong bg-white px-1 py-0.5 font-mono focus:border-accent focus:outline-none focus:shadow-ring-accent"
-                value={colorById}
-                onChange={(e) => setColorById(e.target.value)}
-                aria-label="color residues by"
-              >
-                <option value="none">None</option>
-                {metricLanes.map((m) => (
-                  <option key={m.id} value={m.id.replace(/^metric:/, "")}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            </label>
           </>
         )}
       </div>
 
-      {chain && <ChainHeader chain={chain} aTable={aTable} confPlan={confPlan} />}
-
       {!model || !chain || !ctx ? (
-        <div className="text-[11px] text-ink-muted/75">
-          {model && model.chains.length === 0 ? "no polymer chain found in the model" : "sequence lanes: load a model"}
+        <div className="px-2.5 py-2 text-[10.5px] text-ink-muted">
+          {model && model.chains.length === 0 ? "No polymer chain found in the model." : "Load a model to see its sequence lanes."}
         </div>
       ) : (
         <div
@@ -688,13 +701,13 @@ export default function SequenceLanes({
           onPointerLeave={onPointerLeave}
           onContextMenu={onContextMenu}
         >
-          <div ref={setBoardNode} className="relative flex flex-col gap-[2px]" style={boardStyle}>
+          <div ref={setBoardNode} className="relative flex flex-col" style={boardStyle}>
             <Row label="" height={RULER_H} trackRef={setLaneNode} plain className="sticky top-0 z-20 bg-white">
               <div className="absolute inset-x-0 bottom-0 border-b border-line-strong" />
               {ticks.map((t) => (
                 <span
                   key={t.pos}
-                  className="absolute bottom-0 -translate-x-1/2 font-mono text-[9px] tabular-nums text-ink-muted"
+                  className="absolute bottom-0 -translate-x-1/2 font-mono text-[8.5px] tabular-nums text-ink-muted"
                   style={{ left: `${((t.pos - 0.5) / length) * 100}%` }}
                 >
                   {t.label && <span className="absolute bottom-[5px] -translate-x-1/2">{t.label}</span>}
@@ -713,7 +726,7 @@ export default function SequenceLanes({
                       title={expandedLanes.has(m.id) ? "collapse to one row" : "expand into per-item rows"}
                       onClick={() => toggleExpand(m.id)}
                       onPointerDown={(e) => e.stopPropagation()}
-                      className="rounded border border-line-strong bg-white px-0.5 leading-none text-ink-secondary hover:bg-accent-soft"
+                      className="hs-btn hs-btn-sm hs-btn-icon"
                     >
                       {expandedLanes.has(m.id) ? "−" : "+"}
                     </button>
@@ -743,11 +756,12 @@ export default function SequenceLanes({
         </div>
       )}
 
-      <div className="min-h-[1rem] shrink-0 text-[10.5px] tabular-nums text-ink-muted">
-        {readout ??
-          (chain
-            ? `chain ${chain.chain}: ${chain.length} residues${chain.source === "atom_site" ? " (observed residues; no sequence record in the source file)" : ""} — click a residue to select, drag for a range, click a feature for its span; pinch or +/- to zoom`
-            : "")}
+      <div className="flex h-[18px] shrink-0 items-center overflow-hidden whitespace-nowrap px-2.5 font-mono text-[9.5px] tabular-nums">
+        {readout ? (
+          <span className="truncate text-ink-secondary">{readout}</span>
+        ) : chain ? (
+          <span className="truncate text-ink-faint">click: select · drag: range · shift: add · click a feature: its span · pinch or +/-: zoom</span>
+        ) : null}
       </div>
     </div>
   );

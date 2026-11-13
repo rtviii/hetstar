@@ -18,27 +18,129 @@ import {
 // inside this element rather than the viewport. Unset, the viewport is the box.
 export const CardBoundsContext = createContext<RefObject<HTMLElement | null> | null>(null);
 
-// Shared UI vocabulary for the viewer: small, compact, austere. Whites and the Dynamic
-// PDB grays; the purple accent only on pressed state, links, focus and progress. No
-// component library.
+// Shared UI vocabulary for the viewer, in the Harbor Mono look (tailwind.config.ts,
+// styles.css hs-*): labels, controls and badges in Plex Mono capitals; names and prose in
+// Plex Sans; values in Plex Mono. 2 px corners, no shadow but the floating card's, and one
+// box deep: inside a card a section is its title stripe and its content. Purple only on the
+// stripe's tick, pressed state, links, focus and progress. No component library.
 
+/** a label: a field's name, a column head, a section name inside a flyout */
 export function SectionLabel({ children }: { children: ReactNode }) {
-  return <span className="block text-[11px] font-medium uppercase tracking-wider text-ink-muted">{children}</span>;
+  return <span className="hs-label block">{children}</span>;
 }
 
 /** the flyout/popup section heading (one shared definition; was copied per panel) */
 export function GroupLabel({ children }: { children: ReactNode }) {
-  return <span className="text-[10px] font-medium uppercase tracking-wider text-ink-muted/80">{children}</span>;
+  return <span className="hs-label">{children}</span>;
 }
 
-// The one card shell for every ephemeral surface (tooltip, popover, flyout, popup):
-// translucent white over a backdrop blur, soft border, small shadow — the tubulinxyz
-// treatment on the DPDB grays.
-export const CARD_SHELL =
-  "rounded-lg border border-line-strong/60 bg-white/85 backdrop-blur-sm shadow-sm";
+// The one card shell for every floating surface (tooltip, popover, flyout, popup, dock
+// box): a white sheet, one hairline, the viewer's only shadow (styles.css .hs-card).
+export const CARD_SHELL = "hs-card";
 
 export function TinyText({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={`text-[10.5px] leading-snug text-ink-muted/75 ${className ?? ""}`}>{children}</div>;
+  return <div className={`text-[10px] leading-snug text-ink-muted ${className ?? ""}`}>{children}</div>;
+}
+
+/** a number with its unit a step back: "1.80 Å", "293 K", "306 residues" */
+export function Num({ children, unit }: { children: ReactNode; unit?: string }) {
+  return (
+    <span className="hs-value">
+      {children}
+      {unit && <span className="hs-unit"> {unit}</span>}
+    </span>
+  );
+}
+
+function readFlag(key: string | undefined, fallback: boolean): boolean {
+  if (!key) return fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : raw === "1";
+  } catch {
+    return fallback;
+  }
+}
+
+function writeFlag(key: string | undefined, value: boolean) {
+  if (!key) return;
+  try {
+    localStorage.setItem(key, value ? "1" : "0");
+  } catch {
+    /* no storage: the flag lives for the session */
+  }
+}
+
+/** an on/off flag kept in localStorage under `key` (read after mount, so SSR matches) */
+export function useStoredFlag(key: string | undefined, fallback: boolean): [boolean, (next: boolean) => void] {
+  const [value, setValue] = useState(fallback);
+  useEffect(() => setValue(readFlag(key, fallback)), [key, fallback]);
+  const set = useCallback(
+    (next: boolean) => {
+      setValue(next);
+      writeFlag(key, next);
+    },
+    [key],
+  );
+  return [value, set];
+}
+
+// A section of a panel: its title stripe, which folds it, and its content. No box of its
+// own (one box deep). Folded, the stripe can carry a one-line summary of what is inside,
+// so the reader opens only what they need. `storageKey` keeps the fold across visits.
+export function Section({
+  title,
+  count,
+  summary,
+  defaultOpen = true,
+  storageKey,
+  flush,
+  children,
+}: {
+  title: string;
+  /** a count beside the title (models, ligands) */
+  count?: number;
+  /** shown at the stripe's right end while folded */
+  summary?: ReactNode;
+  defaultOpen?: boolean;
+  storageKey?: string;
+  /** no padding around the content (a table that runs edge to edge) */
+  flush?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useStoredFlag(storageKey, defaultOpen);
+  return (
+    <section className="flex min-w-0 flex-col">
+      <button type="button" className="hs-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="hs-chevron" aria-hidden />
+        <span className="hs-head-title">{title}</span>
+        {count != null && <span className="hs-value text-[9.5px] text-ink-muted">{count}</span>}
+        {!open && summary && <span className="ml-auto min-w-0 truncate text-[10px] text-ink-muted">{summary}</span>}
+      </button>
+      {open && <div className={flush ? "min-w-0" : "min-w-0 px-2.5 py-2"}>{children}</div>}
+    </section>
+  );
+}
+
+// Explanatory prose behind a "?" toggle: there for the reader who wants the definition,
+// out of the way of the one who knows it.
+export function Help({ children, label = "what is this" }: { children: ReactNode; label?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        className="hs-btn hs-btn-sm hs-btn-icon"
+        aria-pressed={open}
+        aria-label={label}
+        title={label}
+        onClick={() => setOpen((v) => !v)}
+      >
+        ?
+      </button>
+      {open && <TinyText className="basis-full">{children}</TinyText>}
+    </>
+  );
 }
 
 /** The one loading spinner (entry chip, viewer overlay). Size via className (default 12px). */
@@ -70,7 +172,7 @@ export function IconButton({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="flex h-5 w-5 items-center justify-center rounded border border-line-strong bg-white/70 text-ink-secondary transition-colors hover:bg-line/70 disabled:cursor-default disabled:opacity-40"
+      className="hs-btn hs-btn-icon"
     >
       {children}
     </button>
@@ -130,7 +232,7 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
       {children}
       {pos && (
         <div
-          className={`pointer-events-none fixed z-50 w-72 p-2 text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary ${CARD_SHELL}`}
+          className={`pointer-events-none fixed z-50 w-72 p-2 font-sans text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary ${CARD_SHELL}`}
           style={{ left: pos.x, top: pos.above ? undefined : pos.y, bottom: pos.above ? window.innerHeight - pos.y : undefined }}
         >
           {content}
@@ -270,7 +372,7 @@ export function PinPopover({
       {pos && (
         <div
           ref={cardRef}
-          className={`fixed z-50 cursor-auto select-text overflow-y-auto p-2 text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary ${CARD_SHELL}`}
+          className={`fixed z-50 cursor-auto select-text overflow-y-auto p-2 font-sans text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary ${CARD_SHELL}`}
           style={style}
         >
           {content}
@@ -357,7 +459,7 @@ export function HoverFlyout({
       {pos && (
         <div
           ref={cardRef}
-          className={`fixed z-50 cursor-auto select-text overflow-y-auto p-2 text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary ${CARD_SHELL}`}
+          className={`fixed z-50 cursor-auto select-text overflow-y-auto p-2 font-sans text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary ${CARD_SHELL}`}
           style={style}
         >
           {content}
@@ -372,12 +474,15 @@ export function SwitchButton({
   disabled,
   title,
   onClick,
+  value,
   children,
 }: {
   pressed: boolean;
   disabled?: boolean;
   title?: string;
   onClick: () => void;
+  /** the button shows a value (a state id, an altloc letter), which keeps its own case */
+  value?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -387,14 +492,19 @@ export function SwitchButton({
       disabled={disabled}
       title={title}
       onClick={onClick}
-      className={`rounded border px-1 py-px text-[10.5px] leading-tight transition-colors disabled:cursor-default disabled:opacity-40 ${
-        pressed
-          ? "border-accent bg-accent-soft text-accent"
-          : "border-line-strong/70 bg-white/70 text-ink-secondary hover:bg-line/70"
-      }`}
+      className={`hs-btn ${value ? "normal-case tracking-normal text-[10px]" : ""}`}
     >
       {children}
     </button>
+  );
+}
+
+/** buttons joined into one control: a choice among a few (representation, quality, zoom) */
+export function Segmented({ children, label }: { children: ReactNode; label?: string }) {
+  return (
+    <span className="hs-seg" role="group" aria-label={label}>
+      {children}
+    </span>
   );
 }
 
@@ -421,7 +531,7 @@ export function SliderRow({
 }) {
   return (
     <label className="flex items-center gap-2">
-      <span className="whitespace-nowrap text-[10px] text-ink-muted">{label}</span>
+      <span className="hs-label">{label}</span>
       <input
         type="range"
         className="min-w-0 flex-1"
@@ -433,7 +543,7 @@ export function SliderRow({
         onChange={(e) => onChange(Number(e.target.value))}
       />
       {display != null && (
-        <span className="whitespace-nowrap text-right text-[10px] tabular-nums text-ink-muted">{display}</span>
+        <span className="hs-value whitespace-nowrap text-right text-[10px] text-ink-secondary">{display}</span>
       )}
     </label>
   );
