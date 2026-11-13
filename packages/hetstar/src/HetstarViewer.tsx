@@ -31,7 +31,6 @@ import {
   NO_HYDROGENS,
   reprSpecForRole,
   SELREP_BALLSTICK_SIZE,
-  SELREP_SPACEFILL_SIZE,
   type CompSplit,
   type RepStyle,
   type RepType,
@@ -55,10 +54,10 @@ import {
   buildAtomQuery,
   buildResidueQuery,
   buildWatersQuery,
-  exceptExpression,
   executeQuery,
   mergeExpressions,
   residueLoci,
+  selectionExpression,
 } from "./lib/molstar/queries";
 import { addDistanceMeasurement, clearMeasurements, measurementCount } from "./lib/molstar/measurements";
 import { bondKey, computeBonds, isWaterEnd, type BondEndInfo, type BondPair } from "./lib/molstar/interactions";
@@ -90,13 +89,19 @@ import { dynamicpdbPreset } from "./presets/dynamicpdb";
 import type { HetstarPreset } from "./presets/types";
 import BookmarkTray from "./components/compare/BookmarkTray";
 import { CARD_SHELL, CardBoundsContext, Spinner } from "./components/compare/ui";
+import ModelsSwitchboard, { type SwitchboardOptions } from "./components/switchboard/ModelsSwitchboard";
+import type { HoverTarget } from "./components/switchboard/SwitchboardBox";
+import { useModelBundles } from "./hooks/useModelBundles";
+import { createEmitter } from "./lib/lab/emitter";
+import { bundleFromText, fetchModelText } from "./lib/lab/model-bundle";
+import { syncSelRepOverlays, type SelRepOverlay } from "./lib/molstar/selrep";
 import SequenceLanes from "./components/lanes/SequenceLanes";
 import { makeMetricLane } from "./components/lanes/PlotLanes";
 import type { LaneMetric } from "./components/lanes/types";
 import { fetchPdbeAnnotations, mapAnnotations, type AnnotationsBySource, type PdbeRaw } from "./lib/annotations/pdbe";
 import { METRIC_ORDER, METRIC_UI, metricDescription, metricLabel, metricUnit, type MetricId } from "./components/compare/metrics";
 import { WATER_COMPS, type ProvenanceRecord, type StageId, type StageState } from "./lib/lab/entries";
-import { pickPair, ROLE_LABELS, type EntryManifest, type LoadableModel, type ManifestModel } from "./lib/dpdb/types";
+import { pickPair, ROLE_LABELS, type EntryManifest, type ManifestModel } from "./lib/dpdb/types";
 import { resolveEntry } from "./lib/dpdb/resolve";
 import { configureDpdb, toFetchableUrl, type DpdbConfig } from "./lib/dpdb/client";
 import {
@@ -111,8 +116,6 @@ import {
   parseHetcif,
   rowsToSelectors,
   isHeavy,
-  parseCifText,
-  pdbToCifText,
   readSecondaryStructure,
   residueKey,
   summarizeAltlocs,
@@ -194,6 +197,8 @@ function dashesForOverlays(
 
 const VIEW: StructureView = { representation: "ball-and-stick", colorTheme: "uniform", uniformColor: MODEL_A_COLOR };
 const DEFAULT_CLIP_RADIUS = 5;
+/** what the main view frames after a switchboard click on a spot the primary model lacks, in angstrom */
+const NAVIGATE_RADIUS = 8;
 // structure-factor downloads above this ask before fetching (PanDDA deposits run to hundreds of MB)
 const SF_CONFIRM_MB = 50;
 
@@ -264,12 +269,6 @@ async function fetchText(url: string): Promise<string> {
   return res.text();
 }
 
-// hetkit and Mol* both read CIF text, so a PDB-format model is converted on arrival
-async function fetchModelText(m: LoadableModel): Promise<string> {
-  const text = await fetchText(toFetchableUrl(m.url));
-  return m.format === "pdb" ? pdbToCifText(text, m.title) : text;
-}
-
 // provenance prose for a model: the RCSB example rows bring their own; catalogue models get what
 // the artifact record says about them
 function describeModel(m: ManifestModel): string {
@@ -300,6 +299,8 @@ export interface HetstarViewerProps {
   /** the consumer's look and example list (presets/); default the dynamicpdb card look. Read
    * at mount: the rep style and colour themes do not follow later changes. */
   preset?: HetstarPreset;
+  /** the Models Switchboard dock (replicas of the entry's models, bottom right); false removes it */
+  switchboard?: boolean | SwitchboardOptions;
 }
 
 /** the lanes strip's height before any lane is toggled or the divider dragged, px */
@@ -312,9 +313,22 @@ function clampLanes(h: number): number {
   return Math.round(Math.min(max, Math.max(LANES_MIN, h)));
 }
 
-export default function HetstarViewer({ entryId, modelId = null, dpdb, className, onLanesHeight, preset = dynamicpdbPreset }: HetstarViewerProps) {
+export default function HetstarViewer({
+  entryId,
+  modelId = null,
+  dpdb,
+  className,
+  onLanesHeight,
+  preset = dynamicpdbPreset,
+  switchboard = true,
+}: HetstarViewerProps) {
   configureDpdb(dpdb);
   const [viewer, setViewer] = useState<ViewerInstance | null>(null);
+  // the parsed model files of the entry, shared with the switchboard boxes
+  const bundles = useModelBundles();
+  const { reset: resetBundles, seed: seedBundle } = bundles;
+  // hover from any source (3D, lanes, bond list), mirrored onto the switchboard boxes
+  const hoverBus = useMemo(() => createEmitter<HoverTarget>(), []);
 
   // --- loader / entry state ---
   const [entryInput, setEntryInput] = useState(entryId);
@@ -389,7 +403,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
   // model clip objects in force (isolate sphere / slice plane), kept by the clip task so
   // the bond overlay's freshly rebuilt nodes start out cut the same way
   const modelClipRef = useRef<ClipObjectSpec[]>([]);
-  const [selRepOverlays, setSelRepOverlays] = useState<{ key: string; ranges: ResidueRange[]; type: RepType }[]>([]);
+  const [selRepOverlays, setSelRepOverlays] = useState<SelRepOverlay[]>([]);
   const selRepRefs = useRef(new Map<string, string>());
   // the world-sticks overlay component (lab-worldsticks), see the hetcif world section
   const worldSticksRef = useRef<string | null>(null);
@@ -535,6 +549,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
       setEntry(null);
       setPair(null);
       setLoading(true);
+      const bundleToken = resetBundles();
 
       // reset everything scene-derived; setting new texts clears the Mol* state tree
       setPrimaryLoaded(false);
@@ -600,12 +615,14 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
           setAText(aT);
           setBText(bT);
           setStage("tables", "active");
-          const fA = await parseCifText(aT);
-          const fB = bT ? await parseCifText(bT) : null;
-          setAFile(fA);
-          setBFile(fB);
-          setATable(buildAtomTable(fA));
-          setBTable(fB ? buildAtomTable(fB) : null);
+          const bundleA = await bundleFromText(a, aT);
+          const bundleB = b && bT ? await bundleFromText(b, bT) : null;
+          setAFile(bundleA.file);
+          setBFile(bundleB?.file ?? null);
+          setATable(bundleA.table);
+          setBTable(bundleB?.table ?? null);
+          seedBundle(bundleA, bundleToken);
+          if (bundleB) seedBundle(bundleB, bundleToken);
           setStage("tables", "done");
         } catch (e) {
           setStages((prev) => {
@@ -621,7 +638,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
         }
       })();
     },
-    [setStage, preset.entries],
+    [setStage, preset.entries, resetBundles, seedBundle],
   );
 
   // load the host's entry and model on mount and whenever either changes (StrictMode's double
@@ -708,37 +725,9 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
     if (!structureRef) return;
     runStyling("selrep", async () => {
       if (viewer.getPrimaryStructureRef() !== structureRef) return;
-      for (const ref of selRepRefs.current.values()) {
-        try {
-          await removeNode(ctx, ref);
-        } catch {
-          // died with a tree rebuild
-        }
-      }
-      selRepRefs.current.clear();
-      for (const ov of selRepOverlays) {
-        const exprs = ov.ranges.map((r) => buildResidueQuery(r.chain, r.from, r.to === r.from ? undefined : r.to));
-        const comp = await ctx.builders.structure.tryCreateComponentFromExpression(
-          structureRef,
-          mergeExpressions(exprs),
-          `lab-selrep-${ov.key}`,
-          { label: "selection representation", tags: ["lab-selrep"] },
-        );
-        if (!comp) continue;
-        selRepRefs.current.set(ov.key, comp.ref);
-        // fixed override sizes — the global spacefill default (vdW 1.0) swallows the scene
-        const styleForOverlay: RepStyle = {
-          ...repStyleRef.current,
-          type: ov.type,
-          spacefill: { sizeFactor: SELREP_SPACEFILL_SIZE },
-          ballStick: { sizeFactor: SELREP_BALLSTICK_SIZE },
-        };
-        await ctx.builders.structure.representation.addRepresentation(
-          comp,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          reprSpecForRole("polymer", styleForOverlay, { uniformColor: MODEL_A_COLOR }) as any,
-        );
-      }
+      await syncSelRepOverlays(ctx, structureRef, selRepRefs.current, selRepOverlays, repStyleRef.current, {
+        uniformColor: MODEL_A_COLOR,
+      });
     });
   }, [viewer, primaryLoaded, selRepOverlays, runStyling]);
 
@@ -965,21 +954,16 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
     runStyling("selection", async () => {
       const structure = viewer.getCurrentStructure();
       if (!structure) return;
-      const exprs = [
-        ...sel.ranges.map((r) => buildResidueQuery(r.chain, r.from, r.to === r.from ? undefined : r.to)),
-        ...sel.atoms.map((a) => buildAtomQuery(a.chain, a.seq, a.atom)),
-      ];
-      if (!exprs.length) {
-        viewer.clearSelection();
-        return;
-      }
       // The marker shows only what is on screen: the altloc atoms the collapse hides
       // (transparency 1, but still outlined by the includeTransparent postprocessing)
       // are subtracted, so the green outline never traces an invisible ghost conformer.
       // The selection MODEL stays altloc-agnostic — every action still generalizes to
       // all conformer copies.
-      let expr = mergeExpressions(exprs);
-      if (hiddenSelectors.length) expr = exceptExpression(expr, buildAltGroupExpression(hiddenSelectors));
+      const expr = selectionExpression(sel, hiddenSelectors);
+      if (!expr) {
+        viewer.clearSelection();
+        return;
+      }
       const loci = executeQuery(expr, structure);
       if (loci) viewer.setSelection(loci);
       else viewer.clearSelection();
@@ -1056,13 +1040,18 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
       if (!viewer) return;
       if (!pair) {
         viewer.highlightLoci(null);
+        hoverBus.emit(null);
         return;
       }
+      hoverBus.emit([
+        { chain: pair.a.chain, from: pair.a.seq, to: pair.a.seq },
+        { chain: pair.b.chain, from: pair.b.seq, to: pair.b.seq },
+      ]);
       const structure = viewer.getCurrentStructure();
       const loci = bondPairLoci(pair);
       viewer.highlightLoci(structure && loci ? visibleLoci(structure, loci) : loci);
     },
-    [viewer, bondPairLoci, visibleLoci],
+    [viewer, bondPairLoci, visibleLoci, hoverBus],
   );
   const onBondFocus = useCallback(
     (pair: BondPair) => {
@@ -1294,6 +1283,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
       if (key === hoverKeyRef.current) return;
       hoverKeyRef.current = key;
       setHoverInfo(info);
+      hoverBus.emit(info ? [{ chain: info.chainId, from: info.authSeqId, to: info.authSeqId }] : null);
       if (!info) {
         viewer.highlightLoci(null);
         return;
@@ -1309,7 +1299,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
         );
       }
     });
-  }, [viewer, pickMode, visibleLoci]);
+  }, [viewer, pickMode, visibleLoci, hoverBus]);
 
   // --- density: chains automatically once both models are in the scene ---
 
@@ -2281,6 +2271,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
       laneHoverRafRef.current = requestAnimationFrame(() => {
         laneHoverRafRef.current = null;
         const r = laneHoverPendingRef.current;
+        hoverBus.emit(r ? [{ chain: r.chain, from: r.seq, to: r.seq }] : null);
         if (!r) {
           viewer.highlightLoci(null);
           return;
@@ -2290,7 +2281,23 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
         viewer.highlightLoci(visibleLoci(structure, residueLoci(structure, r.chain, r.seq)));
       });
     },
-    [viewer, visibleLoci],
+    [viewer, visibleLoci, hoverBus],
+  );
+
+  // a click on a switchboard replica: the main view goes to that residue of the primary
+  // model (or to the clicked point when the primary lacks it), and an active clip sphere
+  // moves there with it
+  const navigateTo = useCallback(
+    (picked: PickInfo) => {
+      if (!viewer) return;
+      const point = (aTable ? residueCentroid(aTable, picked) : null) ?? picked.position3d ?? null;
+      if (point) setClip((prev) => (prev ? { ...prev, center: point } : prev));
+      const structure = viewer.getCurrentStructure();
+      const loci = structure ? residueLoci(structure, picked.chainId, picked.authSeqId) : null;
+      if (loci) viewer.focusLoci(loci);
+      else if (point) viewer.focusPoint(point, NAVIGATE_RADIUS);
+    },
+    [viewer, aTable],
   );
 
   const onPrimaryLoaded = useCallback(() => setPrimaryLoaded(true), []);
@@ -2456,7 +2463,7 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
                   : "measure: click two atoms"}
               </div>
             )}
-            <div className="absolute right-2 top-2 z-10 flex items-start gap-1.5">
+            <div data-hetstar-part="tray" className="absolute right-2 top-2 z-10 flex items-start gap-1.5">
               <BookmarkTray bookmarks={bookmarks} onApply={applyBookmark} onDelete={deleteBookmark} />
               <StyleTray
                 ready={primaryLoaded}
@@ -2510,28 +2517,49 @@ export default function HetstarViewer({ entryId, modelId = null, dpdb, className
                 onResetAll={resetAll}
               />
             )}
-            {showSlice2d && (
-              <div className={`absolute bottom-2 right-2 z-10 w-[300px] p-1.5 ${CARD_SHELL}`}>
-                <button
-                  type="button"
-                  title="close the 2D slice"
-                  onClick={() => setShowSlice2d(false)}
-                  className="absolute right-1.5 top-1 z-10 leading-none text-ink-muted hover:text-ink-secondary"
-                >
-                  {"×"}
-                </button>
-                <SlicePanel
-                  box={box}
-                  axis={sliceAxis}
-                  frac={sliceFrac}
-                  densitySampler={densitySampler}
-                  metricSampler={metricSampler}
-                  metricDomain={projected?.domain ?? null}
-                  metricColors={projected ? METRIC_UI[projected.id].colors : null}
-                  metricLabel={projected ? metricLabel(projected.id) : null}
+            {/* bottom-right stack: the 2D slice card above the switchboard dock */}
+            <div className="pointer-events-none absolute bottom-2 right-2 z-10 flex max-w-[calc(100%-1rem)] flex-col items-end gap-1.5">
+              {showSlice2d && (
+                <div className={`pointer-events-auto relative w-[300px] p-1.5 ${CARD_SHELL}`}>
+                  <button
+                    type="button"
+                    title="close the 2D slice"
+                    onClick={() => setShowSlice2d(false)}
+                    className="absolute right-1.5 top-1 z-10 leading-none text-ink-muted hover:text-ink-secondary"
+                  >
+                    {"×"}
+                  </button>
+                  <SlicePanel
+                    box={box}
+                    axis={sliceAxis}
+                    frac={sliceFrac}
+                    densitySampler={densitySampler}
+                    metricSampler={metricSampler}
+                    metricDomain={projected?.domain ?? null}
+                    metricColors={projected ? METRIC_UI[projected.id].colors : null}
+                    metricLabel={projected ? metricLabel(projected.id) : null}
+                  />
+                </div>
+              )}
+              {switchboard !== false && (
+                <ModelsSwitchboard
+                  mainViewer={viewer}
+                  primaryLoaded={primaryLoaded}
+                  entry={entry}
+                  primaryId={pair?.a.id ?? null}
+                  bundles={bundles}
+                  preset={preset}
+                  selection={sel}
+                  selRepOverlays={selRepOverlays}
+                  hoverBus={hoverBus}
+                  clip={clip}
+                  laneMetrics={laneMetrics}
+                  onNavigate={navigateTo}
+                  onHoverResidue={onLaneHover}
+                  options={typeof switchboard === "object" ? switchboard : undefined}
                 />
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
         </div>

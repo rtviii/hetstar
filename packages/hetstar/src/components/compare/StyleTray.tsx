@@ -28,7 +28,7 @@ const SCALE_RANGE: Record<RepType, { min: number; max: number; step: number }> =
   cartoon: { min: 0.05, max: 1, step: 0.05 },
 };
 
-const COLOR_MODES: { id: RepColorMode; label: string }[] = [
+export const COLOR_MODES: { id: RepColorMode; label: string }[] = [
   { id: "conformer", label: "conformers" },
   { id: "model", label: "model" },
   { id: "element", label: "element" },
