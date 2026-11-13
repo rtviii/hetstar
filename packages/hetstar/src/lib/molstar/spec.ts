@@ -1,6 +1,6 @@
 import type { FC } from "react";
 import { DefaultPluginUISpec, type PluginUISpec } from "molstar/lib/mol-plugin-ui/spec";
-import { PluginSpec } from "molstar/lib/mol-plugin/spec";
+import { DefaultPluginSpec, PluginSpec } from "molstar/lib/mol-plugin/spec";
 import { PluginBehaviors } from "molstar/lib/mol-plugin/behavior";
 
 // A component that renders nothing, used to strip Mol*'s viewport button strip
@@ -43,4 +43,17 @@ export const labViewerSpec: PluginUISpec = {
     viewport: { controls: NoViewportControls },
     remoteState: "none",
   },
+};
+
+// The switchboard boxes: a headless plugin (no React chrome at all) per box. Hover marks
+// itself here (the replica shows whole residues, never collapsed conformers, so the raw
+// pick loci are fine to trace); SelectLoci carries the mirrored selection's marker across
+// representation rebuilds. No camera behaviors: the pose group owns the box camera.
+export const replicaSpec: PluginSpec = {
+  ...DefaultPluginSpec(),
+  behaviors: [
+    PluginSpec.Behavior(PluginBehaviors.Representation.HighlightLoci),
+    PluginSpec.Behavior(PluginBehaviors.Representation.SelectLoci),
+    PluginSpec.Behavior(PluginBehaviors.CustomProps.StructureInfo),
+  ],
 };

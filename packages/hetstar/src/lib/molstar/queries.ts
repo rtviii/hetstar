@@ -105,6 +105,27 @@ export const buildWatersQuery = (
     ),
   );
 
+/**
+ * A selection (author-keyed residue ranges refined by single atoms) as one expression, minus
+ * the `hidden` altloc atoms; null when the selection is empty. The parameter is structural
+ * so this module stays free of lab imports.
+ */
+export const selectionExpression = (
+  selection: {
+    ranges: readonly { chain: string; from: number; to: number }[];
+    atoms: readonly { chain: string; seq: number; atom: string }[];
+  },
+  hidden: AltGroupSelector[] = [],
+) => {
+  const parts = [
+    ...selection.ranges.map((r) => buildResidueQuery(r.chain, r.from, r.to === r.from ? undefined : r.to)),
+    ...selection.atoms.map((a) => buildAtomQuery(a.chain, a.seq, a.atom)),
+  ];
+  if (!parts.length) return null;
+  const merged = mergeExpressions(parts);
+  return hidden.length ? exceptExpression(merged, buildAltGroupExpression(hidden)) : merged;
+};
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const executeQuery = (query: any, structure: Structure): StructureElement.Loci | null => {
   const compiled = compile(query);

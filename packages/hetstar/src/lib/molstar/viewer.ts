@@ -6,6 +6,7 @@ import {
   StructureProperties,
   type Trajectory,
 } from "molstar/lib/mol-model/structure";
+import { Vec3 } from "molstar/lib/mol-math/linear-algebra";
 import { Task } from "molstar/lib/mol-task";
 import { createPluginUI } from "molstar/lib/mol-plugin-ui";
 import { PluginUIContext } from "molstar/lib/mol-plugin-ui/context";
@@ -34,7 +35,7 @@ import {
 // default, Mol* builds biological assembly 1 whenever the file carries assemblies (every
 // RCSB CIF), which can drop chains or add symmetry copies that hetkit's atom tables, the
 // lanes and the ghost/primary comparison know nothing about.
-const AS_MODELED = { name: "model" as const, params: {} };
+export const AS_MODELED = { name: "model" as const, params: {} };
 
 export interface PickInfo {
   chainId: string;
@@ -347,6 +348,11 @@ export class MolstarViewer {
     this.ctx.managers.camera.focusLoci(loci, { durationMs });
   }
 
+  /** move the camera onto a point in space, keeping its direction */
+  focusPoint(point: [number, number, number], radius: number, durationMs = 250): void {
+    this.ctx?.canvas3d?.camera.focus(Vec3.create(point[0], point[1], point[2]), radius, durationMs);
+  }
+
   clearSelection(): void {
     this.ctx?.managers.interactivity.lociSelects.deselectAll();
     this.ctx?.managers.structure.selection.clear();
@@ -416,7 +422,7 @@ export class MolstarViewer {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function pickFromLoci(e: any): PickInfo | null {
+export function pickFromLoci(e: any): PickInfo | null {
   let loci = e?.current?.loci;
   // A pick on a STICK is a Bond.Loci, not an atom. Mol* only converts bond -> atom when
   // the cursor is within the first atom's radius; mid-stick picks arrive here as bonds

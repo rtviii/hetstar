@@ -312,7 +312,12 @@ export async function applyRepStyle(
   ctx: PluginContext,
   structureRef: string,
   style: RepStyle,
-  opts: { uniformColor: number; ghost?: boolean },
+  opts: {
+    uniformColor: number;
+    ghost?: boolean;
+    /** a colour theme that replaces the style's own on every component (a metric paint) */
+    colorOverride?: { color: string; colorParams?: Record<string, unknown> };
+  },
 ): Promise<void> {
   // the app overlays keep their own representations regardless of style
   const comps = componentsForStructure(ctx, structureRef).filter((c) => !isOverlayComponent(c));
@@ -324,7 +329,8 @@ export async function applyRepStyle(
     const structure = c.cell.obj?.data;
     if (!structure) continue;
     const role = componentRole(c);
-    const spec = role ? reprSpecForRole(role, style, opts) : reprSpecLegacy(componentKind(c), style, opts);
+    const base = role ? reprSpecForRole(role, style, opts) : reprSpecLegacy(componentKind(c), style, opts);
+    const spec = opts.colorOverride ? { ...base, colorParams: undefined, ...opts.colorOverride } : base;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const params = createStructureRepresentationParams(ctx, structure, spec as any);
     for (const r of c.representations) {
