@@ -78,6 +78,37 @@ export function trackDelta(a: Track, b: Track, opts: { metricId?: string } = {})
   };
 }
 
+/** Per-key range (largest minus smallest) of a value across several tracks, matched by residue
+ * key. Keys (and their order) come from `own`; NaN where fewer than two of the tracks have a
+ * value. */
+export function trackSpread(own: Track, others: readonly Track[], opts: { metricId?: string } = {}): Track {
+  const indexes = others.map((other) => {
+    const index = new Map<string, number>();
+    other.keys.forEach((k, i) => index.set(residueKey(k), i));
+    return index;
+  });
+  const values = new Float32Array(own.keys.length);
+  for (let i = 0; i < own.keys.length; i++) {
+    const key = residueKey(own.keys[i]);
+    let low = Infinity;
+    let high = -Infinity;
+    let count = 0;
+    const take = (v: number | undefined) => {
+      if (v === undefined || Number.isNaN(v)) return;
+      if (v < low) low = v;
+      if (v > high) high = v;
+      count++;
+    };
+    take(own.values[i]);
+    others.forEach((other, j) => {
+      const at = indexes[j].get(key);
+      take(at === undefined ? undefined : other.values[at]);
+    });
+    values[i] = count >= 2 ? high - low : NaN;
+  }
+  return makeTrack(opts.metricId ?? `${own.metricId}-spread`, own.level, own.keys, values, { unit: own.unit });
+}
+
 /** Mask a track to a residue scope: values outside keep NaN. The domain is deliberately
  * left unchanged so colors stay comparable as the scope moves. */
 export function scopeTrack(t: Track, include: (ref: ResidueRef) => boolean): Track {
