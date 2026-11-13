@@ -24,6 +24,14 @@ export interface ManifestModel {
   metrics: Partial<Record<MetricKey, number>>;
   /** prose override for provenance (the RCSB example rows carry their own) */
   note?: string;
+  /** catalogue metadata.model_type verbatim ("Multiconformer", "Ensemble", ...) */
+  modelType?: string | null;
+  /** catalogue metadata.purpose verbatim ("Model Building", "Refinement", "Reference") */
+  purpose?: string | null;
+  /** the PDB id this model is itself deposited under, when it has one */
+  pdbRef?: string | null;
+  /** number of ensemble members the catalogue records */
+  memberCount?: number | null;
 }
 
 /** a model whose coordinate file is known */

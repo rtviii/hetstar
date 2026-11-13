@@ -61,7 +61,12 @@ interface EntryAttrs {
 interface ModelAttrs {
   id: string;
   title: string;
-  metadata?: { model_type?: string; purpose?: string };
+  metadata?: {
+    model_type?: string | null;
+    purpose?: string | null;
+    external_refs?: { pdb?: string | null } | null;
+    member_count?: number | null;
+  };
   metrics?: { key: string; value: number }[];
   primary_artifact_id?: string | null;
 }
@@ -88,7 +93,7 @@ async function apiGet<T>(path: string): Promise<T> {
 }
 
 /** Roles come from the catalogue title; model_type is not consistent across entries. */
-export function deriveRole(title: string, meta: { model_type?: string } = {}): ModelRole {
+export function deriveRole(title: string, meta: { model_type?: string | null } = {}): ModelRole {
   const t = title.toLowerCase();
   if (t.includes("deposited")) return "deposited";
   if (t.includes("qfit")) return "qfit";
@@ -154,6 +159,10 @@ export async function fetchEntryManifest(dpdbId: string): Promise<EntryManifest>
       sha256: null,
       software: null,
       metrics: pickMetrics(m.metrics),
+      modelType: m.metadata?.model_type ?? null,
+      purpose: m.metadata?.purpose ?? null,
+      pdbRef: m.metadata?.external_refs?.pdb?.toUpperCase() ?? null,
+      memberCount: m.metadata?.member_count ?? null,
     };
     const arts = artifactsByModel.get(m.id);
     if (arts) {
