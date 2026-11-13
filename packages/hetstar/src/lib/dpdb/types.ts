@@ -67,6 +67,16 @@ export interface EntryManifest {
   sf: { url: string; sizeBytes: number | null; note: string } | null;
 }
 
+/**
+ * The model the others are compared against unless the user picks one: the re-refined model,
+ * which comes out of the same pipeline as the qFit and ensemble models, else the deposited
+ * one. Never the primary model itself.
+ */
+export function defaultReferenceId(models: readonly ManifestModel[], primaryId: string): string | null {
+  const candidate = (role: ModelRole) => models.find((x) => x.role === role && x.id !== primaryId && x.url && x.format);
+  return (candidate("rerefined") ?? candidate("deposited"))?.id ?? null;
+}
+
 export const ROLE_LABELS: Record<ModelRole, string> = {
   deposited: "deposited",
   qfit: "qFit multiconformer",

@@ -5,6 +5,7 @@
 // HetstarViewer's `dpdb` prop: on dynamicpdb.com the API is same-origin at /api/v1, and an empty
 // fileProxy fetches artifacts directly once the files host allows that origin.
 
+import type { StoredResidueRow } from "@dynamic-pdb/hetkit/metrics";
 import type { EntryCatalogueInfo, EntryManifest, ManifestModel, MetricKey, ModelFormat, ModelRole } from "./types";
 
 export interface DpdbConfig {
@@ -37,7 +38,6 @@ interface Resource<A> {
   attributes: A;
 }
 interface EntryAttrs {
-  id: string;
   title: string;
   details?: string | null;
   method?: string | null;
@@ -59,7 +59,6 @@ interface EntryAttrs {
   }[] | null;
 }
 interface ModelAttrs {
-  id: string;
   title: string;
   metadata?: {
     model_type?: string | null;
@@ -69,6 +68,19 @@ interface ModelAttrs {
   };
   metrics?: { key: string; value: number }[];
   primary_artifact_id?: string | null;
+}
+interface ModelDetailAttrs {
+  /** per-residue values the catalogue stores for the model; null or empty for most models */
+  residue_data?:
+    | {
+        auth_asym_id?: string | null;
+        auth_seq_id?: number | null;
+        pdbx_pdb_ins_code?: string | null;
+        rscc?: number | null;
+        b_iso?: number | null;
+        occupancy?: number | null;
+      }[]
+    | null;
 }
 interface ArtifactAttrs {
   name: string;
@@ -117,6 +129,22 @@ function toFormat(f: string): ModelFormat {
   return f === "pdb" ? "pdb" : "cif";
 }
 
+/** The stored per-residue values of one model, keyed by author residue; empty when it has none. */
+export async function fetchModelResidueData(dpdbId: string, modelId: string): Promise<StoredResidueRow[]> {
+  const detail = await apiGet<{ data: Resource<ModelDetailAttrs> }>(`entries/${dpdbId}/models/${modelId}`);
+  const rows: StoredResidueRow[] = [];
+  for (const row of detail.data.attributes.residue_data ?? []) {
+    if (!row.auth_asym_id || row.auth_seq_id == null) continue;
+    rows.push({
+      ref: { chain: row.auth_asym_id, seq: row.auth_seq_id, ins: row.pdbx_pdb_ins_code ?? "" },
+      rscc: row.rscc ?? null,
+      bIso: row.b_iso ?? null,
+      occupancy: row.occupancy ?? null,
+    });
+  }
+  return rows;
+}
+
 /** entry + models + every model's artifacts: any of them can be the one the host asks for */
 export async function fetchEntryManifest(dpdbId: string): Promise<EntryManifest> {
   const [entryRes, modelsRes] = await Promise.all([
@@ -142,7 +170,8 @@ export async function fetchEntryManifest(dpdbId: string): Promise<EntryManifest>
     })),
   };
 
-  const summaries = modelsRes.data.map((m) => ({ ...m.attributes, role: deriveRole(m.attributes.title, m.attributes.metadata) }));
+  // ids are read off the resources: the entry's attributes carry none
+  const summaries = modelsRes.data.map((m) => ({ ...m.attributes, id: m.id, role: deriveRole(m.attributes.title, m.attributes.metadata) }));
   const lists = await Promise.all(summaries.map((m) => apiGet<ArtifactsResponse>(`entries/${dpdbId}/models/${m.id}/artifacts`)));
   const artifactsByModel = new Map(summaries.map((m, i) => [m.id, lists[i]]));
 
@@ -196,7 +225,7 @@ export async function fetchEntryManifest(dpdbId: string): Promise<EntryManifest>
   }
 
   return {
-    id: entry.id,
+    id: entryRes.data.id,
     pdbId,
     title: entry.title,
     resolution: entry.resolution ?? null,
