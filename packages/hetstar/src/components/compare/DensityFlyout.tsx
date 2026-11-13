@@ -1,5 +1,6 @@
 "use client";
 import type { DensityQuality } from "../../lib/molstar/density";
+import type { LaneMetric } from "../lanes/types";
 import type { SliceAxis } from "../SlicePanel";
 import SliceControls from "./SliceControls";
 import {
@@ -23,17 +24,21 @@ const DENSITY_QUALITIES: DensityQuality[] = ["low", "auto", "high"];
 
 // Grouped by what a metric needs, derived from the flags so new metrics slot in.
 const METRIC_GROUPS: { title: string; ids: MetricId[] }[] = (() => {
-  const modelA: MetricId[] = [];
+  const model: MetricId[] = [];
   const pair: MetricId[] = [];
+  const across: MetricId[] = [];
   const map: MetricId[] = [];
+  const stored: MetricId[] = [];
   for (const id of METRIC_ORDER) {
     const ui = METRIC_UI[id];
-    (ui.map ? map : ui.pair ? pair : modelA).push(id);
+    (ui.stored ? stored : ui.map ? map : ui.across ? across : ui.pair ? pair : model).push(id);
   }
   return [
-    { title: "Model A", ids: modelA },
-    { title: "A vs B", ids: pair },
+    { title: "This model", ids: model },
+    { title: "Across the compared models", ids: across },
+    { title: "Against the reference", ids: pair },
     { title: "Map", ids: map },
+    { title: "Stored in the catalogue", ids: stored },
   ];
 })();
 
@@ -42,8 +47,7 @@ export default function DensityFlyout({
   onMetricId,
   densityReady,
   densityBusy,
-  hasB,
-  hasEnsemble,
+  metrics,
   provenance,
   projectedDomain,
   status,
@@ -74,9 +78,8 @@ export default function DensityFlyout({
   onMetricId: (id: MetricId | "none") => void;
   densityReady: boolean;
   densityBusy: boolean;
-  hasB: boolean;
-  /** model A carries several MODEL frames (enables the ensemble metrics) */
-  hasEnsemble: boolean;
+  /** the main view's metrics by id; a string is why that metric is unavailable */
+  metrics: ReadonlyMap<string, LaneMetric | string>;
   provenance: MetricProvenance;
   projectedDomain: [number, number] | null;
   status: string | null;
@@ -106,9 +109,9 @@ export default function DensityFlyout({
   sliceCoord: number | null;
 }) {
   const metricSwitch = (id: MetricId) => {
-    const ui = METRIC_UI[id];
     const tip = metricTooltip(id, provenance);
-    const disabled = (ui.map && !densityReady) || (ui.pair && !hasB) || (!!ui.ensemble && !hasEnsemble);
+    const metric = metrics.get(id);
+    const reason = typeof metric === "string" ? metric : metric ? null : "loading";
     return (
       <Tooltip
         key={id}
@@ -116,17 +119,18 @@ export default function DensityFlyout({
           <div className="flex flex-col gap-1">
             <div className="font-medium">
               {tip.title}
-              {metricUnit(id) ? <span className="text-ink-muted/75"> ({metricUnit(id)})</span> : null}
+              {metricUnit(id) ? <span className="text-ink-muted"> ({metricUnit(id)})</span> : null}
             </div>
             {tip.lines.map((l, i) => (
               <div key={i} className="break-words">
                 {l}
               </div>
             ))}
+            {reason && <div className="text-ink-muted">Unavailable: {reason}.</div>}
           </div>
         }
       >
-        <SwitchButton pressed={metricId === id} disabled={disabled} onClick={() => onMetricId(id)}>
+        <SwitchButton pressed={metricId === id} disabled={!!reason} onClick={() => onMetricId(id)}>
           {metricLabel(id)}
         </SwitchButton>
       </Tooltip>
@@ -186,7 +190,7 @@ export default function DensityFlyout({
         <GroupLabel>Paint metric on the density</GroupLabel>
         {provenance.aDesc && provenance.bDesc && (
           <TinyText>
-            A = {provenance.aDesc} (primary) / B = {provenance.bDesc} (ghost)
+            this model = {provenance.aDesc} (primary) / reference = {provenance.bDesc}
           </TinyText>
         )}
         <div className="flex flex-wrap items-center gap-1">
@@ -197,7 +201,7 @@ export default function DensityFlyout({
         {METRIC_GROUPS.map((g) =>
           g.ids.length ? (
             <div key={g.title} className="flex flex-col gap-1">
-              <span className="text-[9.5px] uppercase tracking-wide text-ink-muted/60">{g.title}</span>
+              <span className="hs-label text-[8.5px] text-ink-faint">{g.title}</span>
               <div className="flex flex-wrap items-center gap-1">{g.ids.map(metricSwitch)}</div>
             </div>
           ) : null,
@@ -215,8 +219,8 @@ export default function DensityFlyout({
       </div>
 
       <div className={`flex flex-col gap-1 border-t border-line pt-1.5 ${densityReady ? "" : "opacity-40"}`}>
-        <GroupLabel>Density quality{densityBusy ? " — rebuilding..." : ""}</GroupLabel>
-        <div className="flex items-center gap-1">
+        <GroupLabel>Density quality{densityBusy ? ", rebuilding" : ""}</GroupLabel>
+        <div className="hs-seg">
           {DENSITY_QUALITIES.map((q) => (
             <SwitchButton
               key={q}
@@ -246,7 +250,7 @@ export default function DensityFlyout({
           onFrac={onSliceFrac}
           coord={sliceCoord}
         />
-        <div className="flex items-center gap-1">
+        <div className="hs-seg">
           <SwitchButton pressed={!showSlice2d} onClick={() => onShowSlice2d(false)}>
             off
           </SwitchButton>

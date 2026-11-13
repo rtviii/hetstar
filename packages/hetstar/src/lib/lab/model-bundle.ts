@@ -53,16 +53,20 @@ export async function loadModelBundle(model: LoadableModel): Promise<ModelBundle
 const memberTableCache = new WeakMap<MolCifFile, AtomTable[]>();
 
 /** one AtomTable per MODEL of an ensemble file (empty for single-model files), built once per file */
-export function memberTablesOf(bundle: ModelBundle): AtomTable[] {
-  if (!bundle.ensemble) return [];
-  let tables = memberTableCache.get(bundle.file);
+export function memberTablesOfFile(file: MolCifFile, ensemble: EnsembleSummary | null): AtomTable[] {
+  if (!ensemble) return [];
+  let tables = memberTableCache.get(file);
   if (!tables) {
     tables = [];
-    for (const modelNum of bundle.ensemble.modelNums) {
-      const table = buildAtomTable(bundle.file, { modelNum });
+    for (const modelNum of ensemble.modelNums) {
+      const table = buildAtomTable(file, { modelNum });
       if (table) tables.push(table);
     }
-    memberTableCache.set(bundle.file, tables);
+    memberTableCache.set(file, tables);
   }
   return tables;
+}
+
+export function memberTablesOf(bundle: ModelBundle): AtomTable[] {
+  return memberTablesOfFile(bundle.file, bundle.ensemble);
 }

@@ -2,13 +2,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Vec3 } from "molstar/lib/mol-math/linear-algebra";
 import type { Track } from "@dynamic-pdb/hetkit/metrics";
-import type { AtomTable, ResidueRef } from "@dynamic-pdb/hetkit/model";
+import type { ResidueRef } from "@dynamic-pdb/hetkit/model";
 import type { ModelBundles } from "../../hooks/useModelBundles";
+import type { ModelMetrics } from "../../hooks/useModelMetrics";
 import { modelDetailLines, modelDisplayName } from "../../lib/dpdb/names";
 import type { EntryManifest, LoadableModel, ManifestModel } from "../../lib/dpdb/types";
 import type { Emitter } from "../../lib/lab/emitter";
-import { memberTablesOf } from "../../lib/lab/model-bundle";
-import { computeTableTrack, TABLE_METRICS } from "../../lib/lab/model-tracks";
 import type { LabSelection } from "../../lib/lab/selection";
 import { createPoseGroup } from "../../lib/molstar/camera-sync";
 import type { ReplicaFacet, ReplicaGlass } from "../../lib/molstar/replica";
@@ -18,10 +17,9 @@ import { GHOST_B_COLOR, MODEL_A_COLOR } from "../../lib/molstar/style";
 import { trackPaint, type TrackPaint } from "../../lib/molstar/track-theme";
 import type { MolstarViewer as ViewerInstance, PickInfo } from "../../lib/molstar/viewer";
 import type { HetstarPreset } from "../../presets/types";
-import { METRIC_ORDER, METRIC_UI, metricLabel, metricUnit, type MetricId } from "../compare/metrics";
+import { displayDomain, METRIC_ORDER, METRIC_UI, metricLabel, metricUnit, type MetricId } from "../compare/metrics";
 import { COLOR_MODES } from "../compare/StyleTray";
 import { CARD_SHELL, PinPopover } from "../compare/ui";
-import type { LaneMetric } from "../lanes/types";
 import SwitchboardBox, { type FacetLegend, type FacetOption, type HoverTarget } from "./SwitchboardBox";
 
 // The Models Switchboard: a dock of small replicas, one box per model of the entry the
@@ -60,14 +58,22 @@ interface ModelsSwitchboardProps {
   entry: EntryManifest | null;
   /** the model the main view holds as its primary */
   primaryId: string | null;
+  /** the model every pair metric compares against */
+  referenceId: string | null;
+  /** the user marks a model as the reference (null: back to the default) */
+  onReference: (modelId: string | null) => void;
+  /** the models that have a box right now, in box order */
+  onBoxedModels: (modelIds: readonly string[]) => void;
   bundles: ModelBundles;
+  /** metrics of any model of the entry */
+  metrics: ModelMetrics;
+  /** a box shows this model: its stored residue data is wanted */
+  onNeedStoredData: (modelId: string) => void;
   preset: HetstarPreset;
   selection: LabSelection;
   selRepOverlays: readonly SelRepOverlay[];
   hoverBus: Emitter<HoverTarget>;
   clip: { center: [number, number, number]; radius: number } | null;
-  /** the primary model's computed metrics (map and bond metrics included) */
-  laneMetrics: ReadonlyMap<string, LaneMetric | string>;
   onNavigate: (pick: PickInfo) => void;
   onHoverResidue: (ref: ResidueRef | null) => void;
   options?: SwitchboardOptions;
@@ -86,13 +92,17 @@ export default function ModelsSwitchboard({
   primaryLoaded,
   entry,
   primaryId,
+  referenceId,
+  onReference,
+  onBoxedModels,
   bundles,
+  metrics,
+  onNeedStoredData,
   preset,
   selection,
   selRepOverlays,
   hoverBus,
   clip,
-  laneMetrics,
   onNavigate,
   onHoverResidue,
   options,
@@ -133,16 +143,22 @@ export default function ModelsSwitchboard({
 
   const active = open && primaryLoaded;
 
+  // the boxed models are the ones compared with one another
+  useEffect(() => {
+    onBoxedModels(active ? boxes.map((box) => box.modelId) : []);
+  }, [active, boxes, onBoxedModels]);
+
   // every shown model needs its file; the primary's comes from the main view's own load
   const requestBundle = bundles.request;
   useEffect(() => {
     if (!active) return;
     for (const box of boxes) {
+      onNeedStoredData(box.modelId);
       if (box.modelId === primaryId) continue;
       const model = modelById.get(box.modelId);
       if (model && isLoadable(model)) requestBundle(model);
     }
-  }, [active, boxes, modelById, primaryId, requestBundle]);
+  }, [active, boxes, modelById, primaryId, requestBundle, onNeedStoredData]);
 
   // the main camera is the pose reference
   const mainCamera = primaryLoaded ? (mainViewer?.ctx?.canvas3d?.camera ?? null) : null;
@@ -194,9 +210,6 @@ export default function ModelsSwitchboard({
 
   // --- facets ---
 
-  const primaryState = primaryId ? bundles.states.get(primaryId) : undefined;
-  const primaryTable: AtomTable | null = primaryState?.status === "ready" ? primaryState.bundle.table : null;
-
   const lookOptions = useMemo<FacetOption[]>(
     () => [
       { id: GHOST_FACET, label: "ghost", group: "look" },
@@ -208,62 +221,33 @@ export default function ModelsSwitchboard({
   );
 
   const metricOptionsFor = useCallback(
-    (modelId: string): FacetOption[] => {
-      const option = (id: MetricId): FacetOption => ({ id: `metric:${id}`, label: metricLabel(id), group: "metric" });
-      if (modelId === primaryId) {
-        return METRIC_ORDER.filter((id) => typeof laneMetrics.get(id) === "object").map(option);
-      }
-      const state = bundles.states.get(modelId);
-      if (state?.status !== "ready") return [];
-      const ensemble = (state.bundle.ensemble?.modelCount ?? 0) >= 2;
-      return TABLE_METRICS.filter((id) => {
-        if (METRIC_UI[id].ensemble) return ensemble;
-        if (METRIC_UI[id].pair) return !!primaryTable;
-        return true;
-      }).map(option);
-    },
-    [primaryId, laneMetrics, bundles.states, primaryTable],
+    (modelId: string): FacetOption[] =>
+      METRIC_ORDER.map((id) => ({
+        id: `metric:${id}`,
+        label: metricLabel(id),
+        group: "metric",
+        unavailable: metrics.unavailable(modelId, id),
+      })),
+    [metrics],
   );
 
-  // table tracks of the non-primary boxes, kept while their inputs are the same objects
-  const trackCache = useRef(new Map<string, { table: AtomTable; reference: AtomTable | null; track: Track | null }>());
+  // only the metrics boxes show are computed
   const tracks = useMemo(() => {
     const out = new Map<number, { id: MetricId; track: Track }>();
     for (const box of boxes) {
       const id = metricOf(box.facetId);
       if (!id) continue;
-      if (box.modelId === primaryId) {
-        const metric = laneMetrics.get(id);
-        if (metric && typeof metric !== "string") out.set(box.key, { id, track: metric.track });
-        continue;
-      }
-      const state = bundles.states.get(box.modelId);
-      if (state?.status !== "ready") continue;
-      const table = state.bundle.table;
-      const cacheKey = `${box.modelId}|${id}`;
-      let cached = trackCache.current.get(cacheKey);
-      if (!cached || cached.table !== table || cached.reference !== primaryTable) {
-        cached = {
-          table,
-          reference: primaryTable,
-          track: computeTableTrack(id, {
-            table,
-            reference: primaryTable,
-            members: METRIC_UI[id].ensemble ? memberTablesOf(state.bundle) : [],
-          }),
-        };
-        trackCache.current.set(cacheKey, cached);
-      }
-      if (cached.track) out.set(box.key, { id, track: cached.track });
+      const outcome = metrics.resolve(box.modelId, id);
+      if (typeof outcome !== "string") out.set(box.key, { id, track: outcome });
     }
     return out;
-  }, [boxes, primaryId, laneMetrics, bundles.states, primaryTable]);
+  }, [boxes, metrics]);
 
   // boxes showing the same metric share one colour domain, so their colours compare
   const domains = useMemo(() => {
     const out = new Map<MetricId, [number, number]>();
     for (const { id, track } of tracks.values()) {
-      const own: [number, number] = METRIC_UI[id].sequential ? [0, track.domain[1]] : track.domain;
+      const own = displayDomain(id, track);
       const prev = out.get(id);
       out.set(id, prev ? [Math.min(prev[0], own[0]), Math.max(prev[1], own[1])] : own);
     }
@@ -294,6 +278,9 @@ export default function ModelsSwitchboard({
   }, []);
 
   if (!entry || !primaryId) return null;
+
+  const referenceEntry = referenceId ? modelById.get(referenceId) : undefined;
+  const referenceName = referenceEntry ? modelDisplayName(referenceEntry, models) : null;
 
   const full = boxes.length >= maxBoxes;
   const addMenu = (
@@ -334,6 +321,14 @@ export default function ModelsSwitchboard({
             </span>
           </PinPopover>
         )}
+        {active && (
+          <span
+            title="the model the others are compared against; mark another one with the ref button of its box"
+            className="max-w-[180px] truncate text-ink-muted"
+          >
+            reference: {referenceName ?? "none"}
+          </span>
+        )}
       </div>
       {active && (
         <div className="flex flex-wrap-reverse justify-end gap-1.5">
@@ -370,6 +365,8 @@ export default function ModelsSwitchboard({
                 glass={glass}
                 onHoverResidue={onHoverResidue}
                 onNavigate={onNavigate}
+                isReference={box.modelId === referenceId}
+                onReference={() => onReference(box.modelId === referenceId ? null : box.modelId)}
                 onRemove={boxes.length > 1 ? () => removeBox(box.key) : null}
               />
             );

@@ -88,24 +88,41 @@ import StyleTray from "./components/compare/StyleTray";
 import { dynamicpdbPreset } from "./presets/dynamicpdb";
 import type { HetstarPreset } from "./presets/types";
 import BookmarkTray from "./components/compare/BookmarkTray";
-import { CARD_SHELL, CardBoundsContext, Spinner } from "./components/compare/ui";
+import { CARD_SHELL, CardBoundsContext, Spinner, useStoredFlag } from "./components/compare/ui";
 import ModelsSwitchboard, { type SwitchboardOptions } from "./components/switchboard/ModelsSwitchboard";
 import type { HoverTarget } from "./components/switchboard/SwitchboardBox";
 import { useModelBundles } from "./hooks/useModelBundles";
+import { useModelMetrics, type PrimaryModel } from "./hooks/useModelMetrics";
+import { useStoredResidueData } from "./hooks/useStoredResidueData";
 import { createEmitter } from "./lib/lab/emitter";
-import { bundleFromText, fetchModelText } from "./lib/lab/model-bundle";
+import { bundleFromText, fetchModelText, memberTablesOfFile } from "./lib/lab/model-bundle";
+import { bondVariabilityTrack, type MemberBondRecord } from "./lib/lab/bond-variability";
 import { syncSelRepOverlays, type SelRepOverlay } from "./lib/molstar/selrep";
 import SequenceLanes from "./components/lanes/SequenceLanes";
 import { makeMetricLane } from "./components/lanes/PlotLanes";
 import type { LaneMetric } from "./components/lanes/types";
 import { fetchPdbeAnnotations, mapAnnotations, type AnnotationsBySource, type PdbeRaw } from "./lib/annotations/pdbe";
-import { METRIC_ORDER, METRIC_UI, metricDescription, metricLabel, metricUnit, type MetricId } from "./components/compare/metrics";
+import {
+  displayDomain,
+  METRIC_ORDER,
+  METRIC_UI,
+  metricDescription,
+  metricLabel,
+  metricUnit,
+  type MetricId,
+} from "./components/compare/metrics";
 import { WATER_COMPS, type ProvenanceRecord, type StageId, type StageState } from "./lib/lab/entries";
-import { pickPair, ROLE_LABELS, type EntryManifest, type ManifestModel } from "./lib/dpdb/types";
+import {
+  defaultReferenceId,
+  pickPair,
+  ROLE_LABELS,
+  type EntryManifest,
+  type LoadableModel,
+  type ManifestModel,
+} from "./lib/dpdb/types";
 import { resolveEntry } from "./lib/dpdb/resolve";
 import { configureDpdb, toFetchableUrl, type DpdbConfig } from "./lib/dpdb/client";
 import {
-  buildAtomTable,
   buildHetcifRowIndex,
   buildSequenceModel,
   describeEntry,
@@ -125,19 +142,7 @@ import {
   type ResidueRef,
 } from "@dynamic-pdb/hetkit/model";
 import type { AltGroupSelector } from "./lib/molstar/queries";
-import {
-  altlocRmsf,
-  bIsoMean,
-  conformerCount,
-  ensembleRmsf,
-  makeTrack,
-  mapSupportDelta,
-  mapValueTracks,
-  modelRmsd,
-  occupancyEntropy,
-  trackDelta,
-  type Track,
-} from "@dynamic-pdb/hetkit/metrics";
+import type { Track } from "@dynamic-pdb/hetkit/metrics";
 import { Structure, StructureElement } from "molstar/lib/mol-model/structure";
 import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/state";
 
@@ -301,11 +306,14 @@ export interface HetstarViewerProps {
   preset?: HetstarPreset;
   /** the Models Switchboard dock (replicas of the entry's models, bottom right); false removes it */
   switchboard?: boolean | SwitchboardOptions;
+  /** the entry rail (left) at first visit: a host that already describes the entry beside the
+   * viewer passes "hidden". The reader's own show/hide is remembered and wins afterwards. */
+  rail?: "open" | "hidden";
 }
 
 /** the lanes strip's height before any lane is toggled or the divider dragged, px */
 export const DEFAULT_LANES_HEIGHT = 260;
-const LANES_PAD = 16; // the strip's py-2
+const LANES_PAD = 0; // the strip has no padding of its own: the lanes panel runs edge to edge
 const LANES_MIN = 96;
 
 function clampLanes(h: number): number {
@@ -321,12 +329,19 @@ export default function HetstarViewer({
   onLanesHeight,
   preset = dynamicpdbPreset,
   switchboard = true,
+  rail = "open",
 }: HetstarViewerProps) {
   configureDpdb(dpdb);
+  const [railOpen, setRailOpen] = useStoredFlag("hetstar.rail.open", rail !== "hidden");
   const [viewer, setViewer] = useState<ViewerInstance | null>(null);
   // the parsed model files of the entry, shared with the switchboard boxes
   const bundles = useModelBundles();
-  const { reset: resetBundles, seed: seedBundle } = bundles;
+  const { reset: resetBundles, seed: seedBundle, request: requestBundle } = bundles;
+  const storedResidueData = useStoredResidueData();
+  // the user's pick of the model the others are compared against; null follows the default
+  const [referenceChoice, setReferenceChoice] = useState<string | null>(null);
+  // the models that have a box in the switchboard
+  const [boxedModelIds, setBoxedModelIds] = useState<readonly string[]>([]);
   // hover from any source (3D, lanes, bond list), mirrored onto the switchboard boxes
   const hoverBus = useMemo(() => createEmitter<HoverTarget>(), []);
 
@@ -550,6 +565,8 @@ export default function HetstarViewer({
       setPair(null);
       setLoading(true);
       const bundleToken = resetBundles();
+      setReferenceChoice(null);
+      setBoxedModelIds([]);
 
       // reset everything scene-derived; setting new texts clears the Mol* state tree
       setPrimaryLoaded(false);
@@ -1472,15 +1489,10 @@ export default function HetstarViewer({
   // --- ensemble members: one AtomTable per MODEL frame of model A ---
 
   const ensembleInfo = useMemo(() => (aFile ? summarizeEnsemble(aFile) : null), [aFile]);
-  const memberTables = useMemo<AtomTable[]>(() => {
-    if (!aFile || !ensembleInfo) return [];
-    const out: AtomTable[] = [];
-    for (const n of ensembleInfo.modelNums) {
-      const t = buildAtomTable(aFile, { modelNum: n });
-      if (t) out.push(t);
-    }
-    return out;
-  }, [aFile, ensembleInfo]);
+  const memberTables = useMemo<AtomTable[]>(
+    () => (aFile ? memberTablesOfFile(aFile, ensembleInfo) : []),
+    [aFile, ensembleInfo],
+  );
 
   // switch the visible member: Mol* scrubs the frame in place (setModelIndex), and the
   // atom-table swap recomputes everything downstream — altlocs, lanes, metrics, the
@@ -1500,7 +1512,7 @@ export default function HetstarViewer({
   // trajectory frame -> Structure.ofModel -> the same interaction pass the current-frame
   // list uses), so the UI can say a bond exists in some ensemble states but not others.
   // One sequential background pass per loaded entry; scrubbing does not re-run it.
-  const [memberBonds, setMemberBonds] = useState<Map<string, { pair: BondPair; members: number[] }> | null>(null);
+  const [memberBonds, setMemberBonds] = useState<Map<string, MemberBondRecord> | null>(null);
   const [memberBondsDone, setMemberBondsDone] = useState(0);
   useEffect(() => {
     setMemberBonds(null);
@@ -1509,7 +1521,7 @@ export default function HetstarViewer({
     if (!ctx || !viewer || !primaryLoaded || memberTables.length < 2) return;
     let stale = false;
     (async () => {
-      const acc = new Map<string, { pair: BondPair; members: number[] }>();
+      const acc = new Map<string, MemberBondRecord>();
       for (let i = 0; i < memberTables.length; i++) {
         const model = await viewer.getFrameModel(i);
         if (stale) return;
@@ -1531,125 +1543,139 @@ export default function HetstarViewer({
     };
   }, [viewer, primaryLoaded, memberTables]);
 
-  // --- metric computation + projection onto the 2Fo-Fc surface ---
+  // --- metrics of any model of the entry, and their projection onto the 2Fo-Fc surface ---
 
-  const computeBaseTrack = useCallback(
-    (id: MetricId): Track | null => {
-      if (!aTable) return null;
-      const ctx = viewer?.ctx; // only the map metrics need the plugin (for the samplers)
-      switch (id) {
-        case "conformer-count":
-          return conformerCount(aTable);
-        case "occupancy-entropy":
-          return occupancyEntropy(aTable);
-        case "b-iso-mean":
-          return bIsoMean(aTable);
-        case "bond-variability": {
-          if (!bonds) return null;
-          // per residue: bonds touching it that are NOT invariant — missing under at
-          // least one conformer of their residues, or absent in some ensemble members
-          // (ghost bonds of other members included once the member pass is in)
-          const diff = new Map<string, BondPair>();
-          for (const pair of bonds) if (confDependent(pair)) diff.set(bondKey(pair), pair);
-          if (memberBonds) {
-            for (const [k, rec] of memberBonds) {
-              if (rec.members.length < memberTables.length && !diff.has(k)) diff.set(k, rec.pair);
-            }
-          }
-          const counts = new Map<string, number>();
-          // water contacts count on their polymer partner only: a water's chain|seq key could
-          // collide with a polymer residue's auth numbering
-          for (const pair of diff.values()) {
-            for (const e of [pair.a, pair.b]) {
-              if (isWaterEnd(e)) continue;
-              const k = `${e.chain}|${e.seq}`;
-              counts.set(k, (counts.get(k) ?? 0) + 1);
-            }
-          }
-          const values = new Float32Array(aTable.residues.length);
-          aTable.residues.forEach((res, i) => {
-            values[i] = counts.get(`${res.ref.chain}|${res.ref.seq}`) ?? 0;
-          });
-          return makeTrack(
-            "bond-variability",
-            "residue",
-            aTable.residues.map((r) => r.ref),
-            values,
-            { unit: "bonds" },
-          );
-        }
-        case "ensemble-rmsf":
-          return memberTables.length >= 2 ? ensembleRmsf(memberTables) : null;
-        case "model-rmsd":
-          return bTable ? modelRmsd(aTable, bTable) : null;
-        case "altloc-rmsf-delta":
-          return bTable ? trackDelta(altlocRmsf(aTable), altlocRmsf(bTable), { metricId: "altloc-rmsf-delta" }) : null;
-        case "fofc-mean":
-        case "fofc-peak": {
-          if (!ctx) return null;
-          const s = samplerForVolume(ctx, volsRef.current?.foFc ?? null, { relative: true });
-          if (!s) return null;
-          const tracks = mapValueTracks(aTable, s, { idPrefix: "fofc" });
-          return id === "fofc-mean" ? tracks.mean : tracks.peak;
-        }
-        case "support-delta": {
-          if (!ctx) return null;
-          const s = samplerForVolume(ctx, volsRef.current?.twoFoFc ?? null, { relative: true });
-          return s && bTable ? mapSupportDelta(aTable, bTable, s) : null;
-        }
-      }
-    },
-    [viewer, aTable, bTable, memberTables, bonds, memberBonds, confDependent],
+  // densityVersion: the samplers read volsRef, refreshed when the maps rebuild
+  /* eslint-disable react-hooks/exhaustive-deps */
+  const densitySampler = useMemo(() => {
+    const ctx = viewer?.ctx;
+    if (!ctx || densityState !== "ready") return null;
+    return samplerForVolume(ctx, volsRef.current?.twoFoFc ?? null, { relative: true });
+  }, [viewer, densityState, densityVersion]);
+
+  const fofcSampler = useMemo(() => {
+    const ctx = viewer?.ctx;
+    if (!ctx || densityState !== "ready") return null;
+    return samplerForVolume(ctx, volsRef.current?.foFc ?? null, { relative: true });
+  }, [viewer, densityState, densityVersion]);
+  /* eslint-enable react-hooks/exhaustive-deps */
+
+  const mapSamplers = useMemo(() => ({ twoFoFc: densitySampler, foFc: fofcSampler }), [densitySampler, fofcSampler]);
+
+  // the one metric that needs the main view's interaction pass
+  const bondVariability = useMemo<Track | string | null>(() => {
+    if (!aTable) return null;
+    if (!bonds) return "computing interactions";
+    return bondVariabilityTrack(aTable, bonds, confDependent, memberBonds, memberTables.length);
+  }, [aTable, bonds, confDependent, memberBonds, memberTables]);
+
+  const primaryModel = useMemo<PrimaryModel | null>(
+    () =>
+      pair && aTable && bondVariability
+        ? { modelId: pair.a.id, table: aTable, members: memberTables, local: { "bond-variability": bondVariability } }
+        : null,
+    [pair, aTable, memberTables, bondVariability],
   );
 
-  // Every metric whose inputs are ready, as a whole-model track keyed for the lanes;
-  // a string is the reason the metric cannot be computed yet (shown in the lanes drawer).
-  // The 3D projection below draws from the same map, so lane and surface always agree.
+  const catalogued = entry?.source === "dpdb";
+  const catalogueEntryId = catalogued ? (entry?.id ?? null) : null;
+  const requestStoredResidueData = storedResidueData.request;
+  const needStoredResidueData = useCallback(
+    (storedModelId: string) => {
+      if (catalogueEntryId) requestStoredResidueData(catalogueEntryId, storedModelId);
+    },
+    [catalogueEntryId, requestStoredResidueData],
+  );
+  useEffect(() => {
+    if (!pair) return;
+    needStoredResidueData(pair.a.id);
+    if (pair.b) needStoredResidueData(pair.b.id);
+  }, [pair, needStoredResidueData]);
+
+  // the reference model: every pair metric, in the lanes and in the boxes, compares against it
+  const referenceId = useMemo(() => {
+    if (!entry || !pair) return null;
+    if (referenceChoice && entry.models.some((m) => m.id === referenceChoice && m.url && m.format)) return referenceChoice;
+    return defaultReferenceId(entry.models, pair.a.id);
+  }, [entry, pair, referenceChoice]);
+  const referenceModel = useMemo(
+    () => entry?.models.find((m) => m.id === referenceId) ?? null,
+    [entry, referenceId],
+  );
+  // the main view loads its own pair; any other reference is fetched once the primary is in
+  useEffect(() => {
+    if (!primaryLoaded || !pair || !referenceModel?.url || !referenceModel.format) return;
+    if (referenceModel.id === pair.a.id || referenceModel.id === pair.b?.id) return;
+    requestBundle(referenceModel as LoadableModel);
+  }, [primaryLoaded, pair, referenceModel, requestBundle]);
+  const referenceState = referenceId ? bundles.states.get(referenceId) : undefined;
+  const referenceTable =
+    referenceId && referenceId === pair?.a.id ? aTable : referenceState?.status === "ready" ? referenceState.bundle.table : null;
+
+  // the models compared with one another: the main view's pair and every boxed model
+  const comparedIds = useMemo(
+    () => (pair ? [...new Set([pair.a.id, ...(pair.b ? [pair.b.id] : []), ...boxedModelIds])] : []),
+    [pair, boxedModelIds],
+  );
+  const onBoxedModels = useCallback((ids: readonly string[]) => {
+    setBoxedModelIds((prev) => (prev.length === ids.length && prev.every((id, i) => id === ids[i]) ? prev : ids));
+  }, []);
+
+  const modelMetrics = useModelMetrics({
+    entryId: entry?.id ?? null,
+    catalogued,
+    bundles,
+    stored: storedResidueData.tracks,
+    primary: primaryModel,
+    referenceId,
+    comparedIds,
+    maps: mapSamplers,
+    resolution: entry?.resolution ?? null,
+  });
+
+  // Every metric of the main view's model: a whole-model track keyed for the lanes, or the reason the metric is unavailable (shown
+  // in the lanes drawer). The 3D projection below draws from the same map, so lane and
+  // surface always agree. Entries and the map itself keep their identity while nothing in
+  // them changed, so a box loading another model does not repaint the density.
+  const laneMetricsRef = useRef<Map<string, LaneMetric | string>>(new Map());
   const laneMetrics = useMemo<Map<string, LaneMetric | string>>(() => {
+    const previous = laneMetricsRef.current;
     const out = new Map<string, LaneMetric | string>();
-    if (!aTable) return out;
-    for (const id of METRIC_ORDER) {
-      const ui = METRIC_UI[id];
-      if (ui.pair && !bTable) {
-        out.set(id, "needs model B");
-        continue;
+    if (pair && primaryModel) {
+      for (const id of METRIC_ORDER) {
+        const outcome = modelMetrics.resolve(pair.a.id, id);
+        if (typeof outcome === "string") {
+          out.set(id, outcome);
+          continue;
+        }
+        const kept = previous.get(id);
+        out.set(
+          id,
+          kept && typeof kept !== "string" && kept.track === outcome
+            ? kept
+            : {
+                id,
+                name: metricLabel(id),
+                unit: metricUnit(id) || null,
+                colors: METRIC_UI[id].colors,
+                domain: displayDomain(id, outcome),
+                track: outcome,
+              },
+        );
       }
-      if (ui.ensemble && memberTables.length < 2) {
-        out.set(id, "needs a multi-model ensemble");
-        continue;
-      }
-      if (ui.map && densityState !== "ready") {
-        out.set(id, "enables with the density");
-        continue;
-      }
-      if (id === "bond-variability" && bonds === null) {
-        out.set(id, "computing interactions");
-        continue;
-      }
-      const track = computeBaseTrack(id);
-      if (!track) {
-        out.set(id, "unavailable");
-        continue;
-      }
-      out.set(id, {
-        id,
-        name: metricLabel(id),
-        unit: metricUnit(id) || null,
-        colors: ui.colors,
-        domain: ui.sequential ? [0, track.domain[1]] : track.domain,
-        track,
-      });
     }
+    const unchanged = out.size === previous.size && [...out].every(([id, value]) => previous.get(id) === value);
+    if (unchanged) return previous;
+    laneMetricsRef.current = out;
     return out;
-    // densityVersion: the map samplers read volsRef, refreshed when the maps rebuild
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aTable, bTable, memberTables, densityState, densityVersion, bonds, computeBaseTrack]);
+  }, [pair, primaryModel, modelMetrics]);
 
   const metricLaneModules = useMemo(
     () => METRIC_ORDER.map((id) => makeMetricLane(id, metricLabel(id), metricDescription(id))),
     [],
   );
 
+  const projectedMetric = metricId === "none" ? null : (laneMetrics.get(metricId) ?? null);
   useEffect(() => {
     const ctx = viewer?.ctx;
     if (!ctx || !aTable) return;
@@ -1666,12 +1692,12 @@ export default function HetstarViewer({
       return;
     }
     if (densityState !== "ready" || !r?.twoFoFc) return; // the projection target is the 2Fo-Fc surface
-    const m = laneMetrics.get(metricId);
+    const m = projectedMetric;
     if (!m || typeof m === "string") return;
     const ui = METRIC_UI[metricId];
     const t = setTimeout(() => {
       let points = trackToPoints(aTable, m.track);
-      if (ui.unionSplat && bTable) points = points.concat(trackToPoints(bTable, m.track));
+      if (ui.unionSplat && referenceTable) points = points.concat(trackToPoints(referenceTable, m.track));
       if (!points.length) return;
       runProjection(async () => {
         await projectorRef.current.project(ctx, {
@@ -1687,21 +1713,9 @@ export default function HetstarViewer({
       });
     }, 120);
     return () => clearTimeout(t);
-  }, [viewer, aTable, bTable, metricId, densityState, densityVersion, laneMetrics, runProjection]);
+  }, [viewer, aTable, referenceTable, metricId, densityState, densityVersion, projectedMetric, runProjection]);
 
   // --- samplers for the slice panel + support table ---
-
-  const densitySampler = useMemo(() => {
-    const ctx = viewer?.ctx;
-    if (!ctx || densityState !== "ready") return null;
-    return samplerForVolume(ctx, volsRef.current?.twoFoFc ?? null, { relative: true });
-  }, [viewer, densityState]);
-
-  const fofcSampler = useMemo(() => {
-    const ctx = viewer?.ctx;
-    if (!ctx || densityState !== "ready") return null;
-    return samplerForVolume(ctx, volsRef.current?.foFc ?? null, { relative: true });
-  }, [viewer, densityState]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const metricSampler = useMemo(() => {
@@ -2349,17 +2363,16 @@ export default function HetstarViewer({
       onMetricId={setMetricId}
       densityReady={ready}
       densityBusy={densityBusy}
-      hasB={!!bTable}
+      metrics={laneMetrics}
       provenance={{
         aUrl: pair?.a.url ?? "model A file",
-        bUrl: pair?.b?.url ?? "model B file",
+        bUrl: referenceModel?.url ?? "no reference model",
         sfUrl: entry?.sf?.url ?? "the entry's sf-cif",
         aDesc: pair ? ROLE_LABELS[pair.a.role] : "model A",
-        bDesc: pair?.b ? ROLE_LABELS[pair.b.role] : "model B",
+        bDesc: referenceModel ? ROLE_LABELS[referenceModel.role] : "none",
       }}
       projectedDomain={projected?.domain ?? null}
       status={status}
-      hasEnsemble={memberTables.length >= 2}
       show2fofc={show2fofc}
       onShow2fofc={setShow2fofc}
       sigma={sigma}
@@ -2411,53 +2424,87 @@ export default function HetstarViewer({
     />
   );
 
+  // one chip, on the rail's title line or, with the rail hidden, on the canvas
+  const entryChip = (
+    <EntryChip
+      entry={entry}
+      entryInput={entryInput}
+      onEntryInput={setEntryInput}
+      onLoad={() => startLoad(entryInput)}
+      onPick={(id) => {
+        setEntryInput(id);
+        startLoad(id);
+      }}
+      examples={preset.entries}
+      loading={loading}
+      stages={stages}
+      error={loadError}
+      showRetryDensity={densityState === "error"}
+      onRetryDensity={retryDensity}
+    />
+  );
+
   return (
     <div ref={rootRef} className={`hetstar ${className ?? ""}`} style={{ height: "100%", width: "100%" }}>
       <CardBoundsContext.Provider value={rootRef}>
-      <div className="flex h-full min-h-0 flex-col bg-white text-[12px] text-ink-secondary">
+      <div className="flex h-full min-h-0 flex-col bg-white text-[11px] text-ink-secondary">
         <div className="flex min-h-0 flex-1">
-          <aside className="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto border-r border-line bg-surface-muted p-3">
-            <EntryChip
-              entry={entry}
-              entryInput={entryInput}
-              onEntryInput={setEntryInput}
-              onLoad={() => startLoad(entryInput)}
-              onPick={(id) => {
-                setEntryInput(id);
-                startLoad(id);
-              }}
-              examples={preset.entries}
-              loading={loading}
-              stages={stages}
-              provenance={provenance}
-              error={loadError}
-              showRetryDensity={densityState === "error"}
-              onRetryDensity={retryDensity}
-            />
-            <EntryCard
-              entry={entry}
-              desc={entryDesc}
-              aTable={aTable}
-              altSummary={altSummary}
-              memberCount={memberTables.length}
-            />
-          </aside>
+          {railOpen && (
+            <aside data-hetstar-part="rail" className="flex w-[264px] shrink-0 flex-col border-r border-line bg-white">
+              <div className="flex h-[30px] shrink-0 items-center gap-1.5 border-b border-line pl-2.5 pr-1">
+                {entryChip}
+                <button
+                  type="button"
+                  className="hs-btn hs-btn-icon hs-btn-quiet ml-auto"
+                  title="hide the entry panel"
+                  aria-label="hide the entry panel"
+                  onClick={() => setRailOpen(false)}
+                >
+                  {"\u00ab"}
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <EntryCard
+                  entry={entry}
+                  desc={entryDesc}
+                  aTable={aTable}
+                  altSummary={altSummary}
+                  memberCount={memberTables.length}
+                  provenance={provenance}
+                />
+              </div>
+            </aside>
+          )}
 
           <div className="relative min-w-0 flex-1" onContextMenu={(e) => e.preventDefault()}>
             <MolstarViewer data={aText} binary={false} view={VIEW} onReady={setViewer} onLoaded={onPrimaryLoaded} colorThemes={preset.colorThemes} />
+            {!railOpen && (
+              <div data-hetstar-part="rail-chip" className={`absolute left-2 top-2 z-10 flex h-6 items-center gap-1 pl-2 pr-0.5 ${CARD_SHELL}`}>
+                {entryChip}
+                <button
+                  type="button"
+                  className="hs-btn hs-btn-icon hs-btn-quiet"
+                  title="show the entry panel"
+                  aria-label="show the entry panel"
+                  onClick={() => setRailOpen(true)}
+                >
+                  {"\u00bb"}
+                </button>
+              </div>
+            )}
             {/* faint scrim while the bundle loads: covers the fetch/table phase AND the
                 window where Mol* is still parsing/building (loading is already false,
                 primaryLoaded not yet true — the slow part for big ensembles) */}
             {!loadError && (loading || (!!aText && !primaryLoaded)) && (
               <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/40 backdrop-blur-[1px]">
-                <div className={`flex items-center gap-2 px-2.5 py-1.5 text-[11px] text-ink-muted ${CARD_SHELL}`}>
+                <div className={`flex items-center gap-2 px-2.5 py-1.5 ${CARD_SHELL}`}>
                   <Spinner className="h-3.5 w-3.5" />
-                  loading model
+                  <span className="hs-label">loading model</span>
                 </div>
               </div>
             )}
             {pickMode === "measure" && (
-              <div className={`pointer-events-none absolute left-2 top-2 z-10 px-1.5 py-0.5 text-[10.5px] text-ink-secondary ${CARD_SHELL}`}>
+              <div className={`pointer-events-none absolute left-2 z-10 px-1.5 py-0.5 text-[10.5px] text-ink-secondary ${railOpen ? "top-2" : "top-10"} ${CARD_SHELL}`}>
                 {measureArm
                   ? `measuring from ${measureArm.comp} ${measureArm.chain}/${measureArm.seq} ${measureArm.atom}${measureArm.alt ? ` alt ${measureArm.alt}` : ""} — click the second atom`
                   : "measure: click two atoms"}
@@ -2482,7 +2529,7 @@ export default function HetstarViewer({
               />
             </div>
             {hoverInfo && (
-              <div className={`pointer-events-none absolute bottom-2 left-2 px-1.5 py-0.5 text-[11px] text-ink-secondary ${CARD_SHELL}`}>
+              <div className={`hs-value pointer-events-none absolute bottom-2 left-2 px-1.5 py-0.5 ${CARD_SHELL}`}>
                 {hoverInfo.compId} {hoverInfo.chainId}/{hoverInfo.authSeqId}
                 {pickMode !== "residue" && hoverInfo.atomId ? ` ${hoverInfo.atomId}` : ""}
                 {hoverInfo.altId ? ` alt ${hoverInfo.altId}` : ""}
@@ -2525,7 +2572,7 @@ export default function HetstarViewer({
                     type="button"
                     title="close the 2D slice"
                     onClick={() => setShowSlice2d(false)}
-                    className="absolute right-1.5 top-1 z-10 leading-none text-ink-muted hover:text-ink-secondary"
+                    className="hs-btn hs-btn-sm hs-btn-icon hs-btn-quiet absolute right-1 top-1 z-10"
                   >
                     {"×"}
                   </button>
@@ -2547,13 +2594,17 @@ export default function HetstarViewer({
                   primaryLoaded={primaryLoaded}
                   entry={entry}
                   primaryId={pair?.a.id ?? null}
+                  referenceId={referenceId}
+                  onReference={setReferenceChoice}
+                  onBoxedModels={onBoxedModels}
                   bundles={bundles}
+                  metrics={modelMetrics}
+                  onNeedStoredData={needStoredResidueData}
                   preset={preset}
                   selection={sel}
                   selRepOverlays={selRepOverlays}
                   hoverBus={hoverBus}
                   clip={clip}
-                  laneMetrics={laneMetrics}
                   onNavigate={navigateTo}
                   onHoverResidue={onLaneHover}
                   options={typeof switchboard === "object" ? switchboard : undefined}
@@ -2566,12 +2617,12 @@ export default function HetstarViewer({
 
         <div
           title="drag to resize the lanes; double-click to fit them"
-          className="h-1.5 shrink-0 cursor-row-resize border-t border-line bg-surface-muted hover:bg-accent/30"
+          className="h-1 shrink-0 cursor-row-resize border-t border-line bg-surface-muted hover:bg-accent/40"
           onMouseDown={startLanesResize}
           onDoubleClick={() => setLanesOverride(null)}
         />
-        <div className="flex shrink-0 items-start bg-white px-3 py-2" style={{ height: lanesHeight }}>
-          <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-1 overflow-hidden">
+        <div className="flex shrink-0 items-start bg-white" style={{ height: lanesHeight }}>
+          <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <SequenceLanes
               model={seqModel}
               aTable={aTable}
@@ -2586,23 +2637,21 @@ export default function HetstarViewer({
               onSelect={onLaneSelect}
               onContext={onLaneContext}
               onNaturalHeight={onNaturalHeight}
-              leading={
-                <>
-                  <span className="text-[11px] font-medium text-ink-muted">Sequence</span>
-                  {residueRanges.length > 0 && (
-                    <span className="flex items-center gap-1 rounded border border-accent/30 bg-accent-soft px-1.5 py-px text-[10.5px] tabular-nums text-accent">
-                      {picked ? `${picked.compId} ${picked.chainId}/${picked.authSeqId}` : formatRanges(residueRanges, { maxSegments: 3 })}
-                      <button
-                        type="button"
-                        title="clear selection"
-                        onClick={clearSelection}
-                        className="ml-0.5 leading-none text-accent/60 hover:text-accent"
-                      >
-                        {"×"}
-                      </button>
-                    </span>
-                  )}
-                </>
+              selectionChip={
+                residueRanges.length > 0 ? (
+                  <span className="hs-tag hs-tag-accent">
+                    {picked ? `${picked.compId} ${picked.chainId}/${picked.authSeqId}` : formatRanges(residueRanges, { maxSegments: 3 })}
+                    <button
+                      type="button"
+                      title="clear selection"
+                      aria-label="clear selection"
+                      onClick={clearSelection}
+                      className="leading-none text-accent/60 hover:text-accent"
+                    >
+                      {"×"}
+                    </button>
+                  </span>
+                ) : null
               }
             />
           </div>

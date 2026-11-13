@@ -18,6 +18,8 @@ export interface FacetOption {
   id: string;
   label: string;
   group: "look" | "metric";
+  /** why the facet cannot be shown for this model; it is listed disabled */
+  unavailable?: string | null;
 }
 
 /** the colour scale of a metric facet, for the strip under the box */
@@ -50,6 +52,9 @@ interface SwitchboardBoxProps {
   glass: ReplicaGlass | null;
   onHoverResidue: (ref: ResidueRef | null) => void;
   onNavigate: (pick: PickInfo) => void;
+  /** the other models are compared against this one */
+  isReference: boolean;
+  onReference: () => void;
   onRemove: (() => void) | null;
 }
 
@@ -75,6 +80,8 @@ export default function SwitchboardBox({
   glass,
   onHoverResidue,
   onNavigate,
+  isReference,
+  onReference,
   onRemove,
 }: SwitchboardBoxProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -176,14 +183,28 @@ export default function SwitchboardBox({
             </div>
           }
         >
-          <span className="block max-w-[112px] truncate">{name}</span>
+          <span className="block max-w-[92px] truncate">{name}</span>
         </Tooltip>
+        <button
+          type="button"
+          title={
+            isReference
+              ? "the other models are compared against this one; click to go back to the default reference"
+              : "compare the other models against this one"
+          }
+          onClick={onReference}
+          className={`ml-auto rounded px-1 text-[9.5px] leading-tight ${
+            isReference ? "bg-accent-soft text-accent" : "text-ink-muted/70 hover:text-ink-secondary"
+          }`}
+        >
+          ref
+        </button>
         {onRemove && (
           <button
             type="button"
             title="remove this box"
             onClick={onRemove}
-            className="ml-auto leading-none text-ink-muted hover:text-ink-secondary"
+            className="leading-none text-ink-muted hover:text-ink-secondary"
           >
             {"×"}
           </button>
@@ -227,8 +248,8 @@ export default function SwitchboardBox({
         {metrics.length > 0 && (
           <optgroup label="metrics">
             {metrics.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.label}
+              <option key={o.id} value={o.id} disabled={!!o.unavailable} title={o.unavailable ?? undefined}>
+                {o.unavailable ? `${o.label} (${o.unavailable})` : o.label}
               </option>
             ))}
           </optgroup>
