@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Vec3 } from "molstar/lib/mol-math/linear-algebra";
-import type { Track } from "@dynamic-pdb/hetkit/metrics";
+import type { Track, TrackSegment } from "@dynamic-pdb/hetkit/metrics";
 import type { ResidueRef } from "@dynamic-pdb/hetkit/model";
 import type { ModelBundles } from "../../hooks/useModelBundles";
 import type { ModelMetrics } from "../../hooks/useModelMetrics";
@@ -64,6 +64,11 @@ interface ModelsSwitchboardProps {
   onReference: (modelId: string | null) => void;
   /** the models that have a box right now, in box order */
   onBoxedModels: (modelIds: readonly string[]) => void;
+  /** where the compared models disagree most about motion, strongest first */
+  hotspots: readonly TrackSegment[];
+  hotspotUnit: string;
+  /** send the main view to a hotspot */
+  onHotspot: (segment: TrackSegment) => void;
   bundles: ModelBundles;
   /** metrics of any model of the entry */
   metrics: ModelMetrics;
@@ -95,6 +100,9 @@ export default function ModelsSwitchboard({
   referenceId,
   onReference,
   onBoxedModels,
+  hotspots,
+  hotspotUnit,
+  onHotspot,
   bundles,
   metrics,
   onNeedStoredData,
@@ -277,7 +285,59 @@ export default function ModelsSwitchboard({
     setBoxes((prev) => [...prev, { key: nextKey.current++, modelId, facetId: GHOST_FACET }]);
   }, []);
 
+  // --- hotspots: step through them, or pick one from the list ---
+
+  const [hotspotAt, setHotspotAt] = useState<number | null>(null);
+  // a new ranking (another model boxed, another entry) starts the walk over
+  useEffect(() => setHotspotAt(null), [hotspots]);
+  const goToHotspot = useCallback(
+    (index: number) => {
+      const segment = hotspots[index];
+      if (!segment) return;
+      setHotspotAt(index);
+      onHotspot(segment);
+    },
+    [hotspots, onHotspot],
+  );
+  const stepHotspot = (step: 1 | -1) => {
+    if (!hotspots.length) return;
+    const from = hotspotAt ?? (step === 1 ? -1 : 0);
+    goToHotspot((from + step + hotspots.length) % hotspots.length);
+  };
+
   if (!entry || !primaryId) return null;
+
+  const hotspotName = (segment: TrackSegment) =>
+    segment.start.seq === segment.end.seq
+      ? `${segment.chain} ${segment.start.seq}`
+      : `${segment.chain} ${segment.start.seq}-${segment.end.seq}`;
+  const hotspotMenu = (
+    <div className="flex flex-col gap-1">
+      <span className="text-[10px] font-medium uppercase tracking-wider text-ink-muted/80">
+        where the compared models disagree about motion
+      </span>
+      {hotspots.map((segment, index) => (
+        <button
+          key={`${segment.chain}|${segment.start.seq}|${segment.end.seq}`}
+          type="button"
+          onClick={() => goToHotspot(index)}
+          className={`flex items-baseline justify-between gap-3 rounded border px-1.5 py-0.5 text-left hover:bg-line/50 ${
+            index === hotspotAt ? "border-accent/40 bg-accent-soft" : "border-line"
+          }`}
+        >
+          <span className="text-ink">
+            {index + 1}. {hotspotName(segment)}
+          </span>
+          <span className="tabular-nums text-[10px] text-ink-muted">
+            up to {segment.peak.toFixed(2)} {hotspotUnit}
+          </span>
+        </button>
+      ))}
+      <span className="text-[10px] text-ink-muted">
+        runs of polymer residues in the top tenth of the motion disagreement, ranked by their highest value
+      </span>
+    </div>
+  );
 
   const referenceEntry = referenceId ? modelById.get(referenceId) : undefined;
   const referenceName = referenceEntry ? modelDisplayName(referenceEntry, models) : null;
@@ -327,6 +387,35 @@ export default function ModelsSwitchboard({
             className="max-w-[180px] truncate text-ink-muted"
           >
             reference: {referenceName ?? "none"}
+          </span>
+        )}
+        {active && hotspots.length > 0 && (
+          <span className="flex items-center gap-1">
+            <button
+              type="button"
+              title="previous hotspot"
+              onClick={() => stepHotspot(-1)}
+              className="leading-none text-ink-muted hover:text-ink"
+            >
+              {"\u2039"}
+            </button>
+            <PinPopover content={hotspotMenu} width={260} align="end" closeKey={hotspotAt ?? -1}>
+              <span
+                title="where the compared models disagree most about motion; step through them or pick one"
+                className="tabular-nums text-accent hover:text-accent-hover"
+              >
+                hotspots {hotspotAt === null ? "" : `${hotspotAt + 1}/`}
+                {hotspots.length}
+              </span>
+            </PinPopover>
+            <button
+              type="button"
+              title="next hotspot"
+              onClick={() => stepHotspot(1)}
+              className="leading-none text-ink-muted hover:text-ink"
+            >
+              {"\u203a"}
+            </button>
           </span>
         )}
       </div>

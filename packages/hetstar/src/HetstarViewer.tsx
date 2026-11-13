@@ -142,7 +142,7 @@ import {
   type ResidueRef,
 } from "@dynamic-pdb/hetkit/model";
 import type { AltGroupSelector } from "./lib/molstar/queries";
-import type { Track } from "@dynamic-pdb/hetkit/metrics";
+import { rankSegments, type Track, type TrackSegment } from "@dynamic-pdb/hetkit/metrics";
 import { Structure, StructureElement } from "molstar/lib/mol-model/structure";
 import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/state";
 
@@ -2314,6 +2314,47 @@ export default function HetstarViewer({
     [viewer, aTable],
   );
 
+  // --- hotspots: the stretches of the polymer where the compared models disagree most
+  // about motion, ranked; ligands and waters are left out because they are not matched
+  // residue for residue across models ---
+  const polymerKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const chain of seqModel?.chains ?? []) {
+      for (const position of chain.positions) if (position.ref) keys.add(residueKey(position.ref));
+    }
+    return keys;
+  }, [seqModel]);
+  const disagreement = laneMetrics.get("motion-spread");
+  const hotspots = useMemo<TrackSegment[]>(
+    () =>
+      disagreement && typeof disagreement !== "string"
+        ? rankSegments(disagreement.track, { include: (ref) => polymerKeys.has(residueKey(ref)) })
+        : [],
+    [disagreement, polymerKeys],
+  );
+
+  // a hotspot chosen in the switchboard: the segment becomes the selection (so the lanes and
+  // every box show it), the main view frames it, and an active clip sphere moves onto it
+  const navigateToSegment = useCallback(
+    (segment: TrackSegment) => {
+      if (!viewer) return;
+      const range: ResidueRange = {
+        chain: segment.chain,
+        from: Math.min(segment.start.seq, segment.end.seq),
+        to: Math.max(segment.start.seq, segment.end.seq),
+      };
+      setSel({ ranges: [range], atoms: [] });
+      setPopup(null);
+      const stats = aTable ? selectionStats(aTable, [range]) : null;
+      if (stats) setClip((prev) => (prev ? { ...prev, center: stats.centroid } : prev));
+      const structure = viewer.getCurrentStructure();
+      const loci = structure ? residueLoci(structure, range.chain, range.from, range.to) : null;
+      if (loci) viewer.focusLoci(loci);
+      else if (stats) viewer.focusPoint(stats.centroid, Math.max(NAVIGATE_RADIUS, stats.fitRadius));
+    },
+    [viewer, aTable],
+  );
+
   const onPrimaryLoaded = useCallback(() => setPrimaryLoaded(true), []);
   const ready = densityState === "ready";
 
@@ -2597,6 +2638,9 @@ export default function HetstarViewer({
                   referenceId={referenceId}
                   onReference={setReferenceChoice}
                   onBoxedModels={onBoxedModels}
+                  hotspots={hotspots}
+                  hotspotUnit={disagreement && typeof disagreement !== "string" ? (disagreement.unit ?? "") : ""}
+                  onHotspot={navigateToSegment}
                   bundles={bundles}
                   metrics={modelMetrics}
                   onNeedStoredData={needStoredResidueData}

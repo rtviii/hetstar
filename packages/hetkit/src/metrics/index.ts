@@ -6,6 +6,8 @@ export { combineDerived, DERIVED_METRICS } from "./derived";
 export type { DerivedMetric } from "./derived";
 export { B_TO_MEAN_SQUARE_DISPLACEMENT, motionTracks } from "./motion";
 export type { MotionTracks } from "./motion";
+export { rankSegments, trackQuantile } from "./segments";
+export type { RankSegmentsOptions, TrackSegment } from "./segments";
 export { STORED_METRIC_IDS, STORED_METRICS, storedResidueTracks } from "./stored";
 export type { StoredMetricId, StoredMetricInfo, StoredResidueRow } from "./stored";
 export { makeTrack, scopeTrack, trackDelta, trackFromJSON, trackSpread, trackToJSON } from "./tracks";
