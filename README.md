@@ -74,6 +74,19 @@ import "@dynamic-pdb/hetstar/styles.css";
   under every preset; a preset must not be the place where engine behaviour changes. One
   example: under a cartoon, the polymer residues hetcif variables cover are drawn as thin
   sticks over the trace, so a world choice moves atoms under the card look too.
+- `switchboard` controls the Models Switchboard, the dock of model replicas at the bottom
+  right of the canvas (`packages/hetstar/src/components/switchboard/`). It is on by default;
+  `false` removes it, and `{ defaultOpen, boxes, maxBoxes }` sets whether it starts open, whether
+  an entry opens with its primary model's box alone or with one per model (`boxes: "all"`), and
+  how many boxes it allows (4 by default, 6 at most: every box is a WebGL context of its own).
+  The dev app's `/switchboard` page opens a real deposition with every model boxed
+  (`?entry=dpdb_...`, `?model=<model id>`, `?boxes=primary`). Each box
+  shows one whole model of the entry turned like the main view, mirrors the main view's
+  selection, hover and selection representations, and draws a translucent sphere where the
+  main view is (its clip sphere, or what its camera frames once zoomed in). Rotating any view
+  rotates all of them; clicking a residue in a box sends the main view there. Hosts that need
+  to find the dock or the top-right tray in the DOM can use `[data-hetstar-part="switchboard"]`
+  and `[data-hetstar-part="tray"]`.
 - It is client-only. Mol* needs `window` and WebGL, so render it through
   `next/dynamic(..., { ssr: false })`.
 - It ships raw TypeScript (like hetkit), so a Next host needs both packages in
