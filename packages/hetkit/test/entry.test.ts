@@ -20,7 +20,16 @@ describe("describeEntry", () => {
     const protein = d.entities.find((e) => e.type === "polymer");
     expect(protein?.organism).toBe("Homo sapiens");
     expect(protein?.uniprot).toBe("P01116");
+    expect(protein?.taxonomyId).toBe("9606");
     expect(protein?.description).toBeTruthy();
+    expect(d.entryId).toBe("7A1X");
+    expect(d.citation).toEqual({
+      title: "KRAS G12C fragment screening renders new binding pockets.",
+      journal: "Small Gtpases",
+      year: 2022,
+      doi: "10.1080/21541248.2021.1979360",
+      pubmedId: "34558391",
+    });
   });
 
   it("reads what a phenix/qFit header carries and leaves the deposition fields null", async () => {
@@ -31,6 +40,8 @@ describe("describeEntry", () => {
     expect(d.title).toBeNull();
     expect(d.depositedDate).toBeNull();
     expect(d.entities).toEqual([]);
+    // its _citation rows are the programs' own papers, none of them the entry's
+    expect(d.citation).toBeNull();
   });
 });
 

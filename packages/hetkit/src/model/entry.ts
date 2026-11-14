@@ -17,10 +17,25 @@ export interface EntryEntity {
   organism: string | null;
   /** UniProt accession from _struct_ref (db_name UNP) */
   uniprot: string | null;
+  /** NCBI taxonomy id of the source organism (entity_src_gen, else entity_src_nat) */
+  taxonomyId: string | null;
+}
+
+/** the entry's primary citation (_citation row with id "primary") */
+export interface EntryCitation {
+  title: string | null;
+  journal: string | null;
+  year: number | null;
+  doi: string | null;
+  pubmedId: string | null;
 }
 
 export interface EntryDescription {
+  /** _entry.id: the PDB id of a deposited file */
+  entryId: string | null;
   title: string | null;
+  /** null when the file names no primary citation (refinement programs list only their own papers) */
+  citation: EntryCitation | null;
   /** _exptl.method, e.g. "X-RAY DIFFRACTION" */
   method: string | null;
   /** _symmetry.space_group_name_H-M */
@@ -67,9 +82,26 @@ function perEntity(block: MolCifBlock, category: string, idField: string, valueF
   return out;
 }
 
+function primaryCitation(citation: MolCifCategory | undefined): EntryCitation | null {
+  const fId = citation?.getField("id");
+  if (!citation || !fId) return null;
+  for (let row = 0; row < citation.rowCount; row++) {
+    if (normValue(fId.str(row)).toLowerCase() !== "primary") continue;
+    return {
+      title: text(citation, "title", row),
+      journal: text(citation, "journal_abbrev", row),
+      year: num(citation, "year", row),
+      doi: text(citation, "pdbx_database_id_DOI", row),
+      pubmedId: text(citation, "pdbx_database_id_PubMed", row),
+    };
+  }
+  return null;
+}
+
 export function describeEntry(file: MolCifFile, blockIndex = 0): EntryDescription {
   const block = file.blocks[blockIndex];
   const empty: EntryDescription = {
+    entryId: null, citation: null,
     title: null, method: null, spaceGroup: null, resolution: null, rWork: null, rFree: null,
     depositedDate: null, authorCount: 0, firstAuthor: null, ph: null, temperatureK: null, entities: [],
   };
@@ -85,6 +117,8 @@ export function describeEntry(file: MolCifFile, blockIndex = 0): EntryDescriptio
     const typeOf = perEntity(block, "entity", "id", "type");
     const srcGen = perEntity(block, "entity_src_gen", "entity_id", "pdbx_gene_src_scientific_name");
     const srcNat = perEntity(block, "entity_src_nat", "entity_id", "pdbx_organism_scientific");
+    const taxGen = perEntity(block, "entity_src_gen", "entity_id", "pdbx_gene_src_ncbi_taxonomy_id");
+    const taxNat = perEntity(block, "entity_src_nat", "entity_id", "pdbx_ncbi_taxonomy_id");
     // UNP accessions only; other reference databases are not this record's business
     const unp = new Map<string, string>();
     const sref = cats["struct_ref"];
@@ -111,12 +145,15 @@ export function describeEntry(file: MolCifFile, blockIndex = 0): EntryDescriptio
           type: typeOf.get(id) ?? null,
           organism: srcGen.get(id) ?? srcNat.get(id) ?? null,
           uniprot: unp.get(id) ?? null,
+          taxonomyId: taxGen.get(id) ?? taxNat.get(id) ?? null,
         });
       }
     }
   }
 
   return {
+    entryId: text(cats["entry"], "id"),
+    citation: primaryCitation(cats["citation"]),
     title: text(cats["struct"], "title"),
     method: text(cats["exptl"], "method"),
     spaceGroup: text(cats["symmetry"], "space_group_name_H-M"),
