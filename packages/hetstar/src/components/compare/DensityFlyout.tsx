@@ -1,58 +1,20 @@
 "use client";
 import type { DensityQuality } from "../../lib/molstar/density";
-import type { LaneMetric } from "../lanes/types";
-import type { SliceAxis } from "../SlicePanel";
-import SliceControls from "./SliceControls";
-import {
-  METRIC_ORDER,
-  METRIC_UI,
-  metricLabel,
-  metricTooltip,
-  metricUnit,
-  type MetricId,
-  type MetricProvenance,
-} from "./metrics";
-import { GroupLabel, OnRequestControls, SliderRow, SwitchButton, TinyText, Tooltip } from "./ui";
-import type { OnRequestState } from "../../hooks/useModelMetrics";
+import { GroupLabel, HintMark, SwitchButton, TinyText } from "./ui";
 
-// Everything density: the map toggles and their knobs (top — the everyday controls),
-// the metric painted on the 2Fo-Fc surface, the density quality and the 2D slice map
-// (plane controls + the floating image switch). Rendered inside the tray's hover
-// flyout on the density icon (whose CLICK toggles the maps themselves); all state
-// lives in HetstarViewer.
+// The maps themselves: which are drawn, the 2Fo-Fc contour, their opacity and the grid they
+// are carved at. One row per knob. What the 2Fo-Fc surface is painted with belongs to the
+// colour board; the last row names it and opens the board on the map. Rendered inside the
+// tray's flyout on the density icon (whose CLICK toggles the maps); state lives in
+// HetstarViewer.
 
 const DENSITY_QUALITIES: DensityQuality[] = ["low", "auto", "high"];
 
-// Grouped by what a metric needs, derived from the flags so new metrics slot in.
-const METRIC_GROUPS: { title: string; ids: MetricId[] }[] = (() => {
-  const model: MetricId[] = [];
-  const pair: MetricId[] = [];
-  const across: MetricId[] = [];
-  const map: MetricId[] = [];
-  const stored: MetricId[] = [];
-  for (const id of METRIC_ORDER) {
-    const ui = METRIC_UI[id];
-    (ui.stored ? stored : ui.across ? across : ui.pair ? pair : ui.map ? map : model).push(id);
-  }
-  return [
-    { title: "This model", ids: model },
-    { title: "Across the compared models", ids: across },
-    { title: "Against the reference", ids: pair },
-    { title: "Map", ids: map },
-    { title: "Stored in the catalogue", ids: stored },
-  ];
-})();
+const ROW = "grid grid-cols-[52px_minmax(0,1fr)_44px] items-center gap-x-2";
 
 export default function DensityFlyout({
-  metricId,
-  onMetricId,
   densityReady,
   densityBusy,
-  metrics,
-  requests,
-  provenance,
-  projectedDomain,
-  status,
   show2fofc,
   onShow2fofc,
   sigma,
@@ -63,34 +25,11 @@ export default function DensityFlyout({
   onOpacity,
   densityQuality,
   onDensityQuality,
-  showSlice2d,
-  onShowSlice2d,
-  boxReady,
-  slice3d,
-  onSlice3d,
-  sliceModel,
-  onSliceModel,
-  sliceAxis,
-  onSliceAxis,
-  sliceFrac,
-  onSliceFrac,
-  sliceCoord,
+  paintLabel,
+  onOpenColor,
 }: {
-  metricId: MetricId | "none";
-  onMetricId: (id: MetricId | "none") => void;
   densityReady: boolean;
   densityBusy: boolean;
-  /** the main view's metrics by id; a string is why that metric is unavailable */
-  metrics: ReadonlyMap<string, LaneMetric | string>;
-  /** the main view's metrics that are computed on request: where each stands, and its controls */
-  requests: {
-    state(id: MetricId): OnRequestState | null;
-    compute(id: MetricId): void;
-    erase(id: MetricId): void;
-  } | null;
-  provenance: MetricProvenance;
-  projectedDomain: [number, number] | null;
-  status: string | null;
   show2fofc: boolean;
   onShow2fofc: (v: boolean) => void;
   sigma: number;
@@ -102,188 +41,112 @@ export default function DensityFlyout({
   onOpacity: (v: number) => void;
   densityQuality: DensityQuality;
   onDensityQuality: (q: DensityQuality) => void;
-  showSlice2d: boolean;
-  onShowSlice2d: (v: boolean) => void;
-  /** the model box exists (slice plane controls enable) */
-  boxReady: boolean;
-  slice3d: boolean;
-  onSlice3d: (v: boolean) => void;
-  sliceModel: boolean;
-  onSliceModel: (v: boolean) => void;
-  sliceAxis: SliceAxis;
-  onSliceAxis: (a: SliceAxis) => void;
-  sliceFrac: number;
-  onSliceFrac: (v: number) => void;
-  sliceCoord: number | null;
+  /** what the 2Fo-Fc surface is painted with, by name */
+  paintLabel: string;
+  /** open the colour board on the map */
+  onOpenColor: () => void;
 }) {
-  const metricSwitch = (id: MetricId) => {
-    const tip = metricTooltip(id, provenance);
-    const metric = metrics.get(id);
-    const reason = typeof metric === "string" ? metric : metric ? null : "loading";
-    const request = requests?.state(id) ?? null;
-    const button = (
-      <Tooltip
-        content={
-          <div className="flex flex-col gap-1">
-            <div className="font-medium">
-              {tip.title}
-              {metricUnit(id) ? <span className="text-ink-muted"> ({metricUnit(id)})</span> : null}
-            </div>
-            {tip.lines.map((l, i) => (
-              <div key={i} className="break-words">
-                {l}
-              </div>
-            ))}
-            {reason && <div className="text-ink-muted">Unavailable: {reason}.</div>}
-          </div>
-        }
-      >
-        <SwitchButton pressed={metricId === id} disabled={!!reason} onClick={() => onMetricId(id)}>
-          {metricLabel(id)}
-        </SwitchButton>
-      </Tooltip>
-    );
-    if (!request || request.status === "blocked") return <span key={id}>{button}</span>;
-    // computed on request: a row of its own, the metric and its compute / recompute / erase
-    return (
-      <div key={id} className="flex basis-full items-center justify-between gap-1.5">
-        {button}
-        <OnRequestControls
-          status={request.status}
-          what={`${metricLabel(id)} of this model`}
-          onCompute={() => {
-            requests?.compute(id);
-            onMetricId(id);
-          }}
-          onErase={() => requests?.erase(id)}
-        />
-      </div>
-    );
-  };
-
   return (
-    <div className="flex flex-col gap-2.5">
-      <div className="flex flex-col gap-1.5">
-        <GroupLabel>Maps</GroupLabel>
-        <label className="flex items-center gap-2">
+    <div className="flex flex-col gap-1.5">
+      <GroupLabel>Maps{densityBusy ? ", rebuilding" : ""}</GroupLabel>
+      <div className={ROW}>
+        <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={show2fofc} disabled={!densityReady} onChange={(e) => onShow2fofc(e.target.checked)} />
-          <span>2Fo-Fc</span>
+          <span className="hs-value">2Fo-Fc</span>
         </label>
-        <SliderRow
-          label="2Fo-Fc contour"
+        <input
+          type="range"
+          aria-label="2Fo-Fc contour level"
+          className="min-w-0"
           min={0.5}
           max={4}
           step={0.1}
           value={sigma}
-          display={`${sigma.toFixed(1)} sigma`}
           disabled={!densityReady || !show2fofc}
-          onChange={onSigma}
+          onChange={(e) => onSigma(Number(e.target.value))}
         />
-        <label className="flex items-center gap-2">
+        <span className="hs-value text-right text-[10px]">
+          {sigma.toFixed(1)}
+          <span className="hs-unit"> sigma</span>
+        </span>
+      </div>
+      <div className={ROW}>
+        <label className="flex items-center gap-1.5">
           <input type="checkbox" checked={showFofc} disabled={!densityReady} onChange={(e) => onShowFofc(e.target.checked)} />
-          <Tooltip
-            content={
-              <div className="flex flex-col gap-1">
-                <div className="font-medium">Fo-Fc difference map</div>
-                <div>
-                  Isosurfaces at +3 sigma (green: density the model does not explain) and -3 sigma (red: modeled matter
-                  the data lack). Levels fixed; from the same client-side FFT as 2Fo-Fc.
-                </div>
-              </div>
-            }
-          >
-            <span>Fo-Fc (+3 green / -3 red)</span>
-          </Tooltip>
+          <span className="hs-value">Fo-Fc</span>
         </label>
-        <SliderRow
-          label="map opacity"
+        <span className="text-[10px] text-ink-muted">
+          +3 green, -3 red
+          <HintMark
+            tip={{
+              title: "Fo-Fc difference map",
+              is: "Where the data and the model disagree.",
+              rows: [
+                { label: "green", text: "+3 sigma: density the model does not explain." },
+                { label: "red", text: "-3 sigma: modeled matter the data lack." },
+                { label: "levels", text: "Fixed at 3 sigma." },
+                { label: "from", text: "The same client-side FFT as the 2Fo-Fc map." },
+              ],
+            }}
+          />
+        </span>
+        <span />
+      </div>
+      <div className={ROW}>
+        <span className="hs-label">opacity</span>
+        <input
+          type="range"
+          aria-label="map opacity"
+          className="min-w-0"
           min={0.15}
           max={1}
           step={0.05}
           value={opacity}
-          display={`${Math.round(opacity * 100)}%`}
           disabled={!densityReady}
-          onChange={onOpacity}
+          onChange={(e) => onOpacity(Number(e.target.value))}
         />
-        {!densityReady && (
-          <TinyText>maps compute in the background; the density button turns them on once they are in</TinyText>
-        )}
+        <span className="hs-value text-right text-[10px]">
+          {Math.round(opacity * 100)}
+          <span className="hs-unit"> %</span>
+        </span>
       </div>
-
-      <div className="flex flex-col gap-1 border-t border-line pt-1.5">
-        <GroupLabel>Paint metric on the density</GroupLabel>
-        {provenance.aDesc && provenance.bDesc && (
-          <TinyText>
-            this model = {provenance.aDesc} (primary) / reference = {provenance.bDesc}
-          </TinyText>
-        )}
-        <div className="flex flex-wrap items-center gap-1">
-          <SwitchButton pressed={metricId === "none"} onClick={() => onMetricId("none")}>
-            None
-          </SwitchButton>
-        </div>
-        {METRIC_GROUPS.map((g) =>
-          g.ids.length ? (
-            <div key={g.title} className="flex flex-col gap-1">
-              <span className="hs-label text-[8.5px] text-ink-faint">{g.title}</span>
-              <div className="flex flex-wrap items-center gap-1">{g.ids.map(metricSwitch)}</div>
-            </div>
-          ) : null,
-        )}
-        {!densityReady && (
-          <TinyText>map metrics enable with the density; every metric paints the 2Fo-Fc surface once it is there</TinyText>
-        )}
-        {metricId !== "none" && projectedDomain && (
-          <TinyText>
-            domain: {projectedDomain[0].toFixed(2)} to {projectedDomain[1].toFixed(2)} {metricUnit(metricId)}; gray = no
-            data
-          </TinyText>
-        )}
-        {status && <TinyText>{status}</TinyText>}
-      </div>
-
-      <div className={`flex flex-col gap-1 border-t border-line pt-1.5 ${densityReady ? "" : "opacity-40"}`}>
-        <GroupLabel>Density quality{densityBusy ? ", rebuilding" : ""}</GroupLabel>
+      <div className={ROW}>
+        <span className="hs-label">
+          grid
+          <HintMark
+            tip={{
+              title: "Map grid",
+              is: "How finely the maps are carved around the model.",
+              rows: [
+                { label: "auto", text: "The default point budget." },
+                { label: "high", text: "A finer grid and float-textured surfaces; rebuilding takes a few seconds." },
+                { label: "low", text: "A coarser grid, for large entries." },
+              ],
+            }}
+          />
+        </span>
         <div className="hs-seg">
           {DENSITY_QUALITIES.map((q) => (
-            <SwitchButton
-              key={q}
-              pressed={densityQuality === q}
-              disabled={!densityReady || densityBusy}
-              onClick={() => onDensityQuality(q)}
-            >
+            <SwitchButton key={q} pressed={densityQuality === q} disabled={!densityReady || densityBusy} onClick={() => onDensityQuality(q)}>
               {q}
             </SwitchButton>
           ))}
         </div>
-        <TinyText>high re-carves the maps at a finer grid and renders float-textured surfaces (a few seconds)</TinyText>
+        <span />
       </div>
-
-      <div className="flex flex-col gap-1 border-t border-line pt-1.5">
-        <GroupLabel>2D slice map</GroupLabel>
-        <SliceControls
-          boxReady={boxReady}
-          densityReady={densityReady}
-          slice3d={slice3d}
-          onSlice3d={onSlice3d}
-          sliceModel={sliceModel}
-          onSliceModel={onSliceModel}
-          axis={sliceAxis}
-          onAxis={onSliceAxis}
-          frac={sliceFrac}
-          onFrac={onSliceFrac}
-          coord={sliceCoord}
-        />
-        <div className="hs-seg">
-          <SwitchButton pressed={!showSlice2d} onClick={() => onShowSlice2d(false)}>
-            off
-          </SwitchButton>
-          <SwitchButton pressed={showSlice2d} onClick={() => onShowSlice2d(true)}>
-            on
-          </SwitchButton>
-        </div>
-        <TinyText>images the slice plane as a floating panel over the 3D canvas</TinyText>
+      <div className={ROW}>
+        <span className="hs-label">color</span>
+        <button
+          type="button"
+          className="hs-btn min-w-0 justify-start normal-case tracking-normal"
+          title="what the 2Fo-Fc surface is painted with; opens the colour board on the map"
+          onClick={onOpenColor}
+        >
+          <span className="truncate">{paintLabel}</span>
+        </button>
+        <span />
       </div>
+      {!densityReady && <TinyText>maps compute in the background; the density button turns them on once they are in</TinyText>}
     </div>
   );
 }

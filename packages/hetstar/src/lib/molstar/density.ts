@@ -14,7 +14,6 @@ import { ParamDefinition as PD } from "molstar/lib/mol-util/param-definition";
 //  - structure-factor CIF (map coefficients) to 2Fo-Fc / Fo-Fc volumes via the built-in
 //    "sfcif" data format provider (client-side FFT, VolumeFromStructureFactorsCif),
 //  - isosurface representations with live sigma / clip-sphere updates,
-//  - an arbitrary-plane slice representation,
 //  - a metric field splatted onto an in-memory Volume (alpha-orbitals pattern) and
 //    projected onto the 2Fo-Fc isosurface via the external-volume color theme.
 // Nothing here forks Mol*; it is composition of existing primitives.
@@ -223,39 +222,6 @@ export function clipSphereObject(center: [number, number, number], radius: numbe
   };
 }
 
-// The shader's un-rotated clip plane has normal +Y through `position`; `rotation` (an
-// axis + angle in degrees) reorients it. With invert false the +normal half-space is
-// discarded; invert true keeps it instead.
-export function clipPlaneObject(
-  point: [number, number, number],
-  normal: [number, number, number],
-  opts: { invert?: boolean } = {},
-): ClipObjectSpec {
-  const n = Vec3.normalize(Vec3(), Vec3.create(normal[0], normal[1], normal[2]));
-  const up = Vec3.create(0, 1, 0);
-  const d = Vec3.dot(up, n);
-  let axis: Vec3;
-  let angle: number;
-  if (d > 1 - 1e-6) {
-    axis = Vec3.create(1, 0, 0);
-    angle = 0;
-  } else if (d < -1 + 1e-6) {
-    axis = Vec3.create(1, 0, 0);
-    angle = 180;
-  } else {
-    axis = Vec3.normalize(Vec3(), Vec3.cross(Vec3(), up, n));
-    angle = (Math.acos(Math.max(-1, Math.min(1, d))) * 180) / Math.PI;
-  }
-  return {
-    type: "plane",
-    invert: !!opts.invert,
-    position: Vec3.create(point[0], point[1], point[2]),
-    rotation: { axis, angle },
-    scale: Vec3.create(1, 1, 1),
-    transform: Mat4.identity(),
-  };
-}
-
 /** Set (or, with an empty list, clear) the clip objects of every given representation. */
 export async function setClipObjects(
   ctx: PluginContext,
@@ -271,52 +237,6 @@ export async function setClipObjects(
     });
   }
   await tree.commit();
-}
-
-// --- arbitrary-plane slice through a point ---
-
-export async function createSlice(
-  ctx: PluginContext,
-  volumeRef: string,
-  point: [number, number, number],
-  normal: [number, number, number],
-): Promise<string> {
-  const params = VolumeRepresentation3DHelpers.getDefaultParamsStatic(ctx, "slice", {}, "volume-value");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (params.type.params as any).mode = "plane";
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (params.type.params as any).plane = {
-    point: Vec3.create(point[0], point[1], point[2]),
-    normal: Vec3.create(normal[0], normal[1], normal[2]),
-  };
-  const selector = await ctx
-    .build()
-    .to(volumeRef)
-    .apply(StateTransforms.Representation.VolumeRepresentation3D, params)
-    .commit();
-  setReprsPickable(ctx, [selector.ref], false);
-  return selector.ref;
-}
-
-export async function updateSlice(
-  ctx: PluginContext,
-  sliceRef: string,
-  point: [number, number, number],
-  normal: [number, number, number],
-): Promise<void> {
-  await ctx
-    .build()
-    .to(sliceRef)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .update((old: any) => {
-      old.type.params.mode = "plane";
-      old.type.params.plane = {
-        point: Vec3.create(point[0], point[1], point[2]),
-        normal: Vec3.create(normal[0], normal[1], normal[2]),
-      };
-    })
-    .commit();
-  setReprsPickable(ctx, [sliceRef], false);
 }
 
 export async function removeNode(ctx: PluginContext, ref: string): Promise<void> {

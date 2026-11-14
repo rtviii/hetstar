@@ -31,22 +31,37 @@ export function modelDisplayName(model: ManifestModel, siblings: readonly Manife
   return parts.join(" · ");
 }
 
-/** everything else the catalogue records about the model, one fact per line */
-export function modelDetailLines(model: ManifestModel): string[] {
-  const lines: string[] = [];
+const ROLE_SHORT: Record<ManifestModel["role"], string> = {
+  deposited: "depos",
+  qfit: "qFit",
+  rerefined: "reref",
+  ensemble: "ensem",
+  other: "model",
+};
+
+/** the model in a few letters, for a narrow column head: its role, numbered when another
+ * model of the entry has the same role */
+export function modelShortName(model: ManifestModel, siblings: readonly ManifestModel[] = []): string {
+  const sameRole = siblings.filter((other) => other.role === model.role);
+  const short = ROLE_SHORT[model.role];
+  return sameRole.length > 1 ? `${short} ${sameRole.findIndex((other) => other.id === model.id) + 1}` : short;
+}
+
+/** everything else the catalogue records about the model, as labelled facts */
+export function modelDetailRows(model: ManifestModel): { label: string; text: string }[] {
+  const rows: { label: string; text: string }[] = [];
   const kind = [model.modelType, model.purpose].filter(Boolean).join(", ");
-  lines.push(kind ? `${ROLE_LABELS[model.role]} (${kind})` : ROLE_LABELS[model.role]);
-  if (model.software) lines.push(model.software);
-  const metrics = Object.entries(model.metrics)
-    .map(([key, value]) => `${METRIC_LABELS[key] ?? key} ${value}`)
-    .join(", ");
-  if (metrics) lines.push(metrics);
-  if (model.format) {
-    const size = model.sizeBytes != null ? `, ${(model.sizeBytes / 1e6).toFixed(2)} MB` : "";
-    lines.push(`${model.format === "pdb" ? "PDB format, converted to mmCIF on load" : "mmCIF"}${size}`);
-  } else {
-    lines.push("no coordinate file listed");
-  }
-  lines.push(model.id);
-  return lines;
+  rows.push({ label: "kind", text: kind ? `${ROLE_LABELS[model.role]} (${kind})` : ROLE_LABELS[model.role] });
+  if (model.software) rows.push({ label: "software", text: model.software });
+  for (const [key, value] of Object.entries(model.metrics)) rows.push({ label: METRIC_LABELS[key] ?? key, text: String(value) });
+  rows.push({ label: "file", text: modelFileLine(model) });
+  rows.push({ label: "id", text: model.id });
+  return rows;
+}
+
+/** the model's coordinate file in a phrase */
+export function modelFileLine(model: ManifestModel): string {
+  if (!model.format) return "no coordinate file listed";
+  const size = model.sizeBytes != null ? `, ${(model.sizeBytes / 1e6).toFixed(2)} MB` : "";
+  return `${model.format === "pdb" ? "PDB format, converted to mmCIF on load" : "mmCIF"}${size}`;
 }

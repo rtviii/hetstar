@@ -9,8 +9,9 @@ import { PinPopover, Segmented } from "../compare/ui";
 import { defaultEnabledLanes, LANE_MODULES } from "./registry";
 import type { LaneContext, LaneMetric, LaneModule, LaneView, PositionSpan } from "./types";
 
-// The sequence lanes host: a title stripe (the chain, its facts, the tools), a ruler in
-// author numbering, one ruled row per enabled lane module, all sharing the chain's
+// The sequence lanes host: a title stripe (the fold, the chain, its facts, the tools), a
+// ruler in author numbering whose corner cell holds the lane picker, one ruled row per
+// enabled lane module (each with a cross that puts it away), all sharing the chain's
 // positions as x, and a readout line under them. Fitted to its
 // column until zoomed (buttons or trackpad pinch), then it scrolls sideways with the
 // row labels staying put. Hover and selection are painted as columns over the whole
@@ -21,7 +22,7 @@ import type { LaneContext, LaneMetric, LaneModule, LaneView, PositionSpan } from
 // speak), and every 3D pick arrives the same way and is placed by positionOf. Nothing
 // in the lanes knows about Mol*.
 
-const GUTTER_L = 142; // fits the longest metric label ("Density support delta") in the label voice, with its padding
+const GUTTER_L = 154; // fits the longest metric label ("Density support delta") in the label voice, with its padding and its cross
 const GUTTER_R = 12;
 const RULER_H = 20;
 const ROOT_GAP = 0; // the root column has no gap: stripe, board and readout butt against each other
@@ -113,8 +114,9 @@ function Row({
   plain,
   className,
 }: {
-  label: string;
-  /** rendered after the label text (the expand/collapse toggle) */
+  /** the lane's name; the ruler row puts the lane picker here */
+  label: ReactNode;
+  /** rendered after the label (the expand toggle, the cross that hides the lane) */
   labelExtra?: ReactNode;
   height: number;
   children: ReactNode;
@@ -130,7 +132,13 @@ function Row({
       style={{ gridTemplateColumns: "var(--gl) var(--lane) var(--gr)" }}
     >
       <span className="hs-label sticky left-0 z-10 flex h-full items-center justify-between gap-1 border-r border-line bg-white pl-2.5 pr-1.5 text-[8.5px]">
-        {label}
+        {typeof label === "string" ? (
+          <span className="min-w-0 truncate" title={label}>
+            {label}
+          </span>
+        ) : (
+          label
+        )}
         {labelExtra}
       </span>
       <div ref={trackRef} className={`relative ${plain ? "" : "bg-surface-muted"}`} style={{ height }}>
@@ -287,6 +295,10 @@ export default function SequenceLanes({
   onContext,
   selectionChip,
   onNaturalHeight,
+  colorBy,
+  colorLabel,
+  onOpenColor,
+  onCollapse,
 }: {
   model: SequenceModel | null;
   aTable: AtomTable | null;
@@ -314,13 +326,19 @@ export default function SequenceLanes({
   /** the height the lanes would take without scrolling (stripe, board, readout),
    * reported whenever it changes, so the host can size the strip to the enabled lanes */
   onNaturalHeight?: (px: number) => void;
+  /** the metric the sequence lane's residues are coloured by (the colour board decides) */
+  colorBy: LaneMetric | null;
+  /** that choice by name, for the button that opens the colour board */
+  colorLabel: string;
+  onOpenColor: () => void;
+  /** fold the whole panel away (the host keeps a chip to bring it back) */
+  onCollapse: () => void;
 }) {
   const [activeChain, setActiveChain] = useState<string | null>(null);
   const [zoom, setZoom] = useState<number | null>(null);
   const [fitWidth, setFitWidth] = useState(0);
   const [enabled, setEnabled] = useState<Set<string>>(defaultEnabledLanes);
   const [expandedLanes, setExpandedLanes] = useState<ReadonlySet<string>>(new Set());
-  const [colorById, setColorById] = useState<string>("none");
   const [localHover, setLocalHover] = useState<number | null>(null);
   const [drag, setDrag] = useState<[number, number] | null>(null);
   const [viewerNode, setViewerNode] = useState<HTMLDivElement | null>(null);
@@ -354,9 +372,6 @@ export default function SequenceLanes({
 
   const chain = activeChain && model ? (model.byChain.get(activeChain) ?? null) : null;
 
-  const colorByEntry = colorById === "none" ? undefined : metrics.get(colorById);
-  const colorBy = colorByEntry !== undefined && typeof colorByEntry !== "string" ? colorByEntry : null;
-
   const ctx = useMemo<LaneContext | null>(
     () =>
       chain
@@ -379,7 +394,10 @@ export default function SequenceLanes({
   // resolves), which a model-keyed effect always missed.
   useEffect(() => {
     if (!viewerNode) return;
-    const measure = () => setFitWidth(Math.max(0, viewerNode.clientWidth - GUTTER_L - GUTTER_R));
+    const measure = () => {
+      if (viewerNode.offsetParent === null) return; // folded away: keep the last width
+      setFitWidth(Math.max(0, viewerNode.clientWidth - GUTTER_L - GUTTER_R));
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(viewerNode);
@@ -392,6 +410,7 @@ export default function SequenceLanes({
   useEffect(() => {
     if (!rootNode || !onNaturalHeight) return;
     const measure = () => {
+      if (rootNode.offsetParent === null) return; // folded away: nothing to size
       let total = 0;
       let rows = 0;
       for (const child of Array.from(rootNode.children)) {
@@ -628,7 +647,16 @@ export default function SequenceLanes({
   return (
     <div ref={setRootNode} className="flex h-full min-h-0 min-w-0 flex-col">
       <div className="hs-head flex-wrap gap-x-2.5 gap-y-1 py-[3px]">
-        <span className="hs-head-title">Sequence</span>
+        <button
+          type="button"
+          className="flex items-center gap-1.5"
+          aria-expanded
+          title="fold the sequence panel away"
+          onClick={onCollapse}
+        >
+          <span className="hs-chevron" aria-hidden />
+          <span className="hs-head-title">Sequence</span>
+        </button>
         {model && chain && (
           <>
             <select className="hs-field" value={chain.chain} onChange={(e) => setActiveChain(e.target.value)} aria-label="chain">
@@ -642,27 +670,15 @@ export default function SequenceLanes({
             <ChainHeader chain={chain} aTable={aTable} confPlan={confPlan} />
             <span className="ml-auto flex flex-wrap items-center gap-1.5">
               {selectionChip}
-              <label className="flex items-center gap-1">
-                <span className="hs-label">Color</span>
-                <select className="hs-field" value={colorById} onChange={(e) => setColorById(e.target.value)} aria-label="color residues by">
-                  <option value="none">None</option>
-                  {metricLanes.map((m) => (
-                    <option key={m.id} value={m.id.replace(/^metric:/, "")}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <PinPopover
-                content={<LanesDrawer ctx={ctx} metricLanes={metricLanes} enabled={enabled} onToggle={toggleLane} />}
-                width={224}
-                align="end"
+              <button
+                type="button"
+                className="hs-btn"
+                title="what the residues are coloured by; opens the colour board"
+                onClick={onOpenColor}
               >
-                <span className="hs-btn" title="choose which lanes are shown">
-                  Lanes
-                  <span className="hs-unit">{lanes.length}</span>
-                </span>
-              </PinPopover>
+                color
+                <span className="hs-unit normal-case tracking-normal">{colorLabel}</span>
+              </button>
               <Segmented label="zoom">
                 <button type="button" className="hs-btn hs-btn-icon" onClick={zoomOut} disabled={zoom === null} aria-label="zoom out">
                   &minus;
@@ -702,7 +718,24 @@ export default function SequenceLanes({
           onContextMenu={onContextMenu}
         >
           <div ref={setBoardNode} className="relative flex flex-col" style={boardStyle}>
-            <Row label="" height={RULER_H} trackRef={setLaneNode} plain className="sticky top-0 z-20 bg-white">
+            <Row
+              label={
+                <PinPopover
+                  content={<LanesDrawer ctx={ctx} metricLanes={metricLanes} enabled={enabled} onToggle={toggleLane} />}
+                  width={224}
+                  align="start"
+                >
+                  <span className="hs-btn hs-btn-sm" title="choose which lanes are shown">
+                    Lanes
+                    <span className="hs-unit">{lanes.length}</span>
+                  </span>
+                </PinPopover>
+              }
+              height={RULER_H}
+              trackRef={setLaneNode}
+              plain
+              className="sticky top-0 z-20 bg-white"
+            >
               <div className="absolute inset-x-0 bottom-0 border-b border-line-strong" />
               {ticks.map((t) => (
                 <span
@@ -720,17 +753,29 @@ export default function SequenceLanes({
                 key={m.id}
                 label={m.label}
                 labelExtra={
-                  m.expandable?.(ctx) ? (
+                  <span className="flex shrink-0 items-center gap-0.5">
+                    {m.expandable?.(ctx) && (
+                      <button
+                        type="button"
+                        title={expandedLanes.has(m.id) ? "collapse to one row" : "expand into per-item rows"}
+                        onClick={() => toggleExpand(m.id)}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className="hs-btn hs-btn-sm hs-btn-icon"
+                      >
+                        {expandedLanes.has(m.id) ? "−" : "+"}
+                      </button>
+                    )}
                     <button
                       type="button"
-                      title={expandedLanes.has(m.id) ? "collapse to one row" : "expand into per-item rows"}
-                      onClick={() => toggleExpand(m.id)}
+                      title={`hide the ${m.label} lane (the Lanes picker brings it back)`}
+                      aria-label={`hide the ${m.label} lane`}
+                      onClick={() => toggleLane(m.id)}
                       onPointerDown={(e) => e.stopPropagation()}
-                      className="hs-btn hs-btn-sm hs-btn-icon"
+                      className="flex h-3 w-3 items-center justify-center text-[10px] leading-none text-ink-faint hover:text-danger"
                     >
-                      {expandedLanes.has(m.id) ? "−" : "+"}
+                      {"\u00d7"}
                     </button>
-                  ) : undefined
+                  </span>
                 }
                 height={typeof m.height === "function" ? m.height(ctx) : m.height}
               >

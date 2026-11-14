@@ -1,17 +1,17 @@
 "use client";
 import type { MouseEvent, ReactNode } from "react";
 
-import type { RepColorMode, RepQuality, RepStyle, RepType } from "../../lib/molstar/repstyle";
-import { CONFORMER_RAMP_NAMES } from "../../lib/molstar/ghost-theme";
+import type { RepQuality, RepStyle, RepType } from "../../lib/molstar/repstyle";
+import { TARGET_MODEL } from "../color/board";
 import { GroupLabel, HoverFlyout, Segmented, SliderRow, SwitchButton, TinyText } from "./ui";
-import { ConformersIcon, DensityIcon, StyleIcon } from "./icons";
+import { ColorIcon, ConformersIcon, DensityIcon, StyleIcon } from "./icons";
 
 // The viewer's icon tray at the canvas's top-right (positioned by the parent wrapper,
-// next to the entry chip): three icons, each with a hover flyout. The density icon's
-// CLICK toggles both maps (its flyout — metric painting, map knobs, quality, slice —
-// is built by the parent and passed in); the conformers icon hosts the selection /
-// conformer-state flyout, also parent-built; the style icon's flyout lives here
-// (representation type + sliders, color mode, mesh quality, the model-B ghost).
+// next to the entry chip): the colour board's switch, then three icons with a hover flyout
+// each. The density icon's CLICK toggles both maps (its flyout, the map knobs, is built by
+// the parent and passed in); the conformers icon hosts the selection / conformer-state
+// flyout, also parent-built; the style icon's flyout lives here (representation type +
+// scale, the model-B ghost, mesh quality). Colour is the colour board's.
 // Everything updates representations in place — never the MolstarViewer `view` prop,
 // which would clear the state tree.
 
@@ -27,13 +27,6 @@ const SCALE_RANGE: Record<RepType, { min: number; max: number; step: number }> =
   spacefill: { min: 0.1, max: 2, step: 0.05 },
   cartoon: { min: 0.05, max: 1, step: 0.05 },
 };
-
-export const COLOR_MODES: { id: RepColorMode; label: string }[] = [
-  { id: "conformer", label: "conformers" },
-  { id: "model", label: "model" },
-  { id: "element", label: "element" },
-  { id: "chain", label: "chain" },
-];
 
 const REP_QUALITIES: RepQuality[] = ["auto", "high", "medium", "low"];
 
@@ -85,7 +78,9 @@ export default function StyleTray({
   densityFlyout,
   selectionFlyout,
   selectionFlyoutWidth = 300,
-  colorModes,
+  colorOpen,
+  onColor,
+  colorLabel,
 }: {
   /** primary structure loaded (representation controls enable) */
   ready: boolean;
@@ -103,10 +98,13 @@ export default function StyleTray({
   selectionFlyout: ReactNode;
   /** card width of the selection flyout; the world panel asks for more room */
   selectionFlyoutWidth?: number;
-  /** colour modes the preset offers, in order; default every mode */
-  colorModes?: readonly RepColorMode[];
+  /** the colour board is open */
+  colorOpen: boolean;
+  /** open or close the colour board; a target id opens it on that target's column */
+  onColor: (targetId?: string) => void;
+  /** what the main view's model is coloured by, by name */
+  colorLabel: string;
 }) {
-  const offeredModes = colorModes ? COLOR_MODES.filter((m) => colorModes.includes(m.id)) : COLOR_MODES;
   const patch = (p: Partial<RepStyle>) => onStyle({ ...style, ...p });
   const scale = SCALE_RANGE[style.type];
   const scaleValue =
@@ -157,30 +155,16 @@ export default function StyleTray({
         </label>
       </div>
 
-      <div className="flex flex-col gap-1 border-t border-line pt-1.5">
+      <div className="flex items-center gap-2 border-t border-line pt-1.5">
         <GroupLabel>color</GroupLabel>
-        <div className="flex flex-wrap items-center gap-1">
-          {offeredModes.map((m) => (
-            <SwitchButton key={m.id} pressed={style.colorMode === m.id} onClick={() => patch({ colorMode: m.id })}>
-              {m.label}
-            </SwitchButton>
-          ))}
-        </div>
-        {style.colorMode === "conformer" && (
-          <>
-            <div className="flex flex-wrap items-center gap-1">
-              {CONFORMER_RAMP_NAMES.map((r) => (
-                <SwitchButton key={r} pressed={style.ramp === r} onClick={() => patch({ ramp: r })}>
-                  {r}
-                </SwitchButton>
-              ))}
-            </div>
-            <TinyText>pale chains; purple deepens with the number of conformers per residue{style.ramp === "fade" ? ", and solidifies with it on the cartoon" : ""}; ligands by compound</TinyText>
-          </>
-        )}
-        {style.colorMode === "element" && (
-          <TinyText>heteroatoms in CPK; carbons keep each model&apos;s identity color</TinyText>
-        )}
+        <button
+          type="button"
+          className="hs-btn min-w-0 justify-start normal-case tracking-normal"
+          title="what the model is coloured by; opens the colour board on it"
+          onClick={() => onColor(TARGET_MODEL)}
+        >
+          <span className="truncate">{colorLabel}</span>
+        </button>
       </div>
 
       <div className="flex flex-col gap-1 border-t border-line pt-1.5">
@@ -198,7 +182,15 @@ export default function StyleTray({
 
   return (
     <div className="flex items-center gap-px">
-      <HoverFlyout content={densityFlyout} width={300} align="end">
+      <TrayButton
+        active={colorOpen}
+        label="colour board"
+        title="colour: what the model, the map, the sequence and each replica are coloured by"
+        onClick={() => onColor()}
+      >
+        <ColorIcon />
+      </TrayButton>
+      <HoverFlyout content={densityFlyout} width={264} align="end">
         <TrayButton
           active={showDensity}
           disabled={!densityReady}

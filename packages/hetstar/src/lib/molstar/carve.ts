@@ -84,7 +84,7 @@ export function carveGridAroundStructure(
   opts: { maxPoints?: number } = {},
 ): boolean {
   const vol = volume as any;
-  // Samplers (metric tracks, the slice panel) also read the stash: full-cell data at
+  // Samplers (the metric tracks) also read the stash: full-cell data at
   // native FFT resolution with correct index wrapping, which the carved (cropped,
   // possibly coarsened) grid cannot provide.
   const grid = vol?._hetstarSourceGrid ?? vol?.grid;

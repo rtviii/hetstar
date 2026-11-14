@@ -13,11 +13,16 @@ would need from that API.
   deposited model, drawn as a toggleable ghost. A multi-model ensemble (so far the NMR
   examples fetched from RCSB) loads as model A with a frame scrubber and per-residue RMSF.
 - Experimental density computed in the browser. The deposited structure factors (sf-cif) are
-  FFT'd by Mol* into 2Fo-Fc and Fo-Fc maps, then carved around the model. Sigma, opacity, clip
-  and slice controls are available. Density loads in the background and is off until toggled.
-- Per-residue metrics from `@dynamic-pdb/hetkit`, painted onto the density surface: conformer
-  count, occupancy entropy, mean B-iso, bond variability, ensemble RMSF, model A vs B RMSD,
-  altloc RMSF delta, and Fo-Fc mean, peak and support delta.
+  FFT'd by Mol* into 2Fo-Fc and Fo-Fc maps, then carved around the model. Sigma, opacity and
+  clip controls are available. Density loads in the background and is off until toggled.
+- Per-residue metrics from `@dynamic-pdb/hetkit`: conformer count, occupancy entropy, mean
+  B-iso, bond variability, ensemble RMSF, model A vs B RMSD, altloc RMSF delta, and Fo-Fc
+  mean, peak and support delta.
+- One colour board for every colour choice. Its rows are the sources of colour, grouped by
+  concept (looks, motion, heterogeneity, comparisons, fit to the map, stored values, loci);
+  its columns are the things that can be coloured (the main view's model, its 2Fo-Fc map, the
+  sequence lane, each replica box). A cell switches one target, the "all" column every target
+  that can show the row.
 - A sequence lane viewer under the canvas: one chain at a time, secondary structure, PDBe
   domain and modification annotations, ligand contacts, and metric plots, all linked to the 3D
   selection.

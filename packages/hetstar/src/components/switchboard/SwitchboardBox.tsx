@@ -14,14 +14,6 @@ import type { SelRepOverlay } from "../../lib/molstar/selrep";
 import type { PickInfo } from "../../lib/molstar/viewer";
 import { CARD_SHELL, OnRequestControls, PrismMark, Spinner, Tooltip } from "../compare/ui";
 
-export interface FacetOption {
-  id: string;
-  label: string;
-  group: "look" | "metric";
-  /** why the facet cannot be shown for this model; it is listed disabled */
-  unavailable?: string | null;
-}
-
 /** the colour scale of a metric facet, for the strip under the box */
 export interface FacetLegend {
   colors: number[];
@@ -34,13 +26,15 @@ export type HoverTarget = readonly ResidueRange[] | null;
 
 interface SwitchboardBoxProps {
   name: string;
-  detail: string[];
+  /** what the catalogue records about the model, as labelled facts */
+  detail: readonly { label: string; text: string }[];
   /** undefined until the model's file has been asked for */
   bundle: BundleState | undefined;
   color: number;
-  facetId: string;
-  facetOptions: FacetOption[];
-  onFacet: (id: string) => void;
+  /** what the replica is painted with, by name */
+  facetLabel: string;
+  /** open the colour board on this box's column */
+  onOpenColor: () => void;
   facet: ReplicaFacet;
   legend: FacetLegend | null;
   /** set while the facet is a metric computed on request: where it stands and its controls */
@@ -69,9 +63,8 @@ export default function SwitchboardBox({
   detail,
   bundle,
   color,
-  facetId,
-  facetOptions,
-  onFacet,
+  facetLabel,
+  onOpenColor,
   facet,
   legend,
   request,
@@ -169,22 +162,13 @@ export default function SwitchboardBox({
 
   const problem = viewerError ?? renderError ?? (bundle?.status === "error" ? bundle.message : null);
   const busy = !problem && (!viewer || !ready);
-  const looks = facetOptions.filter((o) => o.group === "look");
-  const metrics = facetOptions.filter((o) => o.group === "metric");
 
   return (
     <div className={`pointer-events-auto flex w-40 flex-col overflow-hidden ${CARD_SHELL}`}>
       <div className="flex h-[22px] items-center gap-1 border-b border-line pl-1.5 pr-0.5 text-[10.5px] text-ink">
         <span className="hs-pip" style={{ background: hexCss(color) }} />
         <Tooltip
-          content={
-            <div className="flex flex-col gap-0.5">
-              <span className="font-medium text-ink">{name}</span>
-              {detail.map((line) => (
-                <span key={line}>{line}</span>
-              ))}
-            </div>
-          }
+          content={{ title: name, rows: detail }}
         >
           <span className="block max-w-[84px] truncate">{name}</span>
         </Tooltip>
@@ -247,27 +231,15 @@ export default function SwitchboardBox({
           </span>
         </div>
       )}
-      <select
-        title="what the replica is painted with"
-        className="h-[22px] border-0 border-t border-line bg-transparent px-1 font-mono text-[10px] text-ink-secondary hover:bg-surface-hover focus:bg-surface-hover focus:outline-none"
-        value={facetId}
-        onChange={(e) => onFacet(e.target.value)}
+      <button
+        type="button"
+        title="what the replica is painted with; opens the colour board on this box"
+        onClick={onOpenColor}
+        className="flex h-[20px] items-center gap-1.5 border-t border-line px-1.5 text-left hover:bg-surface-hover focus:bg-surface-hover focus:outline-none"
       >
-        {looks.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.label}
-          </option>
-        ))}
-        {metrics.length > 0 && (
-          <optgroup label="metrics">
-            {metrics.map((o) => (
-              <option key={o.id} value={o.id} disabled={!!o.unavailable} title={o.unavailable ?? undefined}>
-                {o.unavailable ? `${o.label} (${o.unavailable})` : o.label}
-              </option>
-            ))}
-          </optgroup>
-        )}
-      </select>
+        <span className="hs-label text-[8px]">color</span>
+        <span className="min-w-0 truncate font-mono text-[9.5px] text-ink-secondary">{facetLabel}</span>
+      </button>
     </div>
   );
 }

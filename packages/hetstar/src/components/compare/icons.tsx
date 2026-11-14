@@ -37,6 +37,17 @@ export function StyleIcon() {
   );
 }
 
+// a row of squares filling in: a colour scale (the colour board)
+export function ColorIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden>
+      <rect x="1.6" y="5.5" width="3.6" height="5" />
+      <rect x="6.2" y="5.5" width="3.6" height="5" fill="currentColor" fillOpacity="0.4" />
+      <rect x="10.8" y="5.5" width="3.6" height="5" fill="currentColor" />
+    </svg>
+  );
+}
+
 // three linked circles: a residue chain (residue-wise picking)
 export function ResidueModeIcon() {
   return (

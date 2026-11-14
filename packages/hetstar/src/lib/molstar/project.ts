@@ -73,11 +73,6 @@ export class MetricProjector {
     return this.volumeRef;
   }
 
-  /** Sampler over the current metric volume (absolute values), e.g. for the slice panel. */
-  sampler(ctx: PluginContext): MapSampler | null {
-    return samplerForVolume(ctx, this.volumeRef, { relative: false });
-  }
-
   async project(ctx: PluginContext, opts: ProjectOptions): Promise<void> {
     if (!opts.points.length) throw new Error("no points to project (empty scope?)");
     const previous = this.volumeRef;

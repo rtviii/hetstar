@@ -6,6 +6,7 @@ import {
   type StoredMetricId,
   type Track,
 } from "@dynamic-pdb/hetkit/metrics";
+import type { TipContent } from "./ui";
 
 // Metric metadata for the viewer UI. Identity, labels, units, formula text and input
 // requirements come from hetkit (the METRICS registry for computed metrics, DERIVED_METRICS
@@ -209,6 +210,52 @@ export const METRIC_UI = Object.fromEntries(
   }),
 ) as Record<MetricId, MetricUi>;
 
+// The metrics by concept, in the order every picker lists them. What a metric needs decides
+// its group (the catalogue's stored values, a comparison across models, one against the
+// reference, the maps); a metric of the model alone goes by what it describes.
+const MODEL_CONCEPT: Partial<Record<MetricId, "motion" | "heterogeneity">> = {
+  "motion-total": "motion",
+  "motion-harmonic": "motion",
+  "motion-discrete": "motion",
+  "b-iso-mean": "motion",
+  "ensemble-rmsf": "motion",
+  "conformer-count": "heterogeneity",
+  "occupancy-entropy": "heterogeneity",
+  "bond-variability": "heterogeneity",
+};
+
+export interface MetricGroup {
+  id: "motion" | "heterogeneity" | "across" | "reference" | "map" | "stored";
+  title: string;
+  ids: MetricId[];
+}
+
+export const METRIC_GROUPS: MetricGroup[] = (() => {
+  const groups: MetricGroup[] = [
+    { id: "motion", title: "Motion", ids: [] },
+    { id: "heterogeneity", title: "Heterogeneity", ids: [] },
+    { id: "across", title: "Across the compared models", ids: [] },
+    { id: "reference", title: "Against the reference", ids: [] },
+    { id: "map", title: "Fit to the map", ids: [] },
+    { id: "stored", title: "Stored in the catalogue", ids: [] },
+  ];
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  for (const id of METRIC_ORDER) {
+    const ui = METRIC_UI[id];
+    const group: MetricGroup["id"] = ui.stored
+      ? "stored"
+      : ui.across
+        ? "across"
+        : ui.pair
+          ? "reference"
+          : ui.map
+            ? "map"
+            : (MODEL_CONCEPT[id] ?? "heterogeneity");
+    byId.get(group)?.ids.push(id);
+  }
+  return groups.filter((group) => group.ids.length > 0);
+})();
+
 /** The domain a metric is drawn on: lanes, the 3D paint and the switchboard boxes agree on it. */
 export function displayDomain(id: MetricId, track: Track): [number, number] {
   const ui = METRIC_UI[id];
@@ -244,141 +291,168 @@ export function metricDescription(id: MetricId): string {
   return LOCAL_DESCRIPTIONS[id] ?? described(id)?.description ?? "";
 }
 
+/** What the tooltips name besides the metric itself: both are the same for every model. */
 export interface MetricProvenance {
-  aUrl: string;
-  bUrl: string;
-  sfUrl: string;
-  /** short slot naming shown in the toolbar and tooltips, e.g. "qFit multiconformer" */
-  aDesc?: string;
-  bDesc?: string;
+  /** the model every pair metric compares against */
+  referenceName: string | null;
+  /** file name of the structure factors the maps are computed from */
+  sfFile: string | null;
 }
 
 const MASK_NOTE =
-  "The mask: RSCC compares the map with the model's simulated density over a set of points around the residue, its mask. A model's mask for a residue is every point within 1.5 A of the residue's heavy atoms, in every conformer and every ensemble member.";
+  "Every point within 1.5 A of the residue's heavy atoms, in every conformer and every ensemble member. RSCC compares the map with the model's simulated density over these points.";
 const ON_REQUEST_NOTE =
-  "Computed when asked for (it takes seconds on a large ensemble) and kept until erased; a change of the reference or of the map makes it stale.";
+  "When asked for (seconds on a large ensemble), kept until erased. A change of the reference or of the map makes it stale.";
+const MODEL_KEYED_NOTE = "By the model's own residues: swapping the model and its reference changes the result.";
+const WEIGHTS_NOTE = "Altloc conformers count by occupancy, ensemble members equally.";
+const FRAME_NOTE = "Atoms matched by residue and atom name in the crystal frame, without superposition.";
+const NO_MAP_NOTE = "The model alone; no map involved.";
 
-const MODEL_KEYED_NOTE = "Keyed by this model's residues: swapping the model and its reference changes the result.";
-
-/** Tooltip content: exactly how the metric is computed and from which files. */
-export function metricTooltip(id: MetricId, prov: MetricProvenance): { title: string; lines: string[] } {
+/** A metric explained in parts: what it is, how it is computed and from what. */
+export function metricTooltip(id: MetricId, prov: MetricProvenance): TipContent {
   const registry = (rid: string) => METRICS.get(rid)?.description ?? "";
-  const models = [
-    `this model${prov.aDesc ? ` (${prov.aDesc})` : ""}: ${prov.aUrl}`,
-    `reference model${prov.bDesc ? ` (${prov.bDesc})` : ""}: ${prov.bUrl}`,
-  ];
-  const fofcMap = `map: client-side FFT of the mFo-DFc coefficients in ${prov.sfUrl}; phased by the deposited refinement, so biased toward the deposited model.`;
-  const twoFoFcMap = `map: client-side FFT of the 2mFo-DFc coefficients in ${prov.sfUrl}; phased by the deposited model, so biased toward it.`;
-  const motionNote =
-    "Altloc conformers count by occupancy and ensemble members equally; atoms are matched by residue and atom name in the crystal frame, without superposition. No map involved.";
+  const reference = { label: "reference", text: prov.referenceName ?? "none chosen" };
+  const sf = prov.sfFile ?? "the entry's structure factors";
+  const fofcMap = {
+    label: "map",
+    text: `mFo-DFc, client-side FFT of the coefficients in ${sf}. Phased by the deposited refinement, so biased toward the deposited model.`,
+  };
+  const twoFoFcMap = {
+    label: "map",
+    text: `2mFo-DFc, client-side FFT of the coefficients in ${sf}. Phased by the deposited model, so biased toward it.`,
+  };
+  const base = { title: metricLabel(id), unit: metricUnit(id) || undefined };
   switch (id) {
     case "motion-total":
     case "motion-harmonic":
     case "motion-discrete":
       return {
-        title: metricLabel(id),
-        lines: [registry(id), motionNote, models[0]],
+        ...base,
+        is: registry(id),
+        rows: [
+          { label: "weights", text: WEIGHTS_NOTE },
+          { label: "frame", text: FRAME_NOTE },
+          { label: "inputs", text: NO_MAP_NOTE },
+        ],
       };
     case "motion-delta":
       return {
-        title: metricLabel(id),
-        lines: [metricDescription(id), registry("motion-total"), motionNote, ...models],
+        ...base,
+        is: metricDescription(id),
+        rows: [
+          { label: "motion", text: registry("motion-total") },
+          { label: "weights", text: WEIGHTS_NOTE },
+          { label: "frame", text: FRAME_NOTE },
+          reference,
+        ],
       };
     case "motion-spread":
       return {
-        title: metricLabel(id),
-        lines: [
-          metricDescription(id),
-          registry("motion-total"),
-          "Compared: the two models of the main view and every model that has a box in the switchboard.",
-          motionNote,
+        ...base,
+        is: metricDescription(id),
+        rows: [
+          { label: "motion", text: registry("motion-total") },
+          { label: "compared", text: "The two models of the main view and every model that has a box in the switchboard." },
+          { label: "weights", text: WEIGHTS_NOTE },
+          { label: "frame", text: FRAME_NOTE },
         ],
       };
     case "conformer-count":
     case "occupancy-entropy":
     case "b-iso-mean":
-      return {
-        title: metricLabel(id),
-        lines: [registry(id), "Computed on this model alone. No map involved.", models[0]],
-      };
+      return { ...base, is: registry(id), rows: [{ label: "inputs", text: NO_MAP_NOTE }] };
     case "bond-variability":
       return {
-        title: metricLabel(id),
-        lines: [
-          metricDescription(id),
-          "Bonds come from Mol*'s interaction engine (geometric cutoffs at its default thresholds) on this model; the engine pairs only altloc-compatible atoms, so per-conformer bond sets fall out of one pass. Ensemble variation is counted once the per-member pass finishes.",
-          models[0],
+        ...base,
+        is: metricDescription(id),
+        rows: [
+          {
+            label: "bonds",
+            text: "Mol*'s interaction engine at its default geometric cutoffs. It pairs only altloc-compatible atoms, so per-conformer bond sets come out of one pass.",
+          },
+          { label: "ensembles", text: "Variation across members is counted once the per-member pass finishes." },
+          { label: "inputs", text: "The main view's model only." },
         ],
       };
     case "ensemble-rmsf":
       return {
-        title: metricLabel(id),
-        lines: [
-          registry("ensemble-rmsf"),
-          "Computed across this model's MODEL frames. No map involved.",
-          models[0],
-        ],
+        ...base,
+        is: registry("ensemble-rmsf"),
+        rows: [{ label: "inputs", text: "The model's MODEL frames; no map involved." }],
       };
     case "model-rmsd":
       return {
-        title: metricLabel(id),
-        lines: [
-          registry("model-rmsd"),
-          "Same crystal frame, no superposition. No map involved.",
-          MODEL_KEYED_NOTE,
-          ...models,
+        ...base,
+        is: registry("model-rmsd"),
+        rows: [
+          { label: "frame", text: "Same crystal frame, no superposition; no map involved." },
+          { label: "keyed", text: MODEL_KEYED_NOTE },
+          reference,
         ],
       };
     case "altloc-rmsf-delta":
       return {
-        title: metricLabel(id),
-        lines: [
-          registry("altloc-rmsf"),
-          "Computed independently per model, shown as this model minus the reference: red where this model encodes more discrete heterogeneity. No map involved.",
-          ...models,
+        ...base,
+        is: "Altloc RMSF of the model minus that of the reference, each computed on its own.",
+        rows: [
+          { label: "altloc rmsf", text: registry("altloc-rmsf") },
+          { label: "sign", text: "Red where the model encodes more discrete heterogeneity than the reference." },
+          { label: "inputs", text: "No map involved." },
+          reference,
         ],
       };
     case "fofc-mean":
-      return {
-        title: metricLabel(id),
-        lines: [registry("fofc-mean"), "Sampled at this model's heavy atoms only.", models[0], fofcMap],
-      };
     case "fofc-peak":
       return {
-        title: metricLabel(id),
-        lines: [registry("fofc-peak"), "Sampled at this model's heavy atoms only.", models[0], fofcMap],
+        ...base,
+        is: registry(id),
+        rows: [{ label: "sampled", text: "At the model's heavy atoms only." }, fofcMap],
       };
     case "support-delta":
-      return {
-        title: metricLabel(id),
-        lines: [registry("support-delta"), MODEL_KEYED_NOTE, ...models, twoFoFcMap],
-      };
+      return { ...base, is: registry("support-delta"), rows: [{ label: "keyed", text: MODEL_KEYED_NOTE }, reference, twoFoFcMap] };
     case "rscc-computed":
       return {
-        title: metricLabel(id),
-        lines: [
-          registry(id),
-          MASK_NOTE,
-          `Warning: each model is scored over its own mask, so a model with more states is scored over more points and reads lower for that reason alone. On 4N0X the 67-member ensemble's mean is 0.016 below the re-refined model's on own masks and 0.002 to 0.004 below on any common mask (one entry, 258 residues). Do not compare this number between models of different kinds; ${metricLabel("rscc-delta")} is for that.`,
-          ON_REQUEST_NOTE,
-          "Checked against the stored RSCC of two deposited models: 4N0X at 1.63 A (r 0.91, mean difference 0.016, 258 residues) and 7APT at 1.13 A (r 0.74, mean difference 0.040, 127 residues). Other resolutions are untested.",
-          "No symmetry mates or bulk solvent in the simulated density, so residues at lattice contacts read low.",
-          models[0],
+        ...base,
+        is: registry(id),
+        rows: [
+          { label: "mask", text: MASK_NOTE },
+          {
+            label: "caveat",
+            text: `Each model is scored over its own mask, so one with more states is scored over more points and reads lower for that reason alone. Do not compare it between models of different kinds; ${metricLabel("rscc-delta")} is for that.`,
+          },
+          {
+            label: "size",
+            text: "On 4N0X the 67-member ensemble's mean is 0.016 below the re-refined model's on own masks, 0.002 to 0.004 below on a common mask (one entry, 258 residues).",
+          },
+          {
+            label: "checked",
+            text: "Against the stored RSCC of two deposited models: 4N0X at 1.63 A (r 0.91, mean difference 0.016, 258 residues), 7APT at 1.13 A (r 0.74, mean difference 0.040, 127 residues). Other resolutions untested.",
+          },
+          { label: "limits", text: "No symmetry mates or bulk solvent in the simulated density: residues at lattice contacts read low." },
+          { label: "computed", text: ON_REQUEST_NOTE },
           twoFoFcMap,
         ],
       };
     case "rscc-delta":
       return {
-        title: metricLabel(id),
-        lines: [
-          registry(id),
-          MASK_NOTE,
-          "The shared mask is the union of this model's mask and the reference's, so each of the two is marked down for density near the other's atoms that it leaves unexplained. It does not change when other models are boxed. Read the difference, not the two correlations: the 1.5 A radius was fitted on per-model masks. Green: this model agrees better; red: the reference does.",
-          "Ensembles, with caution: an ensemble's mask covers every member, so the union with one is two to nine times a single model's mask on 4N0X (4,400 to 9,200 points against about 1,000 for surface side chains; one entry). Over that many points the score describes the residue's surroundings more than the residue, and a member carrying 1/67 of the weight claims points like a full atom. A rule that admits a point only where enough of the model's weight lies near it has not been tested, so a difference involving an ensemble is provisional.",
-          "Polymer residues only, matched by chain, number and insertion code; a residue one of the two models lacks has no value.",
-          ON_REQUEST_NOTE,
-          MODEL_KEYED_NOTE,
-          ...models,
+        ...base,
+        is: registry(id),
+        rows: [
+          { label: "mask", text: MASK_NOTE },
+          {
+            label: "shared",
+            text: "The union of the model's mask and the reference's, so each is marked down for density near the other's atoms that it leaves unexplained. Boxing other models does not change it.",
+          },
+          { label: "read", text: "The difference, not the two correlations: the 1.5 A radius was fitted on per-model masks." },
+          { label: "sign", text: "Green where the model agrees with the map better, red where the reference does." },
+          {
+            label: "ensembles",
+            text: "Provisional. An ensemble's mask covers every member, so the union is two to nine times a single model's mask on 4N0X (4,400 to 9,200 points against about 1,000 for surface side chains; one entry), and the score then describes the surroundings more than the residue.",
+          },
+          { label: "scope", text: "Polymer residues, matched by chain, number and insertion code; a residue one model lacks has no value." },
+          { label: "computed", text: ON_REQUEST_NOTE },
+          { label: "keyed", text: MODEL_KEYED_NOTE },
+          reference,
           twoFoFcMap,
         ],
       };
@@ -386,12 +460,9 @@ export function metricTooltip(id: MetricId, prov: MetricProvenance): { title: st
     case "stored-b-iso":
     case "stored-occupancy":
       return {
-        title: metricLabel(id),
-        lines: [
-          metricDescription(id),
-          "Read from the catalogue's residue data for this model; models without stored rows leave it disabled.",
-          models[0],
-        ],
+        ...base,
+        is: metricDescription(id),
+        rows: [{ label: "source", text: "The catalogue's residue data for the model. A model without stored rows leaves it unavailable." }],
       };
   }
 }

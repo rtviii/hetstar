@@ -98,7 +98,7 @@ export interface BondDashRefs {
  * Replace the single dash node under the state-tree root. Returns the new refs, or null
  * when `dashes` is empty (node removed). Root-parented, so it survives chemistry rebuilds
  * and dies with viewer.clear(); callers run this inside the styling serializer. `clip`:
- * the model clip objects currently in force, so a rebuild during an isolate/slice stays cut.
+ * the model clip objects currently in force, so a rebuild during an isolate stays cut.
  */
 export async function ensureBondDashes(
   ctx: PluginContext,

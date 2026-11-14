@@ -6,9 +6,7 @@ import type { MolstarViewer as ViewerInstance, PickInfo } from "./lib/molstar/vi
 import { GHOST_B_COLOR, MODEL_A_COLOR, type StructureView } from "./lib/molstar/style";
 import {
   buildIsosurfaces,
-  clipPlaneObject,
   clipSphereObject,
-  createSlice,
   DENSITY_QUALITY,
   loadStructureFactors,
   removeNode,
@@ -17,7 +15,6 @@ import {
   setReprsPickable,
   TWO_FOFC_COLOR,
   updateIsoSigma,
-  updateSlice,
   type ClipObjectSpec,
   type DensityQuality,
   type DensityReprs,
@@ -79,6 +76,7 @@ import {
 } from "./lib/lab/selection";
 import {
   loadLoci,
+  locusLabel,
   LOCUS_RSCC_DOMAIN,
   newLocus,
   saveLoci,
@@ -88,8 +86,29 @@ import {
   type LocusScore,
 } from "./lib/lab/loci";
 import { syncLocusComponents, type LocusNodes } from "./lib/molstar/loci";
-import { modelDisplayName } from "./lib/dpdb/names";
-import SlicePanel, { slicePlaneFor, type SliceAxis, type SlicePlane } from "./components/SlicePanel";
+import { modelDisplayName, modelShortName } from "./lib/dpdb/names";
+import ColorBoard from "./components/color/ColorBoard";
+import {
+  boxTarget,
+  colorSourceGroups,
+  colorSourceLabel,
+  lookOfSource,
+  lookSource,
+  lookTip,
+  locusOfSource,
+  locusSource,
+  metricCell,
+  metricOfSource,
+  metricSource,
+  SOURCE_GHOST,
+  SOURCE_NONE,
+  TARGET_MAP,
+  TARGET_MODEL,
+  TARGET_SEQUENCE,
+  type ColorCell,
+  type ColorSourceId,
+  type ColorTarget,
+} from "./components/color/board";
 import DensityFlyout from "./components/compare/DensityFlyout";
 import EntryCard from "./components/compare/EntryCard";
 import EntryChip from "./components/compare/EntryChip";
@@ -100,8 +119,14 @@ import StyleTray from "./components/compare/StyleTray";
 import { dynamicpdbPreset } from "./presets/dynamicpdb";
 import type { HetstarPreset } from "./presets/types";
 import LociTray from "./components/compare/LociTray";
-import { CARD_SHELL, CardBoundsContext, Spinner, useStoredFlag } from "./components/compare/ui";
-import ModelsSwitchboard, { type SwitchboardOptions } from "./components/switchboard/ModelsSwitchboard";
+import { CARD_SHELL, CardBoundsContext, Spinner, useStoredFlag, type TipContent } from "./components/compare/ui";
+import ModelsSwitchboard, {
+  modelIdentityColors,
+  type SwitchboardBoxState,
+  type SwitchboardOptions,
+} from "./components/switchboard/ModelsSwitchboard";
+import { CONFORMER_RAMP_NAMES, type ConformerRamp } from "./lib/molstar/ghost-theme";
+import { TRACK_THEME_NAME, TrackColorThemeProvider, trackPaint, type TrackPaint } from "./lib/molstar/track-theme";
 import type { HoverTarget } from "./components/switchboard/SwitchboardBox";
 import { useModelBundles } from "./hooks/useModelBundles";
 import { useModelMetrics, type PrimaryModel } from "./hooks/useModelMetrics";
@@ -121,6 +146,7 @@ import {
   METRIC_UI,
   metricDescription,
   metricLabel,
+  metricTooltip,
   metricUnit,
   type MetricId,
 } from "./components/compare/metrics";
@@ -155,13 +181,7 @@ import {
   type ResidueRef,
 } from "@dynamic-pdb/hetkit/model";
 import type { AltGroupSelector } from "./lib/molstar/queries";
-import {
-  FALLBACK_RESOLUTION,
-  rankSegments,
-  RSCC_DEFAULT_MASK_RADIUS,
-  type Track,
-  type TrackSegment,
-} from "@dynamic-pdb/hetkit/metrics";
+import { FALLBACK_RESOLUTION, RSCC_DEFAULT_MASK_RADIUS, type Track } from "@dynamic-pdb/hetkit/metrics";
 import { Structure, StructureElement } from "molstar/lib/mol-model/structure";
 import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/state";
 
@@ -170,8 +190,8 @@ import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/sta
 // strip) COLLAPSED to its highest-occupancy conformer — expand per residue via the
 // Selection Actions Panel on right click, or force one letter everywhere with the
 // Conformer state buttons; model B is the deposited model as a cool translucent ghost,
-// shown on load and toggleable from the style tray. Density + metric projection + slice
-// ride on top.
+// shown on load and toggleable from the style tray. Density and metric projection ride on
+// top; what each of them is coloured by is the colour board's (components/color).
 
 // Bonds touching any of the ranges. Only non-water ends count: a water's auth seq must not
 // accidentally match a polymer range.
@@ -352,6 +372,8 @@ export default function HetstarViewer({
 }: HetstarViewerProps) {
   configureDpdb(dpdb);
   const [railOpen, setRailOpen] = useStoredFlag("hetstar.rail.open", rail !== "hidden");
+  // the preset's themes plus the one a metric is painted on the model with (read at mount)
+  const mainColorThemes = useMemo(() => [...preset.colorThemes, TrackColorThemeProvider], [preset.colorThemes]);
   const [viewer, setViewer] = useState<ViewerInstance | null>(null);
   // the parsed model files of the entry, shared with the switchboard boxes
   const bundles = useModelBundles();
@@ -359,7 +381,8 @@ export default function HetstarViewer({
   const storedResidueData = useStoredResidueData();
   // the user's pick of the model the others are compared against; null follows the default
   const [referenceChoice, setReferenceChoice] = useState<string | null>(null);
-  // the models that have a box in the switchboard
+  // the switchboard's boxes (a model and its paint each), and the models boxed while the dock is open
+  const [boxes, setBoxes] = useState<SwitchboardBoxState[]>([]);
   const [boxedModelIds, setBoxedModelIds] = useState<readonly string[]>([]);
   // hover from any source (3D, lanes, bond list), mirrored onto the switchboard boxes
   const hoverBus = useMemo(() => createEmitter<HoverTarget>(), []);
@@ -399,7 +422,6 @@ export default function HetstarViewer({
   const [show2fofc, setShow2fofc] = useState(true);
   const [showFofc, setShowFofc] = useState(false);
   const [sigma, setSigma] = useState(1.5);
-  const [box, setBox] = useState<{ min: [number, number, number]; max: [number, number, number] } | null>(null);
 
   // --- selection / conformers / clip ---
   // the selection is normalized author-keyed ranges refined by individual atoms; a plain
@@ -434,7 +456,7 @@ export default function HetstarViewer({
   const bondWatersRef = useRef<string | null>(null);
   const bondWatersReprRef = useRef<string | null>(null);
   const bondDashRef = useRef<BondDashRefs | null>(null);
-  // model clip objects in force (isolate sphere / slice plane), kept by the clip task so
+  // model clip objects in force (the isolate sphere), kept by the clip task so
   // the bond overlay's freshly rebuilt nodes start out cut the same way
   const modelClipRef = useRef<ClipObjectSpec[]>([]);
   const [selRepOverlays, setSelRepOverlays] = useState<SelRepOverlay[]>([]);
@@ -469,10 +491,18 @@ export default function HetstarViewer({
   // --- PDBe annotations (lanes) ---
   const [pdbeRaw, setPdbeRaw] = useState<PdbeRaw | "loading" | null>(null);
 
-  // --- metric ---
+  // --- colour: one choice per target, all made on the colour board ---
+  // the 2Fo-Fc surface (a metric, or a locus through paintLocusId above)
   const [metricId, setMetricId] = useState<MetricId | "none">("none");
+  // the main view's model: a metric here replaces its look (repStyle.colorMode) while it is available
+  const [structureMetricId, setStructureMetricId] = useState<MetricId | null>(null);
+  // set by an effect below the metrics; held as state because the styling effects that read
+  // it are declared above them (declaration order is the serializer's order)
+  const [structurePaint, setStructurePaint] = useState<TrackPaint | null>(null);
+  // the residues of the sequence lane
+  const [sequenceColorId, setSequenceColorId] = useState<MetricId | "none">("none");
+  const [colorBoard, setColorBoard] = useState<{ open: boolean; focus: string | null }>({ open: false, focus: null });
   const [projected, setProjected] = useState<{ id: MetricId; domain: [number, number] } | null>(null);
-  const [projVersion, setProjVersion] = useState(0);
   const [status, setStatus] = useState<string | null>(null);
 
   // --- layout: height of the lanes strip ---
@@ -485,18 +515,12 @@ export default function HetstarViewer({
     setLanesNatural(px);
     setLanesOverride(null);
   }, []);
+  // the strip folds away to a chip at the canvas's bottom left; a host sizing its box by the
+  // strip is told it takes no room then
+  const [lanesOpen, setLanesOpen] = useStoredFlag("hetstar.lanes.open", true);
   useEffect(() => {
-    onLanesHeight?.(lanesHeight);
-  }, [lanesHeight, onLanesHeight]);
-
-  // --- slice ---
-  const [slice3d, setSlice3d] = useState(false);
-  const [sliceModel, setSliceModel] = useState(false);
-  const [sliceAxis, setSliceAxis] = useState<SliceAxis>(2);
-  const [sliceFrac, setSliceFrac] = useState(0.5);
-  // the optional 2D image of the plane (style flyout); the plane exists regardless
-  const [showSlice2d, setShowSlice2d] = useState(false);
-  const [planeVersion, setPlaneVersion] = useState(0);
+    onLanesHeight?.(lanesOpen ? lanesHeight : 0);
+  }, [lanesHeight, lanesOpen, onLanesHeight]);
 
   // --- style (tray) ---
   const [repStyle, setRepStyle] = useState<RepStyle>(preset.repStyle);
@@ -512,8 +536,6 @@ export default function HetstarViewer({
   const projectorRef = useRef(new MetricProjector());
   const secondaryBusyRef = useRef(false);
   const densityRunRef = useRef<string | null>(null);
-  const planeRef = useRef<SlicePlane | null>(null);
-  const slice3dNodeRef = useRef<string | null>(null);
   const hoverKeyRef = useRef<string | null>(null);
   const selectionRef = useRef<LabSelection>(EMPTY_SELECTION); // click handler reads the live selection
   const autoLoadRef = useRef<string | null>(null);
@@ -591,6 +613,7 @@ export default function HetstarViewer({
       setLoading(true);
       const bundleToken = resetBundles();
       setReferenceChoice(null);
+      setBoxes([]);
       setBoxedModelIds([]);
 
       // reset everything scene-derived; setting new texts clears the Mol* state tree
@@ -609,12 +632,9 @@ export default function HetstarViewer({
       setDensityBusy(false);
       volsRef.current = null;
       reprsRef.current = null;
-      slice3dNodeRef.current = null;
       densityRunRef.current = null;
-      planeRef.current = null;
       projectorRef.current = new MetricProjector();
       setProjected(null);
-      setBox(null);
       setSel(EMPTY_SELECTION);
       setHoverInfo(null);
       setShownConformers(new Set());
@@ -888,7 +908,8 @@ export default function HetstarViewer({
         globalAlt,
         muted: mutedAlts,
         polymerAsTrace: repStyle.type === "cartoon",
-        polymerFade: repStyle.colorMode === "conformer" ? repStyle.ramp : null,
+        // a metric painted on the model is read at full strength: no per-count fade under it
+        polymerFade: repStyle.colorMode === "conformer" && !structurePaint ? repStyle.ramp : null,
         world: worldStyle,
       });
     });
@@ -896,8 +917,8 @@ export default function HetstarViewer({
     // aSplit: a component rebuild drops them too; repStyle.type: cartoon excludes the
     // polymer from the collapse layers, so a type switch re-applies them;
     // selRepOverlays / worldSticks: a fresh overlay component needs the layers applied to it;
-    // colorMode/ramp: the card look's polymer fade is one of these layers
-  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, mutedAlts, worldStyle, memberIndex, aSplit, repStyle.type, repStyle.colorMode, repStyle.ramp, selRepOverlays, worldSticks, runStyling]);
+    // colorMode/ramp/structurePaint: the card look's polymer fade is one of these layers
+  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, mutedAlts, worldStyle, memberIndex, aSplit, repStyle.type, repStyle.colorMode, repStyle.ramp, structurePaint, selRepOverlays, worldSticks, runStyling]);
 
   // --- representation style (tray): in-place state-tree updates on both models ---
 
@@ -908,9 +929,13 @@ export default function HetstarViewer({
     if (!structureRef) return;
     runStyling("rep-a", async () => {
       if (viewer.getPrimaryStructureRef() !== structureRef) return;
-      await applyRepStyle(ctx, structureRef, repStyle, { uniformColor: MODEL_A_COLOR });
+      await applyRepStyle(ctx, structureRef, repStyle, {
+        uniformColor: MODEL_A_COLOR,
+        colorOverride: structurePaint ? { color: TRACK_THEME_NAME, colorParams: { paint: structurePaint } } : undefined,
+      });
     });
-  }, [viewer, primaryLoaded, repStyle, runStyling]);
+    // aSplit: rebuilt components are born in the style's own colours, so a paint is put back on them
+  }, [viewer, primaryLoaded, repStyle, structurePaint, aSplit, runStyling]);
 
   useEffect(() => {
     const ctx = viewer?.ctx;
@@ -928,7 +953,7 @@ export default function HetstarViewer({
   }, [viewer, secondaryRef, showB, runStyling]);
 
   // --- clip composition: residue sphere on the density (and, when isolating, on the
-  // models too), slice plane on density + models. Serialized between the rep effects
+  // models too). Serialized between the rep effects
   // and the selection re-assert: setClipObjects snapshots the tree at build time, so
   // running it concurrently with a style commit reverted the style wholesale (the old
   // dead-rep-buttons race).
@@ -937,12 +962,10 @@ export default function HetstarViewer({
     const ctx = viewer?.ctx;
     if (!ctx || !viewer) return;
     runStyling("clip", async () => {
-      const plane = planeRef.current;
-      const planeObj = sliceModel && plane ? clipPlaneObject(plane.point, plane.normal) : null;
       const sphereObj = clip ? clipSphereObject(clip.center, clip.radius) : null;
       const r = reprsRef.current;
       if (r && densityState === "ready") {
-        const densityObjs = [...(sphereObj ? [sphereObj] : []), ...(planeObj ? [planeObj] : [])];
+        const densityObjs = sphereObj ? [sphereObj] : [];
         const densityRefs = [r.twoFoFc, r.foFcPos, r.foFcNeg];
         // re-assert after the update: a recreated isosurface visual comes back pickable
         await setClipObjects(ctx, densityRefs, densityObjs);
@@ -953,10 +976,7 @@ export default function HetstarViewer({
         ...(primaryStructureRef ? representationRefsForStructure(ctx, primaryStructureRef) : []),
         ...(secondaryRef ? representationRefsForStructure(ctx, secondaryRef) : []),
       ];
-      const structObjs = [
-        ...(clip?.includeModel && sphereObj ? [sphereObj] : []),
-        ...(planeObj ? [planeObj] : []),
-      ];
+      const structObjs = clip?.includeModel && sphereObj ? [sphereObj] : [];
       modelClipRef.current = structObjs;
       if (structReprs.length) await setClipObjects(ctx, structReprs, structObjs);
       // the bond overlay: its root-level dash shape is outside the structure hierarchy, and
@@ -964,10 +984,10 @@ export default function HetstarViewer({
       await setBondDashesClip(ctx, bondDashRef.current, structObjs);
       setReprsPickable(ctx, [bondWatersReprRef.current], false);
     });
-    // repStyle: a full-params representation update wipes type.params.clip, so clip
-    // re-applies after every style change; densityVersion: same, for rebuilt surfaces;
-    // aSplit: rebuilt components carry fresh reprs.
-  }, [viewer, clip, sliceModel, planeVersion, densityState, secondaryRef, primaryLoaded, repStyle, aSplit, densityVersion, runStyling]);
+    // repStyle/structurePaint: a full-params representation update wipes type.params.clip,
+    // so clip re-applies after every style change; densityVersion: same, for rebuilt
+    // surfaces; aSplit: rebuilt components carry fresh reprs.
+  }, [viewer, clip, densityState, secondaryRef, primaryLoaded, repStyle, structurePaint, aSplit, densityVersion, runStyling]);
 
   // --- visibility-filtered loci: the collapse hides non-kept conformer letters with
   // transparency 1, but the outline postprocessing traces transparent geometry too —
@@ -1028,7 +1048,7 @@ export default function HetstarViewer({
       else viewer.clearSelection();
     });
     // memberIndex: the selection marker must re-assert on the rebuilt frame
-  }, [viewer, primaryLoaded, sel, repStyle, hiddenSelectors, memberIndex, aSplit, runStyling]);
+  }, [viewer, primaryLoaded, sel, repStyle, structurePaint, hiddenSelectors, memberIndex, aSplit, runStyling]);
 
   // --- typed non-covalent bonds (Mol* interaction engine), computed once per loaded
   // frame; the selection flyout filters them to the current selection. Pure compute —
@@ -1500,10 +1520,6 @@ export default function HetstarViewer({
           for (const ref of [oldReprs.twoFoFc, oldReprs.foFcPos, oldReprs.foFcNeg]) {
             if (ref) await removeNode(ctx, ref);
           }
-          if (slice3dNodeRef.current) {
-            await removeNode(ctx, slice3dNodeRef.current);
-            slice3dNodeRef.current = null;
-          }
           reprsRef.current = await buildIsosurfaces(ctx, vols, {
             sigma,
             alphaFactor: densityOpacity,
@@ -1513,10 +1529,6 @@ export default function HetstarViewer({
               foFc: !(showFofc && showDensity),
             },
           });
-          if (slice3d && vols.twoFoFc && planeRef.current) {
-            const p = planeRef.current;
-            slice3dNodeRef.current = await createSlice(ctx, vols.twoFoFc, p.point, p.normal);
-          }
           setDensityVersion((v) => v + 1);
         } catch (e) {
           setStatus(`density quality change failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -1525,7 +1537,7 @@ export default function HetstarViewer({
         }
       })();
     },
-    [viewer, densityState, densityBusy, densityQuality, sigma, densityOpacity, slice3d, showDensity, show2fofc, showFofc],
+    [viewer, densityState, densityBusy, densityQuality, sigma, densityOpacity, showDensity, show2fofc, showFofc],
   );
 
   // --- ensemble members: one AtomTable per MODEL frame of model A ---
@@ -1731,6 +1743,19 @@ export default function HetstarViewer({
     [],
   );
 
+  // the main view's model painted with a metric: resolved here, applied by the styling
+  // effects above (the look shows through while the metric is unavailable)
+  const structureMetric = structureMetricId ? laneMetrics.get(structureMetricId) : undefined;
+  useEffect(() => {
+    setStructurePaint(
+      structureMetric && typeof structureMetric !== "string"
+        ? trackPaint(structureMetric.track, structureMetric.domain, structureMetric.colors)
+        : null,
+    );
+  }, [structureMetric]);
+  const sequenceMetric = sequenceColorId === "none" ? undefined : laneMetrics.get(sequenceColorId);
+  const sequenceColorBy = sequenceMetric && typeof sequenceMetric !== "string" ? sequenceMetric : null;
+
   const projectedMetric = metricId === "none" ? null : (laneMetrics.get(metricId) ?? null);
   const paintedLocusScore = paintLocusId ? (locusScores.get(paintLocusId) ?? null) : null;
   useEffect(() => {
@@ -1742,7 +1767,6 @@ export default function HetstarViewer({
       runProjection(async () => {
         await projectorRef.current.clear(ctx, new Map([[r.twoFoFc as string, TWO_FOFC_COLOR]]));
         setProjected(null);
-        setProjVersion((v) => v + 1);
         setStatus(null);
       });
     };
@@ -1768,8 +1792,7 @@ export default function HetstarViewer({
             label: "RSCC of a locus",
           });
           setProjected(null);
-          setProjVersion((v) => v + 1);
-          setStatus(`RSCC of a locus: painted inside its mask from ${points.length} atoms`);
+            setStatus(`RSCC of a locus: painted inside its mask from ${points.length} atoms`);
         });
       }, 120);
       return () => clearTimeout(t);
@@ -1797,76 +1820,11 @@ export default function HetstarViewer({
           label: metricLabel(metricId),
         });
         setProjected({ id: metricId, domain: m.domain });
-        setProjVersion((v) => v + 1);
         setStatus(`${metricLabel(metricId)}: projected from ${points.length} atoms`);
       });
     }, 120);
     return () => clearTimeout(t);
   }, [viewer, aTable, referenceTable, metricId, densityState, densityVersion, projectedMetric, paintLocusId, paintedLocusScore, runProjection]);
-
-  // --- samplers for the slice panel + support table ---
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const metricSampler = useMemo(() => {
-    const ctx = viewer?.ctx;
-    if (!ctx) return null;
-    return projectorRef.current.sampler(ctx);
-  }, [viewer, projVersion]);
-
-  // --- slice plane wiring ---
-
-  // The model box frames the slice plane; taken from the structure itself so the plane
-  // (and slice-model clipping) works before any density is in.
-  useEffect(() => {
-    if (!viewer || !primaryLoaded) return;
-    const structure = viewer.getCurrentStructure();
-    const b = structure?.boundary.box;
-    if (b) setBox({ min: [b.min[0], b.min[1], b.min[2]], max: [b.max[0], b.max[1], b.max[2]] });
-  }, [viewer, primaryLoaded, memberIndex]);
-
-  // The plane is parent state (normal axis + position through the model box), so it exists
-  // whether or not the 2D map is shown. The ref is written synchronously for the effects
-  // that read it in the same commit; the version bump and the in-scene slice update are
-  // debounced against slider drags, as before.
-  const slicePlane = useMemo(
-    () => (box ? slicePlaneFor(box, sliceAxis, sliceFrac) : null),
-    [box, sliceAxis, sliceFrac],
-  );
-
-  useEffect(() => {
-    planeRef.current = slicePlane;
-    if (!slicePlane) return;
-    const timer = setTimeout(() => {
-      setPlaneVersion((v) => v + 1);
-      const ctx = viewer?.ctx;
-      if (ctx && slice3dNodeRef.current) {
-        runStyling("slice-plane", async () => {
-          if (slice3dNodeRef.current) await updateSlice(ctx, slice3dNodeRef.current, slicePlane.point, slicePlane.normal);
-        });
-      }
-    }, 60);
-    return () => clearTimeout(timer);
-  }, [slicePlane, viewer, runStyling]);
-
-  // One reconciling task (its own key, so a queued plane update never displaces it):
-  // latest-wins per key means a rapid on/off leaves only the newest intent.
-  useEffect(() => {
-    const ctx = viewer?.ctx;
-    const vol = volsRef.current?.twoFoFc;
-    if (!ctx || !vol || densityState !== "ready") return;
-    const want = slice3d;
-    runStyling("slice-node", async () => {
-      if (want && !slice3dNodeRef.current && planeRef.current) {
-        const p = planeRef.current;
-        slice3dNodeRef.current = await createSlice(ctx, vol, p.point, p.normal);
-      } else if (!want && slice3dNodeRef.current) {
-        await removeNode(ctx, slice3dNodeRef.current);
-        slice3dNodeRef.current = null;
-      }
-    });
-    // planeVersion: after an entry switch planeRef is null until the new box yields a plane;
-    // the bump retries the create once a plane exists again.
-  }, [viewer, slice3d, densityState, planeVersion, runStyling]);
 
   // --- selection helpers (popup + flyout + lanes) ---
 
@@ -2174,6 +2132,7 @@ export default function HetstarViewer({
     setWorldChoice({});
     setMutedAlts(new Set());
     setRepStyle(sanitizeRepStyle(null, preset.repStyle));
+    setStructureMetricId(null);
     setClip(null);
     setBondOverlays([]);
     setSelRepOverlays([]);
@@ -2327,6 +2286,235 @@ export default function HetstarViewer({
       setShowDensity(true);
     }
   }, []);
+
+  // --- the colour board: every target that can be coloured against every source of
+  // colour. The targets are built here from whatever exists right now (the main view's
+  // model, its map, its sequence lane, each box of the switchboard); the board itself
+  // knows none of them. ---
+
+  const openColor = useCallback((targetId?: string) => {
+    setColorBoard((previous) => (targetId ? { open: true, focus: targetId } : { open: !previous.open, focus: null }));
+  }, []);
+  const closeColor = useCallback(() => setColorBoard({ open: false, focus: null }), []);
+
+  const lociNames = useMemo(() => loci.map((locus) => ({ id: locus.id, label: locusLabel(locus) })), [loci]);
+  const colorGroups = useMemo(
+    () =>
+      colorSourceGroups({
+        colorModes: preset.colorModes,
+        loci: lociNames.map((locus) => ({ ...locus, ramp: METRIC_UI["rscc-computed"].colors })),
+      }),
+    [preset.colorModes, lociNames],
+  );
+
+  const modelColorSource: ColorSourceId = structureMetricId ? metricSource(structureMetricId) : lookSource(repStyle.colorMode);
+  const mapColorSource: ColorSourceId = paintLocusId
+    ? locusSource(paintLocusId)
+    : metricId === "none"
+      ? SOURCE_NONE
+      : metricSource(metricId);
+  const sequenceColorSource: ColorSourceId = sequenceColorId === "none" ? SOURCE_NONE : metricSource(sequenceColorId);
+
+  const identityColors = useMemo(() => modelIdentityColors(entry?.models ?? [], mainModelId), [entry, mainModelId]);
+  const boxesShown = boxedModelIds.length > 0;
+
+  const colorTargets = useMemo<ColorTarget[]>(() => {
+    if (!pair || !entry) return [];
+    const mainName = modelDisplayName(pair.a, entry.models);
+    const mainGroup = `Main view: ${mainName}`;
+    const available: ColorCell = { state: "available" };
+    const mainMetricCell = (id: MetricId): ColorCell => {
+      const metric = laneMetrics.get(id);
+      return metricCell(typeof metric === "string" ? metric : metric ? null : "loading", mainRequests?.state(id) ?? null);
+    };
+    // a metric computed on request is computed by choosing it
+    const computeForMain = (id: MetricId) => {
+      if (mainRequests?.state(id)?.status === "absent") mainRequests.compute(id);
+    };
+    const locusCell = (locusId: string): ColorCell => {
+      if (locusScores.has(locusId)) return available;
+      if (locusComputing.has(locusId)) return { state: "request", status: "computing" };
+      return locusBlocked ? { state: "unavailable", reason: locusBlocked } : { state: "request", status: "absent" };
+    };
+    const targets: ColorTarget[] = [
+      {
+        id: TARGET_MODEL,
+        group: mainGroup,
+        label: "model",
+        title: `${mainName} in the main view`,
+        swatch: MODEL_A_COLOR,
+        current: modelColorSource,
+        cell: (source) => {
+          const look = lookOfSource(source);
+          if (look) return preset.colorModes.includes(look) ? available : null;
+          const metric = metricOfSource(source);
+          return metric ? mainMetricCell(metric) : null;
+        },
+        choose: (source) => {
+          const look = lookOfSource(source);
+          if (look) {
+            setStructureMetricId(null);
+            setRepStyle((style) => ({ ...style, colorMode: look }));
+            return;
+          }
+          const metric = metricOfSource(source);
+          if (!metric) return;
+          computeForMain(metric);
+          setStructureMetricId(metric);
+        },
+      },
+      {
+        id: TARGET_MAP,
+        group: mainGroup,
+        label: "map",
+        title: "the 2Fo-Fc map",
+        swatch: null,
+        current: mapColorSource,
+        cell: (source) => {
+          if (source === SOURCE_NONE) return available;
+          const metric = metricOfSource(source);
+          if (metric) return mainMetricCell(metric);
+          const locusId = locusOfSource(source);
+          return locusId ? locusCell(locusId) : null;
+        },
+        choose: (source) => {
+          if (source === SOURCE_NONE) {
+            chooseMetric("none");
+            return;
+          }
+          const metric = metricOfSource(source);
+          if (metric) {
+            computeForMain(metric);
+            chooseMetric(metric);
+            setShowDensity(true);
+            return;
+          }
+          const locusId = locusOfSource(source);
+          if (!locusId) return;
+          if (!locusScores.has(locusId)) computeLocusScore(locusId);
+          paintLocus(locusId);
+        },
+      },
+      {
+        id: TARGET_SEQUENCE,
+        group: mainGroup,
+        label: "seq",
+        title: "the residues of the sequence lane",
+        swatch: null,
+        current: sequenceColorSource,
+        cell: (source) => {
+          if (source === SOURCE_NONE) return available;
+          const metric = metricOfSource(source);
+          return metric ? mainMetricCell(metric) : null;
+        },
+        choose: (source) => {
+          const metric = metricOfSource(source);
+          if (metric) computeForMain(metric);
+          setSequenceColorId(metric ?? "none");
+        },
+      },
+    ];
+    if (!boxesShown) return targets;
+    for (const box of boxes) {
+      const model = entry.models.find((candidate) => candidate.id === box.modelId);
+      if (!model) continue;
+      targets.push({
+        id: boxTarget(box.key),
+        group: "Replicas",
+        label: modelShortName(model, entry.models),
+        title: `the replica of ${modelDisplayName(model, entry.models)}`,
+        swatch: identityColors.get(model.id) ?? null,
+        current: box.facetId,
+        cell: (source) => {
+          if (source === SOURCE_GHOST) return available;
+          const look = lookOfSource(source);
+          if (look) return preset.colorModes.includes(look) ? available : null;
+          const metric = metricOfSource(source);
+          return metric ? metricCell(modelMetrics.unavailable(box.modelId, metric), modelMetrics.requested(box.modelId, metric)) : null;
+        },
+        choose: (source) => {
+          const metric = metricOfSource(source);
+          if (metric && modelMetrics.requested(box.modelId, metric)?.status === "absent") modelMetrics.compute(box.modelId, metric);
+          setBoxes((previous) => previous.map((other) => (other.key === box.key ? { ...other, facetId: source } : other)));
+        },
+      });
+    }
+    return targets;
+  }, [
+    pair,
+    entry,
+    laneMetrics,
+    mainRequests,
+    preset.colorModes,
+    modelColorSource,
+    mapColorSource,
+    sequenceColorSource,
+    locusScores,
+    locusComputing,
+    locusBlocked,
+    computeLocusScore,
+    chooseMetric,
+    paintLocus,
+    boxes,
+    boxesShown,
+    modelMetrics,
+    identityColors,
+  ]);
+
+  const referenceName = referenceModel && entry ? modelDisplayName(referenceModel, entry.models) : null;
+  const sfFile = entry?.sf?.url.split("/").pop() ?? null;
+  const colorTip = (source: ColorSourceId): TipContent | null => {
+    const metric = metricOfSource(source);
+    return metric ? metricTooltip(metric, { referenceName, sfFile }) : lookTip(source);
+  };
+
+  // the end of a row: the ramp of the conformer look, and for a metric computed on request
+  // its recompute and erase, acting on every shown model that has it
+  const requestModelIds = [...new Set([...(mainModelId ? [mainModelId] : []), ...boxedModelIds])];
+  const colorRowExtra = (source: ColorSourceId) => {
+    if (source === lookSource("conformer")) {
+      return (
+        <select
+          className="hs-field h-4 text-[9px]"
+          title="the ramp the conformer look counts in"
+          aria-label="conformer ramp"
+          value={repStyle.ramp}
+          onChange={(event) => setRepStyle((style) => ({ ...style, ramp: event.target.value as ConformerRamp }))}
+        >
+          {CONFORMER_RAMP_NAMES.map((ramp) => (
+            <option key={ramp} value={ramp}>
+              {ramp}
+            </option>
+          ))}
+        </select>
+      );
+    }
+    const metric = metricOfSource(source);
+    if (!metric || !METRIC_UI[metric].onRequest) return null;
+    const computed = requestModelIds.filter((id) => modelMetrics.requested(id, metric)?.status === "ready");
+    if (!computed.length) return null;
+    const what = `${metricLabel(metric)} of the ${computed.length === 1 ? "model" : `${computed.length} models`} that have it`;
+    return (
+      <span className="flex items-center gap-px">
+        <button
+          type="button"
+          className="hs-btn hs-btn-sm"
+          title={`compute ${what} again`}
+          onClick={() => computed.forEach((id) => modelMetrics.compute(id, metric))}
+        >
+          redo
+        </button>
+        <button
+          type="button"
+          className="hs-btn hs-btn-sm hs-btn-danger"
+          title={`erase ${what}`}
+          onClick={() => computed.forEach((id) => modelMetrics.erase(id, metric))}
+        >
+          erase
+        </button>
+      </span>
+    );
+  };
 
   // every altloc letter of model A, with how many residues carry it (the state buttons)
   const stateLetters = useMemo(() => {
@@ -2485,47 +2673,6 @@ export default function HetstarViewer({
     [viewer, aTable],
   );
 
-  // --- hotspots: the stretches of the polymer where the compared models disagree most
-  // about motion, ranked; ligands and waters are left out because they are not matched
-  // residue for residue across models ---
-  const polymerKeys = useMemo(() => {
-    const keys = new Set<string>();
-    for (const chain of seqModel?.chains ?? []) {
-      for (const position of chain.positions) if (position.ref) keys.add(residueKey(position.ref));
-    }
-    return keys;
-  }, [seqModel]);
-  const disagreement = laneMetrics.get("motion-spread");
-  const hotspots = useMemo<TrackSegment[]>(
-    () =>
-      disagreement && typeof disagreement !== "string"
-        ? rankSegments(disagreement.track, { include: (ref) => polymerKeys.has(residueKey(ref)) })
-        : [],
-    [disagreement, polymerKeys],
-  );
-
-  // a hotspot chosen in the switchboard: the segment becomes the selection (so the lanes and
-  // every box show it), the main view frames it, and an active clip sphere moves onto it
-  const navigateToSegment = useCallback(
-    (segment: TrackSegment) => {
-      if (!viewer) return;
-      const range: ResidueRange = {
-        chain: segment.chain,
-        from: Math.min(segment.start.seq, segment.end.seq),
-        to: Math.max(segment.start.seq, segment.end.seq),
-      };
-      setSel({ ranges: [range], atoms: [] });
-      setPopup(null);
-      const stats = aTable ? selectionStats(aTable, [range]) : null;
-      if (stats) setClip((prev) => (prev ? { ...prev, center: stats.centroid } : prev));
-      const structure = viewer.getCurrentStructure();
-      const loci = structure ? residueLoci(structure, range.chain, range.from, range.to) : null;
-      if (loci) viewer.focusLoci(loci);
-      else if (stats) viewer.focusPoint(stats.centroid, Math.max(NAVIGATE_RADIUS, stats.fitRadius));
-    },
-    [viewer, aTable],
-  );
-
   const onPrimaryLoaded = useCallback(() => setPrimaryLoaded(true), []);
   const ready = densityState === "ready";
 
@@ -2571,21 +2718,8 @@ export default function HetstarViewer({
   // the two parent-built tray flyouts (state stays here; StyleTray only positions them)
   const densityFlyout = (
     <DensityFlyout
-      metricId={metricId}
-      onMetricId={chooseMetric}
       densityReady={ready}
       densityBusy={densityBusy}
-      metrics={laneMetrics}
-      requests={mainRequests}
-      provenance={{
-        aUrl: pair?.a.url ?? "model A file",
-        bUrl: referenceModel?.url ?? "no reference model",
-        sfUrl: entry?.sf?.url ?? "the entry's sf-cif",
-        aDesc: pair ? ROLE_LABELS[pair.a.role] : "model A",
-        bDesc: referenceModel ? ROLE_LABELS[referenceModel.role] : "none",
-      }}
-      projectedDomain={projected?.domain ?? null}
-      status={status}
       show2fofc={show2fofc}
       onShow2fofc={setShow2fofc}
       sigma={sigma}
@@ -2596,18 +2730,8 @@ export default function HetstarViewer({
       onOpacity={setDensityOpacity}
       densityQuality={densityQuality}
       onDensityQuality={changeDensityQuality}
-      showSlice2d={showSlice2d}
-      onShowSlice2d={setShowSlice2d}
-      boxReady={!!box}
-      slice3d={slice3d}
-      onSlice3d={setSlice3d}
-      sliceModel={sliceModel}
-      onSliceModel={setSliceModel}
-      sliceAxis={sliceAxis}
-      onSliceAxis={setSliceAxis}
-      sliceFrac={sliceFrac}
-      onSliceFrac={setSliceFrac}
-      sliceCoord={slicePlane?.point[sliceAxis] ?? null}
+      paintLabel={colorSourceLabel(mapColorSource, lociNames)}
+      onOpenColor={() => openColor(TARGET_MAP)}
     />
   );
   const selectionFlyout = (
@@ -2663,8 +2787,8 @@ export default function HetstarViewer({
       <div className="flex h-full min-h-0 flex-col bg-white text-[11px] text-ink-secondary">
         <div className="flex min-h-0 flex-1">
           {railOpen && (
-            <aside data-hetstar-part="rail" className="flex w-[264px] shrink-0 flex-col border-r border-line bg-white">
-              <div className="flex h-[30px] shrink-0 items-center gap-1.5 border-b border-line pl-2.5 pr-1">
+            <aside data-hetstar-part="rail" className="hs-dense flex w-[248px] shrink-0 flex-col border-r border-line bg-white">
+              <div className="flex h-[26px] shrink-0 items-center gap-1.5 border-b border-line pl-2 pr-1">
                 {entryChip}
                 <button
                   type="button"
@@ -2690,7 +2814,7 @@ export default function HetstarViewer({
           )}
 
           <div className="relative min-w-0 flex-1" onContextMenu={(e) => e.preventDefault()}>
-            <MolstarViewer data={aText} binary={false} view={VIEW} onReady={setViewer} onLoaded={onPrimaryLoaded} colorThemes={preset.colorThemes} />
+            <MolstarViewer data={aText} binary={false} view={VIEW} onReady={setViewer} onLoaded={onPrimaryLoaded} colorThemes={mainColorThemes} />
             {!railOpen && (
               <div data-hetstar-part="rail-chip" className={`absolute left-2 top-2 z-10 flex h-6 items-center gap-1 pl-2 pr-0.5 ${CARD_SHELL}`}>
                 {entryChip}
@@ -2754,16 +2878,82 @@ export default function HetstarViewer({
                 densityFlyout={densityFlyout}
                 selectionFlyout={selectionFlyout}
                 selectionFlyoutWidth={worldPanel ? 480 : 300}
-                colorModes={preset.colorModes}
+                colorOpen={colorBoard.open}
+                onColor={openColor}
+                colorLabel={colorSourceLabel(modelColorSource)}
               />
             </div>
-            {hoverInfo && (
-              <div className={`hs-value pointer-events-none absolute bottom-2 left-2 px-1.5 py-0.5 ${CARD_SHELL}`}>
-                {hoverInfo.compId} {hoverInfo.chainId}/{hoverInfo.authSeqId}
-                {pickMode !== "residue" && hoverInfo.atomId ? ` ${hoverInfo.atomId}` : ""}
-                {hoverInfo.altId ? ` alt ${hoverInfo.altId}` : ""}
-              </div>
+            {colorBoard.open && colorTargets.length > 0 && (
+              <ColorBoard
+                targets={colorTargets}
+                groups={colorGroups}
+                focus={colorBoard.focus}
+                onClose={closeColor}
+                tipFor={colorTip}
+                rowExtra={colorRowExtra}
+                note={
+                  <span className="flex min-w-0 items-baseline gap-1" title="the model every comparison is made against; mark another with the ref button of its box">
+                    <span className="hs-label">ref</span>
+                    <span className="max-w-[160px] truncate text-[10.5px] text-ink">{referenceName ?? "none"}</span>
+                  </span>
+                }
+                footer={
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[9.5px] text-ink-muted">
+                    <span className="flex items-center gap-1">
+                      <span className="hs-cell w-auto" aria-pressed="true">
+                        <span className="hs-cell-mark" />
+                      </span>
+                      shown
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="hs-cell w-auto">
+                        <span className="hs-cell-mark" />
+                      </span>
+                      available
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="hs-cell w-auto" data-request="true">
+                        <span className="hs-cell-mark" />
+                      </span>
+                      computed on choosing
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="hs-cell-off" />
+                      not available (hover for why)
+                    </span>
+                    {projected && metricId !== "none" && !paintLocusId && (
+                      <span className="hs-value text-[9.5px] text-ink-muted">
+                        map {projected.domain[0].toFixed(2)} to {projected.domain[1].toFixed(2)} {metricUnit(projected.id)}, grey = no data
+                      </span>
+                    )}
+                    {status && <span>{status}</span>}
+                  </div>
+                }
+              />
             )}
+            {/* bottom-left stack: the hover readout above the folded sequence panel's chip */}
+            <div className="pointer-events-none absolute bottom-2 left-2 z-10 flex flex-col items-start gap-1.5">
+              {hoverInfo && (
+                <div className={`hs-value px-1.5 py-0.5 ${CARD_SHELL}`}>
+                  {hoverInfo.compId} {hoverInfo.chainId}/{hoverInfo.authSeqId}
+                  {pickMode !== "residue" && hoverInfo.atomId ? ` ${hoverInfo.atomId}` : ""}
+                  {hoverInfo.altId ? ` alt ${hoverInfo.altId}` : ""}
+                </div>
+              )}
+              {!lanesOpen && (
+                <button
+                  type="button"
+                  data-hetstar-part="lanes-chip"
+                  title="show the sequence panel"
+                  aria-expanded={false}
+                  onClick={() => setLanesOpen(true)}
+                  className={`pointer-events-auto flex h-6 items-center gap-1.5 pl-2.5 pr-2 ${CARD_SHELL} bg-surface-head shadow-[inset_2px_0_0_#663be4,0_6px_18px_rgba(26,30,42,0.1)]`}
+                >
+                  <span className="hs-chevron" aria-hidden />
+                  <span className="hs-head-title">Sequence</span>
+                </button>
+              )}
+            </div>
             {popup && (
               <SelectionActionsPopup
                 anchor={popup}
@@ -2792,30 +2982,8 @@ export default function HetstarViewer({
                 onResetAll={resetAll}
               />
             )}
-            {/* bottom-right stack: the 2D slice card above the switchboard dock */}
+            {/* bottom-right: the switchboard dock */}
             <div className="pointer-events-none absolute bottom-2 right-2 z-10 flex max-w-[calc(100%-1rem)] flex-col items-end gap-1.5">
-              {showSlice2d && (
-                <div className={`pointer-events-auto relative w-[300px] p-1.5 ${CARD_SHELL}`}>
-                  <button
-                    type="button"
-                    title="close the 2D slice"
-                    onClick={() => setShowSlice2d(false)}
-                    className="hs-btn hs-btn-sm hs-btn-icon hs-btn-quiet absolute right-1 top-1 z-10"
-                  >
-                    {"×"}
-                  </button>
-                  <SlicePanel
-                    box={box}
-                    axis={sliceAxis}
-                    frac={sliceFrac}
-                    densitySampler={densitySampler}
-                    metricSampler={metricSampler}
-                    metricDomain={projected?.domain ?? null}
-                    metricColors={projected ? METRIC_UI[projected.id].colors : null}
-                    metricLabel={projected ? metricLabel(projected.id) : null}
-                  />
-                </div>
-              )}
               {switchboard !== false && (
                 <ModelsSwitchboard
                   mainViewer={viewer}
@@ -2824,10 +2992,11 @@ export default function HetstarViewer({
                   primaryId={pair?.a.id ?? null}
                   referenceId={referenceId}
                   onReference={setReferenceChoice}
+                  boxes={boxes}
+                  onBoxes={setBoxes}
                   onBoxedModels={onBoxedModels}
-                  hotspots={hotspots}
-                  hotspotUnit={disagreement && typeof disagreement !== "string" ? (disagreement.unit ?? "") : ""}
-                  onHotspot={navigateToSegment}
+                  onOpenColor={openColor}
+                  ramp={repStyle.ramp}
                   bundles={bundles}
                   metrics={modelMetrics}
                   onNeedStoredData={needStoredResidueData}
@@ -2846,45 +3015,52 @@ export default function HetstarViewer({
 
         </div>
 
-        <div
-          title="drag to resize the lanes; double-click to fit them"
-          className="h-1 shrink-0 cursor-row-resize border-t border-line bg-surface-muted hover:bg-accent/40"
-          onMouseDown={startLanesResize}
-          onDoubleClick={() => setLanesOverride(null)}
-        />
-        <div className="flex shrink-0 items-start bg-white" style={{ height: lanesHeight }}>
-          <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-            <SequenceLanes
-              model={seqModel}
-              aTable={aTable}
-              confPlan={confPlan}
-              secondaryByChain={secondaryByChain}
-              metrics={laneMetrics}
-              annotations={annotations}
-              metricLanes={metricLaneModules}
-              hoverRef={laneHoverRef}
-              selection={residueRanges}
-              onHover={onLaneHover}
-              onSelect={onLaneSelect}
-              onContext={onLaneContext}
-              onNaturalHeight={onNaturalHeight}
-              selectionChip={
-                residueRanges.length > 0 ? (
-                  <span className="hs-tag hs-tag-accent">
-                    {picked ? `${picked.compId} ${picked.chainId}/${picked.authSeqId}` : formatRanges(residueRanges, { maxSegments: 3 })}
-                    <button
-                      type="button"
-                      title="clear selection"
-                      aria-label="clear selection"
-                      onClick={clearSelection}
-                      className="leading-none text-accent/60 hover:text-accent"
-                    >
-                      {"×"}
-                    </button>
-                  </span>
-                ) : null
-              }
-            />
+        {/* the lanes strip stays mounted while folded away, so its chain and zoom are kept */}
+        <div className={lanesOpen ? "contents" : "hidden"}>
+          <div
+            title="drag to resize the lanes; double-click to fit them"
+            className="h-1 shrink-0 cursor-row-resize border-t border-line bg-surface-muted hover:bg-accent/40"
+            onMouseDown={startLanesResize}
+            onDoubleClick={() => setLanesOverride(null)}
+          />
+          <div className="flex shrink-0 items-start bg-white" style={{ height: lanesHeight }}>
+            <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              <SequenceLanes
+                model={seqModel}
+                aTable={aTable}
+                confPlan={confPlan}
+                secondaryByChain={secondaryByChain}
+                metrics={laneMetrics}
+                annotations={annotations}
+                metricLanes={metricLaneModules}
+                hoverRef={laneHoverRef}
+                selection={residueRanges}
+                onHover={onLaneHover}
+                onSelect={onLaneSelect}
+                onContext={onLaneContext}
+                onNaturalHeight={onNaturalHeight}
+                colorBy={sequenceColorBy}
+                colorLabel={colorSourceLabel(sequenceColorSource)}
+                onOpenColor={() => openColor(TARGET_SEQUENCE)}
+                onCollapse={() => setLanesOpen(false)}
+                selectionChip={
+                  residueRanges.length > 0 ? (
+                    <span className="hs-tag hs-tag-accent">
+                      {picked ? `${picked.compId} ${picked.chainId}/${picked.authSeqId}` : formatRanges(residueRanges, { maxSegments: 3 })}
+                      <button
+                        type="button"
+                        title="clear selection"
+                        aria-label="clear selection"
+                        onClick={clearSelection}
+                        className="leading-none text-accent/60 hover:text-accent"
+                      >
+                        {"×"}
+                      </button>
+                    </span>
+                  ) : null
+                }
+              />
+            </div>
           </div>
         </div>
       </div>

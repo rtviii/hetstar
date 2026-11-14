@@ -1,26 +1,26 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Vec3 } from "molstar/lib/mol-math/linear-algebra";
-import type { Track, TrackSegment } from "@dynamic-pdb/hetkit/metrics";
+import type { Track } from "@dynamic-pdb/hetkit/metrics";
 import type { ResidueRef } from "@dynamic-pdb/hetkit/model";
 import type { ModelBundles } from "../../hooks/useModelBundles";
 import type { ModelMetrics } from "../../hooks/useModelMetrics";
-import { modelDetailLines, modelDisplayName } from "../../lib/dpdb/names";
+import { modelDetailRows, modelDisplayName, modelFileLine } from "../../lib/dpdb/names";
 import type { EntryManifest, LoadableModel, ManifestModel } from "../../lib/dpdb/types";
 import type { Emitter } from "../../lib/lab/emitter";
 import type { LabSelection } from "../../lib/lab/selection";
 import { createPoseGroup } from "../../lib/molstar/camera-sync";
+import type { ConformerRamp } from "../../lib/molstar/ghost-theme";
 import type { ReplicaFacet, ReplicaGlass } from "../../lib/molstar/replica";
-import type { RepColorMode } from "../../lib/molstar/repstyle";
 import type { SelRepOverlay } from "../../lib/molstar/selrep";
 import { GHOST_B_COLOR, MODEL_A_COLOR } from "../../lib/molstar/style";
 import { trackPaint, type TrackPaint } from "../../lib/molstar/track-theme";
 import type { MolstarViewer as ViewerInstance, PickInfo } from "../../lib/molstar/viewer";
 import type { HetstarPreset } from "../../presets/types";
-import { displayDomain, METRIC_ORDER, METRIC_UI, metricLabel, metricUnit, type MetricId } from "../compare/metrics";
-import { COLOR_MODES } from "../compare/StyleTray";
+import { boxTarget, colorSourceLabel, lookOfSource, metricOfSource, SOURCE_GHOST, type ColorSourceId } from "../color/board";
+import { displayDomain, METRIC_UI, metricLabel, metricUnit, type MetricId } from "../compare/metrics";
 import { CARD_SHELL, PinPopover } from "../compare/ui";
-import SwitchboardBox, { type FacetLegend, type FacetOption, type HoverTarget } from "./SwitchboardBox";
+import SwitchboardBox, { type FacetLegend, type HoverTarget } from "./SwitchboardBox";
 
 // The Models Switchboard: a dock of small replicas, one box per model of the entry the
 // user chose to look at. Every box shows its WHOLE model turned exactly like the main
@@ -40,15 +40,28 @@ export interface SwitchboardOptions {
 const DEFAULT_MAX_BOXES = 4;
 /** browsers cap live WebGL contexts (16 in Chrome, fewer elsewhere); the main view has one */
 const HARD_MAX_BOXES = 6;
-const GHOST_FACET = "ghost";
 /** identity colours of the models beside the primary and the deposited one */
 const EXTRA_MODEL_COLORS = [0x9fb7a5, 0xc4a5b8, 0xa9b3cf, 0xd0b99a];
 const VIEW_SPHERE_DEBOUNCE_MS = 150;
 
-interface Box {
+/** one box of the dock: a model and what its replica is painted with */
+export interface SwitchboardBoxState {
   key: number;
   modelId: string;
-  facetId: string;
+  /** a colour source (components/color/board.ts): the ghost, a look or a metric */
+  facetId: ColorSourceId;
+}
+
+/** the colour each model of the entry is known by, in the boxes and on the colour board */
+export function modelIdentityColors(models: readonly ManifestModel[], primaryId: string | null): Map<string, number> {
+  const out = new Map<string, number>();
+  let extra = 0;
+  for (const m of models) {
+    if (m.id === primaryId) out.set(m.id, MODEL_A_COLOR);
+    else if (m.role === "deposited") out.set(m.id, GHOST_B_COLOR);
+    else out.set(m.id, EXTRA_MODEL_COLORS[extra++ % EXTRA_MODEL_COLORS.length]);
+  }
+  return out;
 }
 
 interface ModelsSwitchboardProps {
@@ -62,13 +75,15 @@ interface ModelsSwitchboardProps {
   referenceId: string | null;
   /** the user marks a model as the reference (null: back to the default) */
   onReference: (modelId: string | null) => void;
+  /** the boxes, held by the host so that the colour board can repaint them */
+  boxes: readonly SwitchboardBoxState[];
+  onBoxes: Dispatch<SetStateAction<SwitchboardBoxState[]>>;
   /** the models that have a box right now, in box order */
   onBoxedModels: (modelIds: readonly string[]) => void;
-  /** where the compared models disagree most about motion, strongest first */
-  hotspots: readonly TrackSegment[];
-  hotspotUnit: string;
-  /** send the main view to a hotspot */
-  onHotspot: (segment: TrackSegment) => void;
+  /** open the colour board on a box's column */
+  onOpenColor: (targetId: string) => void;
+  /** the ramp the conformer look counts in (the main view's choice) */
+  ramp: ConformerRamp;
   bundles: ModelBundles;
   /** metrics of any model of the entry */
   metrics: ModelMetrics;
@@ -88,10 +103,6 @@ function isLoadable(model: ManifestModel): model is LoadableModel {
   return !!model.url && !!model.format;
 }
 
-function metricOf(facetId: string): MetricId | null {
-  return facetId.startsWith("metric:") ? (facetId.slice(7) as MetricId) : null;
-}
-
 export default function ModelsSwitchboard({
   mainViewer,
   primaryLoaded,
@@ -99,10 +110,11 @@ export default function ModelsSwitchboard({
   primaryId,
   referenceId,
   onReference,
+  boxes,
+  onBoxes: setBoxes,
   onBoxedModels,
-  hotspots,
-  hotspotUnit,
-  onHotspot,
+  onOpenColor,
+  ramp,
   bundles,
   metrics,
   onNeedStoredData,
@@ -117,7 +129,6 @@ export default function ModelsSwitchboard({
 }: ModelsSwitchboardProps) {
   const maxBoxes = Math.max(1, Math.min(HARD_MAX_BOXES, options?.maxBoxes ?? DEFAULT_MAX_BOXES));
   const [open, setOpen] = useState(options?.defaultOpen ?? true);
-  const [boxes, setBoxes] = useState<Box[]>([]);
   const nextKey = useRef(1);
   const poseGroup = useMemo(() => createPoseGroup(), []);
 
@@ -133,21 +144,12 @@ export default function ModelsSwitchboard({
     }
     const others = openWithAll ? models.filter((m) => m.id !== primaryId && isLoadable(m)).map((m) => m.id) : [];
     setBoxes(
-      [primaryId, ...others].slice(0, maxBoxes).map((modelId) => ({ key: nextKey.current++, modelId, facetId: GHOST_FACET })),
+      [primaryId, ...others].slice(0, maxBoxes).map((modelId) => ({ key: nextKey.current++, modelId, facetId: SOURCE_GHOST })),
     );
-  }, [models, primaryId, openWithAll, maxBoxes]);
+  }, [models, primaryId, openWithAll, maxBoxes, setBoxes]);
 
   const modelById = useMemo(() => new Map(models.map((m) => [m.id, m])), [models]);
-  const colorById = useMemo(() => {
-    const out = new Map<string, number>();
-    let extra = 0;
-    for (const m of models) {
-      if (m.id === primaryId) out.set(m.id, MODEL_A_COLOR);
-      else if (m.role === "deposited") out.set(m.id, GHOST_B_COLOR);
-      else out.set(m.id, EXTRA_MODEL_COLORS[extra++ % EXTRA_MODEL_COLORS.length]);
-    }
-    return out;
-  }, [models, primaryId]);
+  const colorById = useMemo(() => modelIdentityColors(models, primaryId), [models, primaryId]);
 
   const active = open && primaryLoaded;
 
@@ -218,35 +220,11 @@ export default function ModelsSwitchboard({
 
   // --- facets ---
 
-  const lookOptions = useMemo<FacetOption[]>(
-    () => [
-      { id: GHOST_FACET, label: "ghost", group: "look" },
-      ...COLOR_MODES.filter((m) => preset.colorModes.includes(m.id)).map(
-        (m): FacetOption => ({ id: `color:${m.id}`, label: m.label, group: "look" }),
-      ),
-    ],
-    [preset.colorModes],
-  );
-
-  const metricOptionsFor = useCallback(
-    (modelId: string): FacetOption[] =>
-      METRIC_ORDER.map((id) => {
-        // a metric computed on request can be chosen before it exists: choosing it computes it
-        const request = metrics.requested(modelId, id);
-        if (request && request.status !== "blocked") {
-          const note = request.status === "absent" ? " (computes on choosing)" : request.status === "computing" ? " (computing)" : "";
-          return { id: `metric:${id}`, label: `${metricLabel(id)}${note}`, group: "metric" };
-        }
-        return { id: `metric:${id}`, label: metricLabel(id), group: "metric", unavailable: metrics.unavailable(modelId, id) };
-      }),
-    [metrics],
-  );
-
   // only the metrics boxes show are computed
   const tracks = useMemo(() => {
     const out = new Map<number, { id: MetricId; track: Track }>();
     for (const box of boxes) {
-      const id = metricOf(box.facetId);
+      const id = metricOfSource(box.facetId);
       if (!id) continue;
       const outcome = metrics.resolve(box.modelId, id);
       if (typeof outcome !== "string") out.set(box.key, { id, track: outcome });
@@ -278,72 +256,20 @@ export default function ModelsSwitchboard({
     return { id: entryOf.id, domain, paint: cached.paint };
   };
 
-  const setFacet = useCallback((key: number, facetId: string) => {
-    setBoxes((prev) => prev.map((b) => (b.key === key ? { ...b, facetId } : b)));
-  }, []);
-  const removeBox = useCallback((key: number) => {
-    setBoxes((prev) => prev.filter((b) => b.key !== key));
-  }, []);
-  const addBox = useCallback((modelId: string) => {
-    setBoxes((prev) => [...prev, { key: nextKey.current++, modelId, facetId: GHOST_FACET }]);
-  }, []);
-
-  // --- hotspots: step through them, or pick one from the list ---
-
-  const [hotspotAt, setHotspotAt] = useState<number | null>(null);
-  // a new ranking (another model boxed, another entry) starts the walk over
-  useEffect(() => setHotspotAt(null), [hotspots]);
-  const goToHotspot = useCallback(
-    (index: number) => {
-      const segment = hotspots[index];
-      if (!segment) return;
-      setHotspotAt(index);
-      onHotspot(segment);
+  const removeBox = useCallback(
+    (key: number) => {
+      setBoxes((prev) => prev.filter((b) => b.key !== key));
     },
-    [hotspots, onHotspot],
+    [setBoxes],
   );
-  const stepHotspot = (step: 1 | -1) => {
-    if (!hotspots.length) return;
-    const from = hotspotAt ?? (step === 1 ? -1 : 0);
-    goToHotspot((from + step + hotspots.length) % hotspots.length);
-  };
+  const addBox = useCallback(
+    (modelId: string) => {
+      setBoxes((prev) => [...prev, { key: nextKey.current++, modelId, facetId: SOURCE_GHOST }]);
+    },
+    [setBoxes],
+  );
 
   if (!entry || !primaryId) return null;
-
-  const hotspotName = (segment: TrackSegment) =>
-    segment.start.seq === segment.end.seq
-      ? `${segment.chain} ${segment.start.seq}`
-      : `${segment.chain} ${segment.start.seq}-${segment.end.seq}`;
-  const hotspotMenu = (
-    <div className="flex flex-col gap-1">
-      <span className="hs-label whitespace-normal">where the compared models disagree about motion</span>
-      <div className="flex flex-col">
-        {hotspots.map((segment, index) => (
-          <button
-            key={`${segment.chain}|${segment.start.seq}|${segment.end.seq}`}
-            type="button"
-            onClick={() => goToHotspot(index)}
-            className={`flex w-full border-b border-line px-1.5 py-1 text-left last:border-b-0 hover:bg-surface-hover items-baseline justify-between gap-3 ${
-              index === hotspotAt ? "bg-accent-soft shadow-[inset_2px_0_0_#663be4]" : ""
-            }`}
-          >
-            <span className="hs-value">
-              <span className="hs-unit">{index + 1} </span>
-              {hotspotName(segment)}
-            </span>
-            <span className="hs-value text-[10px]">
-              <span className="hs-unit">up to </span>
-              {segment.peak.toFixed(2)}
-              <span className="hs-unit"> {hotspotUnit}</span>
-            </span>
-          </button>
-        ))}
-      </div>
-      <span className="text-[10px] leading-snug text-ink-muted">
-        runs of polymer residues in the top tenth of the motion disagreement, ranked by their highest value
-      </span>
-    </div>
-  );
 
   const referenceEntry = referenceId ? modelById.get(referenceId) : undefined;
   const referenceName = referenceEntry ? modelDisplayName(referenceEntry, models) : null;
@@ -367,7 +293,7 @@ export default function ModelsSwitchboard({
               {modelDisplayName(model, models)}
               {model.id === primaryId && <span className="hs-tag hs-tag-accent">main view</span>}
             </span>
-            <span className="text-[10px] text-ink-muted">{loadable ? modelDetailLines(model)[0] : "no coordinate file listed"}</span>
+            <span className="text-[10px] text-ink-muted">{loadable ? modelDetailRows(model)[0].text : modelFileLine(model)}</span>
           </button>
         );
       })}
@@ -408,40 +334,6 @@ export default function ModelsSwitchboard({
             </span>
           </PinPopover>
         )}
-        {active && hotspots.length > 0 && (
-          <span className="flex items-center gap-px">
-            <button
-              type="button"
-              title="previous hotspot"
-              aria-label="previous hotspot"
-              onClick={() => stepHotspot(-1)}
-              className="hs-btn hs-btn-sm hs-btn-icon"
-            >
-              {"\u2039"}
-            </button>
-            <PinPopover content={hotspotMenu} width={260} align="end" closeKey={hotspotAt ?? -1}>
-              <span
-                title="where the compared models disagree most about motion; step through them or pick one"
-                className="hs-btn hs-btn-sm tabular-nums"
-              >
-                hotspots
-                <span className="hs-unit">
-                  {hotspotAt === null ? "" : `${hotspotAt + 1}/`}
-                  {hotspots.length}
-                </span>
-              </span>
-            </PinPopover>
-            <button
-              type="button"
-              title="next hotspot"
-              aria-label="next hotspot"
-              onClick={() => stepHotspot(1)}
-              className="hs-btn hs-btn-sm hs-btn-icon"
-            >
-              {"\u203a"}
-            </button>
-          </span>
-        )}
       </div>
       {active && (
         <div className="flex flex-wrap-reverse justify-end gap-1.5">
@@ -449,17 +341,17 @@ export default function ModelsSwitchboard({
             const model = modelById.get(box.modelId);
             if (!model) return null;
             const painted = paintFor(box.key);
-            const mode = box.facetId.startsWith("color:") ? (box.facetId.slice(6) as RepColorMode) : null;
+            const mode = lookOfSource(box.facetId);
             const facet: ReplicaFacet = painted
               ? { kind: "track", paint: painted.paint }
               : mode
-                ? { kind: "color", mode, ramp: preset.repStyle.ramp }
+                ? { kind: "color", mode, ramp }
                 : { kind: "ghost" };
             const legend: FacetLegend | null = painted
               ? { colors: METRIC_UI[painted.id].colors, domain: painted.domain, unit: metricUnit(painted.id) }
               : null;
             const name = modelDisplayName(model, models);
-            const boxMetric = metricOf(box.facetId);
+            const boxMetric = metricOfSource(box.facetId);
             const requestState = boxMetric ? metrics.requested(box.modelId, boxMetric) : null;
             const request =
               boxMetric && requestState && requestState.status !== "blocked"
@@ -474,16 +366,11 @@ export default function ModelsSwitchboard({
               <SwitchboardBox
                 key={box.key}
                 name={name}
-                detail={modelDetailLines(model)}
+                detail={modelDetailRows(model)}
                 bundle={bundles.states.get(box.modelId)}
                 color={colorById.get(box.modelId) ?? GHOST_B_COLOR}
-                facetId={box.facetId}
-                facetOptions={[...lookOptions, ...metricOptionsFor(box.modelId)]}
-                onFacet={(id) => {
-                  setFacet(box.key, id);
-                  const chosen = metricOf(id);
-                  if (chosen && metrics.requested(box.modelId, chosen)?.status === "absent") metrics.compute(box.modelId, chosen);
-                }}
+                facetLabel={colorSourceLabel(box.facetId)}
+                onOpenColor={() => onOpenColor(boxTarget(box.key))}
                 facet={facet}
                 legend={legend}
                 request={request}
