@@ -60,10 +60,42 @@ export function AtomModeIcon() {
   );
 }
 
-export function BookmarkIcon() {
+// a bracketed dot: a place in the structure set apart (the loci stack)
+export function LocusIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <path d="M5 2.5H2.5v11H5" />
+      <path d="M11 2.5h2.5v11H11" />
+      <circle cx="8" cy="8" r="2" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function EyeIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-      <path d="M4 2.5h8v11l-4-3-4 3z" />
+      <path d="M1.5 8c1.7-3 3.9-4.5 6.5-4.5S12.8 5 14.5 8c-1.7 3-3.9 4.5-6.5 4.5S3.2 11 1.5 8z" />
+      <circle cx="8" cy="8" r="1.8" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+// an atom inside a dashed shell: the points around it that a correlation is taken over
+export function MaskIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <circle cx="8" cy="8" r="5.8" strokeDasharray="2.4 2" />
+      <circle cx="8" cy="8" r="1.8" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+// a crosshair: select this again
+export function TargetIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <circle cx="8" cy="8" r="4" />
+      <path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3" />
     </svg>
   );
 }

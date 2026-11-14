@@ -1,6 +1,6 @@
-export { METRICS } from "./registry";
+export { METRICS, RSCC_DELTA_MASK } from "./registry";
 export type { AnyMetric, MapKind, MetricDescriptor, MetricInput } from "./registry";
-export { metricNeeds, resolveMetric } from "./engine";
+export { FALLBACK_RESOLUTION, metricNeeds, resolveMetric } from "./engine";
 export type { MetricMissing, MetricNeeds, MetricResolution, MetricSources } from "./engine";
 export { combineDerived, DERIVED_METRICS } from "./derived";
 export type { DerivedMetric } from "./derived";
@@ -18,5 +18,18 @@ export { ensembleRmsf } from "./ensemble-rmsf";
 export { conformerSupport, mapSupportDelta, mapValueTracks, stateSupport } from "./map";
 export type { ConformerSupportRow, MapSampler, StateSupportRow } from "./map";
 export { modelRmsd } from "./rmsd";
-export { realSpaceCorrelation, RSCC_DEFAULT_BLUR_FACTOR, RSCC_DEFAULT_MASK_RADIUS } from "./rscc";
-export type { RealSpaceCorrelationOptions } from "./rscc";
+export {
+  realSpaceCorrelation,
+  realSpaceCorrelationJoint,
+  realSpaceCorrelationOfSelection,
+  RSCC_DEFAULT_BLUR_FACTOR,
+  RSCC_DEFAULT_MASK_RADIUS,
+} from "./rscc";
+export type {
+  AtomSelector,
+  JointCorrelationOptions,
+  MaskRule,
+  RealSpaceCorrelationOptions,
+  SelectionCorrelation,
+  SelectionCorrelationOptions,
+} from "./rscc";

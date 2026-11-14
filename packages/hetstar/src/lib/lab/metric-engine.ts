@@ -9,14 +9,16 @@ import {
   type Track,
 } from "@dynamic-pdb/hetkit/metrics";
 import type { AtomTable } from "@dynamic-pdb/hetkit/model";
-import type { MetricId } from "../../components/compare/metrics";
+import { METRIC_UI, type MetricId } from "../../components/compare/metrics";
 
 // "Metric X of model M, optionally against reference R": the one place the lanes, the
 // density paint and the switchboard boxes get their tracks from. A metric comes from one
 // of four producers: the main view (what only it can compute), hetkit (computed from the
 // model's atoms and the entry's maps), a comparison of one hetkit metric across models
 // (against the reference, or across the compared models), or the catalogue's stored
-// residue data.
+// residue data. The costly metrics (METRIC_UI's onRequest) are never computed by a lookup:
+// `compute` runs them when the user asks, and they are kept until erased or until the
+// inputs they were computed from are replaced.
 
 export type StoredTracks = Partial<Record<StoredMetricId, Track>>;
 
@@ -52,10 +54,18 @@ export interface MetricContext {
 export type MetricOutcome = Track | string;
 
 export interface MetricEngine {
-  /** null when the metric can be produced; computes nothing */
+  /** null when the metric can be produced; computes nothing. An on-request metric that has
+   * not been computed is unavailable for the reason NOT_COMPUTED. */
   unavailable(id: MetricId, model: ModelInputs, context: MetricContext): string | null;
   resolve(id: MetricId, model: ModelInputs, context: MetricContext): MetricOutcome;
+  /** why the metric cannot be computed for the model at all; null when it can */
+  blocked(id: MetricId, model: ModelInputs, context: MetricContext): string | null;
+  /** runs an on-request metric now, replacing what was kept */
+  compute(id: MetricId, model: ModelInputs, context: MetricContext): MetricOutcome;
+  erase(id: MetricId, modelId: string): void;
 }
+
+export const NOT_COMPUTED = "not computed yet (compute it in the density panel)";
 
 const NO_REFERENCE = "needs a reference model";
 const NOTHING_TO_COMPARE = "needs another model to compare with";
@@ -70,7 +80,7 @@ function othersCompared(model: ModelInputs, context: MetricContext): ModelInputs
   return context.compared.filter((other) => other.modelId !== model.modelId);
 }
 
-function unavailable(id: MetricId, model: ModelInputs, context: MetricContext): string | null {
+function blocked(id: MetricId, model: ModelInputs, context: MetricContext): string | null {
   if (STORED_METRICS.has(id)) {
     if (model.stored === undefined) return "loading stored data";
     return model.stored?.[id as StoredMetricId] ? null : "no stored data for this model";
@@ -78,13 +88,13 @@ function unavailable(id: MetricId, model: ModelInputs, context: MetricContext): 
   const derived = DERIVED_METRICS.get(id);
   if (derived) {
     const base = derived.of as MetricId;
-    const own = unavailable(base, model, context);
+    const own = blocked(base, model, context);
     if (own) return own;
     if (derived.combine === "delta") {
       if (!context.reference) return NO_REFERENCE;
-      return unavailable(base, context.reference, context);
+      return blocked(base, context.reference, context);
     }
-    return othersCompared(model, context).some((other) => !unavailable(base, other, context)) ? null : NOTHING_TO_COMPARE;
+    return othersCompared(model, context).some((other) => !blocked(base, other, context)) ? null : NOTHING_TO_COMPARE;
   }
   const needs = metricNeeds(id);
   if (!needs) {
@@ -98,20 +108,67 @@ function unavailable(id: MetricId, model: ModelInputs, context: MetricContext): 
   return null;
 }
 
+/** what a hetkit metric of one model is computed from, and how */
+interface Computation {
+  cacheKey: string;
+  /** the track is kept while these are the same objects */
+  inputs: readonly unknown[];
+  run(): Track | null;
+}
+
+function computationOf(id: MetricId, model: ModelInputs, context: MetricContext): Computation | null {
+  const needs = metricNeeds(id);
+  if (!needs) return null;
+  const overMembers = needs.ensemble || (needs.states && !!model.ensemble);
+  const reference = needs.reference ? context.reference : null;
+  const referenceOverMembers = needs.states && !!reference?.ensemble;
+  const sampler = samplerFor(id, context.maps);
+  return {
+    cacheKey: `${model.modelId}|${id}|${reference?.modelId ?? ""}`,
+    inputs: [
+      overMembers ? model.ensemble?.key : model.table,
+      reference ? (referenceOverMembers ? reference.ensemble?.key : reference.table) : null,
+      sampler,
+    ],
+    run: () => {
+      const resolved = resolveMetric(id, {
+        table: model.table,
+        reference: reference?.table ?? null,
+        members: overMembers ? model.ensemble?.tables() : undefined,
+        referenceMembers: referenceOverMembers ? reference?.ensemble?.tables() : undefined,
+        maps: context.maps,
+        resolution: context.resolution,
+      });
+      return "track" in resolved ? resolved.track : null;
+    },
+  };
+}
+
 export function createMetricEngine(): MetricEngine {
   // computed tracks, kept while the inputs they were computed from are the same objects
   const cache = new Map<string, { inputs: readonly unknown[]; track: Track }>();
-  const cached = (key: string, inputs: readonly unknown[], compute: () => Track | null): MetricOutcome => {
+  const kept = (key: string, inputs: readonly unknown[]): Track | null => {
     const hit = cache.get(key);
-    if (hit && hit.inputs.length === inputs.length && hit.inputs.every((input, i) => input === inputs[i])) return hit.track;
+    return hit && hit.inputs.length === inputs.length && hit.inputs.every((input, i) => input === inputs[i]) ? hit.track : null;
+  };
+  const cached = (key: string, inputs: readonly unknown[], compute: () => Track | null): MetricOutcome => {
+    const hit = kept(key, inputs);
+    if (hit) return hit;
     const track = compute();
     if (!track) return "unavailable";
     cache.set(key, { inputs, track });
     return track;
   };
 
+  const unavailable = (id: MetricId, model: ModelInputs, context: MetricContext): string | null => {
+    const reason = blocked(id, model, context);
+    if (reason || !METRIC_UI[id].onRequest) return reason;
+    const computation = computationOf(id, model, context);
+    return computation && kept(computation.cacheKey, computation.inputs) ? null : NOT_COMPUTED;
+  };
+
   const resolve = (id: MetricId, model: ModelInputs, context: MetricContext): MetricOutcome => {
-    const reason = unavailable(id, model, context);
+    const reason = blocked(id, model, context);
     if (reason) return reason;
     if (STORED_METRICS.has(id)) return model.stored?.[id as StoredMetricId] ?? "no stored data for this model";
 
@@ -129,25 +186,25 @@ export function createMetricEngine(): MetricEngine {
       return cached(`${model.modelId}|${id}`, [own, ...others], () => combineDerived(derived, own, others));
     }
 
-    const needs = metricNeeds(id);
-    if (!needs) return model.local?.[id] ?? "main view only";
-
-    const overMembers = needs.ensemble || (needs.states && !!model.ensemble);
-    const referenceTable = needs.reference ? (context.reference?.table ?? null) : null;
-    const sampler = samplerFor(id, context.maps);
-    const inputs = [overMembers ? model.ensemble?.key : model.table, referenceTable, sampler];
-    const cacheKey = `${model.modelId}|${id}|${needs.reference ? (context.reference?.modelId ?? "") : ""}`;
-    return cached(cacheKey, inputs, () => {
-      const resolved = resolveMetric(id, {
-        table: model.table,
-        reference: referenceTable,
-        members: overMembers ? model.ensemble?.tables() : undefined,
-        maps: context.maps,
-        resolution: context.resolution,
-      });
-      return "track" in resolved ? resolved.track : null;
-    });
+    const computation = computationOf(id, model, context);
+    if (!computation) return model.local?.[id] ?? "main view only";
+    if (METRIC_UI[id].onRequest) return kept(computation.cacheKey, computation.inputs) ?? NOT_COMPUTED;
+    return cached(computation.cacheKey, computation.inputs, computation.run);
   };
 
-  return { unavailable, resolve };
+  const compute = (id: MetricId, model: ModelInputs, context: MetricContext): MetricOutcome => {
+    const reason = blocked(id, model, context);
+    if (reason) return reason;
+    const computation = computationOf(id, model, context);
+    const track = computation?.run();
+    if (!computation || !track) return "unavailable";
+    cache.set(computation.cacheKey, { inputs: computation.inputs, track });
+    return track;
+  };
+
+  const erase = (id: MetricId, modelId: string) => {
+    for (const key of [...cache.keys()]) if (key.startsWith(`${modelId}|${id}|`)) cache.delete(key);
+  };
+
+  return { unavailable, resolve, blocked, compute, erase };
 }

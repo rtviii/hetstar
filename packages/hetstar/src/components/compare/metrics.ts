@@ -31,6 +31,7 @@ export type MetricId =
   | "fofc-peak"
   | "support-delta"
   | "rscc-computed"
+  | "rscc-delta"
   | StoredMetricId;
 
 // motion on the common scale first, then the other model-only metrics (usable before any
@@ -52,6 +53,7 @@ export const METRIC_ORDER: MetricId[] = [
   "fofc-peak",
   "support-delta",
   "rscc-computed",
+  "rscc-delta",
   "stored-rscc",
   "stored-b-iso",
   "stored-occupancy",
@@ -64,6 +66,8 @@ interface MetricLook {
   sequential?: boolean;
   /** a display domain that does not follow the data */
   fixedDomain?: [number, number];
+  /** costly enough to be computed only when asked for, kept until erased */
+  onRequest?: boolean;
   colors: number[];
 }
 
@@ -78,6 +82,7 @@ export interface MetricUi extends MetricLook {
   across: boolean;
   /** read from the catalogue's stored residue data, not computed */
   stored: boolean;
+  onRequest: boolean;
 }
 
 const DIVERGING_BWR = [0x2166ac, 0xf7f7f7, 0xb2182b];
@@ -160,7 +165,14 @@ const METRIC_LOOK: Record<MetricId, MetricLook> = {
   },
   "rscc-computed": {
     unionSplat: false,
+    onRequest: true,
     colors: LOW_IS_NOTABLE_RAMP,
+  },
+  // red where the model agrees with the map less than the reference does, green where more
+  "rscc-delta": {
+    unionSplat: true,
+    onRequest: true,
+    colors: DIVERGING_RWG,
   },
   "stored-rscc": {
     unionSplat: false,
@@ -191,6 +203,7 @@ export const METRIC_UI = Object.fromEntries(
         ensemble: needs?.ensemble ?? false,
         across: derived?.combine === "spread",
         stored: STORED_METRICS.has(id),
+        onRequest: METRIC_LOOK[id].onRequest ?? false,
       },
     ];
   }),
@@ -239,6 +252,11 @@ export interface MetricProvenance {
   aDesc?: string;
   bDesc?: string;
 }
+
+const MASK_NOTE =
+  "The mask: RSCC compares the map with the model's simulated density over a set of points around the residue, its mask. A model's mask for a residue is every point within 1.5 A of the residue's heavy atoms, in every conformer and every ensemble member.";
+const ON_REQUEST_NOTE =
+  "Computed when asked for (it takes seconds on a large ensemble) and kept until erased; a change of the reference or of the map makes it stale.";
 
 const MODEL_KEYED_NOTE = "Keyed by this model's residues: swapping the model and its reference changes the result.";
 
@@ -340,9 +358,27 @@ export function metricTooltip(id: MetricId, prov: MetricProvenance): { title: st
         title: metricLabel(id),
         lines: [
           registry(id),
+          MASK_NOTE,
+          `Warning: each model is scored over its own mask, so a model with more states is scored over more points and reads lower for that reason alone. On 4N0X the 67-member ensemble's mean is 0.016 below the re-refined model's on own masks and 0.002 to 0.004 below on any common mask (one entry, 258 residues). Do not compare this number between models of different kinds; ${metricLabel("rscc-delta")} is for that.`,
+          ON_REQUEST_NOTE,
           "Checked against the stored RSCC of two deposited models: 4N0X at 1.63 A (r 0.91, mean difference 0.016, 258 residues) and 7APT at 1.13 A (r 0.74, mean difference 0.040, 127 residues). Other resolutions are untested.",
           "No symmetry mates or bulk solvent in the simulated density, so residues at lattice contacts read low.",
           models[0],
+          twoFoFcMap,
+        ],
+      };
+    case "rscc-delta":
+      return {
+        title: metricLabel(id),
+        lines: [
+          registry(id),
+          MASK_NOTE,
+          "The shared mask is the union of this model's mask and the reference's, so each of the two is marked down for density near the other's atoms that it leaves unexplained. It does not change when other models are boxed. Read the difference, not the two correlations: the 1.5 A radius was fitted on per-model masks. Green: this model agrees better; red: the reference does.",
+          "Ensembles, with caution: an ensemble's mask covers every member, so the union with one is two to nine times a single model's mask on 4N0X (4,400 to 9,200 points against about 1,000 for surface side chains; one entry). Over that many points the score describes the residue's surroundings more than the residue, and a member carrying 1/67 of the weight claims points like a full atom. A rule that admits a point only where enough of the model's weight lies near it has not been tested, so a difference involving an ensemble is provisional.",
+          "Polymer residues only, matched by chain, number and insertion code; a residue one of the two models lacks has no value.",
+          ON_REQUEST_NOTE,
+          MODEL_KEYED_NOTE,
+          ...models,
           twoFoFcMap,
         ],
       };

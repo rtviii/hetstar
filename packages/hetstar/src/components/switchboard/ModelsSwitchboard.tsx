@@ -230,12 +230,15 @@ export default function ModelsSwitchboard({
 
   const metricOptionsFor = useCallback(
     (modelId: string): FacetOption[] =>
-      METRIC_ORDER.map((id) => ({
-        id: `metric:${id}`,
-        label: metricLabel(id),
-        group: "metric",
-        unavailable: metrics.unavailable(modelId, id),
-      })),
+      METRIC_ORDER.map((id) => {
+        // a metric computed on request can be chosen before it exists: choosing it computes it
+        const request = metrics.requested(modelId, id);
+        if (request && request.status !== "blocked") {
+          const note = request.status === "absent" ? " (computes on choosing)" : request.status === "computing" ? " (computing)" : "";
+          return { id: `metric:${id}`, label: `${metricLabel(id)}${note}`, group: "metric" };
+        }
+        return { id: `metric:${id}`, label: metricLabel(id), group: "metric", unavailable: metrics.unavailable(modelId, id) };
+      }),
     [metrics],
   );
 
@@ -455,18 +458,35 @@ export default function ModelsSwitchboard({
             const legend: FacetLegend | null = painted
               ? { colors: METRIC_UI[painted.id].colors, domain: painted.domain, unit: metricUnit(painted.id) }
               : null;
+            const name = modelDisplayName(model, models);
+            const boxMetric = metricOf(box.facetId);
+            const requestState = boxMetric ? metrics.requested(box.modelId, boxMetric) : null;
+            const request =
+              boxMetric && requestState && requestState.status !== "blocked"
+                ? {
+                    status: requestState.status,
+                    what: `${metricLabel(boxMetric)} of ${name}`,
+                    onCompute: () => metrics.compute(box.modelId, boxMetric),
+                    onErase: () => metrics.erase(box.modelId, boxMetric),
+                  }
+                : null;
             return (
               <SwitchboardBox
                 key={box.key}
-                name={modelDisplayName(model, models)}
+                name={name}
                 detail={modelDetailLines(model)}
                 bundle={bundles.states.get(box.modelId)}
                 color={colorById.get(box.modelId) ?? GHOST_B_COLOR}
                 facetId={box.facetId}
                 facetOptions={[...lookOptions, ...metricOptionsFor(box.modelId)]}
-                onFacet={(id) => setFacet(box.key, id)}
+                onFacet={(id) => {
+                  setFacet(box.key, id);
+                  const chosen = metricOf(id);
+                  if (chosen && metrics.requested(box.modelId, chosen)?.status === "absent") metrics.compute(box.modelId, chosen);
+                }}
                 facet={facet}
                 legend={legend}
+                request={request}
                 colorThemes={preset.colorThemes}
                 poseGroup={poseGroup}
                 selection={selection}

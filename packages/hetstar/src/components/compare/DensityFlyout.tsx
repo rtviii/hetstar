@@ -12,7 +12,8 @@ import {
   type MetricId,
   type MetricProvenance,
 } from "./metrics";
-import { GroupLabel, SliderRow, SwitchButton, TinyText, Tooltip } from "./ui";
+import { GroupLabel, OnRequestControls, SliderRow, SwitchButton, TinyText, Tooltip } from "./ui";
+import type { OnRequestState } from "../../hooks/useModelMetrics";
 
 // Everything density: the map toggles and their knobs (top — the everyday controls),
 // the metric painted on the 2Fo-Fc surface, the density quality and the 2D slice map
@@ -31,7 +32,7 @@ const METRIC_GROUPS: { title: string; ids: MetricId[] }[] = (() => {
   const stored: MetricId[] = [];
   for (const id of METRIC_ORDER) {
     const ui = METRIC_UI[id];
-    (ui.stored ? stored : ui.map ? map : ui.across ? across : ui.pair ? pair : model).push(id);
+    (ui.stored ? stored : ui.across ? across : ui.pair ? pair : ui.map ? map : model).push(id);
   }
   return [
     { title: "This model", ids: model },
@@ -48,6 +49,7 @@ export default function DensityFlyout({
   densityReady,
   densityBusy,
   metrics,
+  requests,
   provenance,
   projectedDomain,
   status,
@@ -80,6 +82,12 @@ export default function DensityFlyout({
   densityBusy: boolean;
   /** the main view's metrics by id; a string is why that metric is unavailable */
   metrics: ReadonlyMap<string, LaneMetric | string>;
+  /** the main view's metrics that are computed on request: where each stands, and its controls */
+  requests: {
+    state(id: MetricId): OnRequestState | null;
+    compute(id: MetricId): void;
+    erase(id: MetricId): void;
+  } | null;
   provenance: MetricProvenance;
   projectedDomain: [number, number] | null;
   status: string | null;
@@ -112,9 +120,9 @@ export default function DensityFlyout({
     const tip = metricTooltip(id, provenance);
     const metric = metrics.get(id);
     const reason = typeof metric === "string" ? metric : metric ? null : "loading";
-    return (
+    const request = requests?.state(id) ?? null;
+    const button = (
       <Tooltip
-        key={id}
         content={
           <div className="flex flex-col gap-1">
             <div className="font-medium">
@@ -134,6 +142,22 @@ export default function DensityFlyout({
           {metricLabel(id)}
         </SwitchButton>
       </Tooltip>
+    );
+    if (!request || request.status === "blocked") return <span key={id}>{button}</span>;
+    // computed on request: a row of its own, the metric and its compute / recompute / erase
+    return (
+      <div key={id} className="flex basis-full items-center justify-between gap-1.5">
+        {button}
+        <OnRequestControls
+          status={request.status}
+          what={`${metricLabel(id)} of this model`}
+          onCompute={() => {
+            requests?.compute(id);
+            onMetricId(id);
+          }}
+          onErase={() => requests?.erase(id)}
+        />
+      </div>
     );
   };
 

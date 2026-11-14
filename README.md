@@ -22,8 +22,9 @@ would need from that API.
   domain and modification annotations, ligand contacts, and metric plots, all linked to the 3D
   selection.
 - Selection tools: multi-range and atom-level selection, representation actions, conformer
-  distances (Mol* measurements), hydrogen bond and contact dashes, and numbered selection
-  bookmarks.
+  distances (Mol* measurements), hydrogen bond and contact dashes, and loci: selections set
+  apart as components of their own, each with a row in the loci stack, a visibility switch, its
+  mask drawn in 3D and an RSCC per loaded model.
 
 ## Running it
 
@@ -102,8 +103,9 @@ import "@dynamic-pdb/hetstar/styles.css";
   `molstar/build/viewer/molstar.css`, or the Mol* Sass skin the website already loads.
 - Fonts come from `--font-plex-sans` and `--font-plex-mono` when the host defines them, and
   fall back to system fonts otherwise.
-- It writes two localStorage keys: `hetstar.lab.bookmarks.<entryId>` (selection bookmarks)
-  and `hetstar.lanes.enabled` (which lanes are shown).
+- It writes two localStorage keys: `hetstar.lab.loci.<entryId>` (the entry's loci; an older
+  `hetstar.lab.bookmarks.<entryId>` is read once as loci) and `hetstar.lanes.enabled` (which
+  lanes are shown).
 - Besides the Dynamic PDB API and file host, the browser fetches from `files.rcsb.org`
   (deposited sf-cif, and the few RCSB example ensembles) and `www.ebi.ac.uk/pdbe/api`
   (`/mappings/{pdb}` and `/pdb/entry/modified_AA_or_NA/{pdb}` for the lanes). Both send open

@@ -153,6 +153,71 @@ export function Spinner({ className }: { className?: string }) {
   );
 }
 
+/** The Prism mark as a waiting sign (styles.css .hs-prism): shown while a computation the
+ * user asked for runs. `size` is the edge of the mark in px. */
+export function PrismMark({ size = 14, label = "computing" }: { size?: number; label?: string }) {
+  return (
+    <span className="hs-prism" role="status" aria-label={label} style={{ width: size, height: size }}>
+      <svg viewBox="0 0 250 250" aria-hidden="true">
+        <polygon points="24,169 77,169 24,222" />
+      </svg>
+      <svg viewBox="0 0 250 250" aria-hidden="true">
+        <polygon points="220,30 220,167 83,167" />
+      </svg>
+    </span>
+  );
+}
+
+// The controls of something computed only when asked for: compute it, compute it again,
+// erase it. While it runs the Prism mark stands in for them.
+export function OnRequestControls({
+  status,
+  what,
+  onCompute,
+  onErase,
+  small,
+}: {
+  status: "absent" | "computing" | "ready";
+  /** what is computed, for the tooltips: "RSCC (computed) of this model" */
+  what: string;
+  onCompute: () => void;
+  onErase: () => void;
+  small?: boolean;
+}) {
+  const size = small ? "hs-btn hs-btn-sm" : "hs-btn";
+  if (status === "computing") {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <PrismMark size={small ? 12 : 16} label={`computing ${what}`} />
+        <span className="hs-label">computing</span>
+      </span>
+    );
+  }
+  if (status === "absent") {
+    return (
+      <Tooltip content={`compute ${what}; it is kept until you erase it`}>
+        <button type="button" className={`${size} hs-btn-primary`} onClick={onCompute}>
+          compute
+        </button>
+      </Tooltip>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Tooltip content={`compute ${what} again`}>
+        <button type="button" className={size} onClick={onCompute}>
+          recompute
+        </button>
+      </Tooltip>
+      <Tooltip content={`erase ${what}`}>
+        <button type="button" className={`${size} hs-btn-danger`} onClick={onErase}>
+          erase
+        </button>
+      </Tooltip>
+    </span>
+  );
+}
+
 /** Compact square icon button for the actions popup (no pressed state — see SwitchButton). */
 export function IconButton({
   disabled,

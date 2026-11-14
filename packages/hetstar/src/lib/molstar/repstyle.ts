@@ -5,7 +5,7 @@ import { Color } from "molstar/lib/mol-util/color";
 import { isHeavy, isPolymerComp, type AtomTable } from "@dynamic-pdb/hetkit/model";
 import { WATER_COMPS } from "../lab/entries";
 import { componentsForStructure, isOverlayComponent } from "./conformers";
-import { type ConformerRamp, ION_COLOR } from "./ghost-theme";
+import { CONFORMER_RAMP_NAMES, type ConformerRamp, ION_COLOR } from "./ghost-theme";
 import { setReprsPickable } from "./density";
 import { buildComponentQuery, mergeExpressions } from "./queries";
 
@@ -55,8 +55,27 @@ export const DEFAULT_REP_STYLE: RepStyle = {
   cartoon: { sizeFactor: 0.2 },
 };
 
+/** Merge over the defaults (the preset's rep style), nested groups individually, so schema drift can't feed undefined size factors into applyRepStyle. */
+export function sanitizeRepStyle(s: unknown, d: RepStyle = DEFAULT_REP_STYLE): RepStyle {
+  if (typeof s !== "object" || s === null) return { ...d };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const r = s as any;
+  const num = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
+  const oneOf = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T =>
+    allowed.includes(v as T) ? (v as T) : fallback;
+  return {
+    type: oneOf(r.type, ["ball-and-stick", "spacefill", "cartoon"] as const, d.type),
+    colorMode: oneOf(r.colorMode, ["conformer", "model", "element", "chain"] as const, d.colorMode),
+    ramp: oneOf(r.ramp, CONFORMER_RAMP_NAMES, d.ramp),
+    quality: oneOf(r.quality, ["auto", "high", "medium", "low"] as const, d.quality),
+    ballStick: { sizeFactor: num(r.ballStick?.sizeFactor, d.ballStick.sizeFactor) },
+    spacefill: { sizeFactor: num(r.spacefill?.sizeFactor, d.spacefill.sizeFactor) },
+    cartoon: { sizeFactor: num(r.cartoon?.sizeFactor, d.cartoon.sizeFactor) },
+  };
+}
+
 // Fixed shape params that used to be user sliders.
-const BALL_STICK_SIZE_ASPECT_RATIO = 2 / 3;
+export const BALL_STICK_SIZE_ASPECT_RATIO = 2 / 3;
 const CARTOON_ASPECT_RATIO = 5;
 /** ions render as small spheres regardless of the polymer's spacefill scale */
 const ION_SIZE_FACTOR = 0.35;
@@ -144,7 +163,7 @@ function typeParamsFor(type: RepType, style: RepStyle) {
 }
 
 // carbons keep the model identity color; heteroatoms read CPK
-const elementWithCarbon = (uniformColor: number) => ({
+export const elementWithCarbon = (uniformColor: number) => ({
   color: "element-symbol" as const,
   // colorParams are shallow-merged into the theme defaults, so the nested uniform
   // params must be complete: missing saturation/lightness NaN out to black

@@ -1,5 +1,5 @@
 "use client";
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Track } from "@dynamic-pdb/hetkit/metrics";
 import type { AtomTable } from "@dynamic-pdb/hetkit/model";
 import { METRIC_UI, type MetricId } from "../components/compare/metrics";
@@ -29,7 +29,21 @@ export interface ModelMetrics {
   /** the metric of a model: against the reference model where it compares two, across the
    * compared models where it compares them all */
   resolve(modelId: string, metricId: MetricId): MetricOutcome;
+  /** where a metric that is computed on request stands for a model; null for every other metric */
+  requested(modelId: string, metricId: MetricId): OnRequestState | null;
+  /** compute an on-request metric of a model (again, if it is there); returns at once */
+  compute(modelId: string, metricId: MetricId): void;
+  erase(modelId: string, metricId: MetricId): void;
+  /** a loaded model as the frames it is scored from (one table, or one per ensemble
+   * member); null while it is not loaded */
+  statesOf(modelId: string): readonly AtomTable[] | null;
 }
+
+export type OnRequestState =
+  | { status: "blocked"; reason: string }
+  | { status: "absent" }
+  | { status: "computing" }
+  | { status: "ready" };
 
 const NOT_LOADED = "model not loaded";
 const IS_REFERENCE = "this is the reference model";
@@ -57,7 +71,11 @@ export function useModelMetrics(args: {
   const engine = useMemo(() => createMetricEngine(), [entryId]);
   const bundleStates = bundles.states;
 
-  return useMemo(() => {
+  // on-request metrics: which are being computed, and a count that moves when one lands or goes
+  const [computing, setComputing] = useState<ReadonlySet<string>>(() => new Set());
+  const [revision, setRevision] = useState(0);
+
+  const access = useMemo(() => {
     const inputsFor = (modelId: string): ModelInputs | null => {
       const storedTracks = catalogued ? stored.get(modelId) : null;
       if (primary && primary.modelId === modelId) {
@@ -90,6 +108,45 @@ export function useModelMetrics(args: {
       resolution,
     });
 
+    return { inputsFor, contextFor };
+  }, [catalogued, bundleStates, stored, primary, referenceId, comparedIds, maps, resolution]);
+
+  const accessRef = useRef(access);
+  useEffect(() => {
+    accessRef.current = access;
+  }, [access]);
+
+  const compute = useCallback(
+    (modelId: string, metricId: MetricId) => {
+      const key = `${modelId}|${metricId}`;
+      setComputing((previous) => new Set(previous).add(key));
+      // the pass holds the main thread: let the loading mark reach the screen first
+      requestAnimationFrame(() =>
+        setTimeout(() => {
+          const model = accessRef.current.inputsFor(modelId);
+          if (model) engine.compute(metricId, model, accessRef.current.contextFor(modelId));
+          setComputing((previous) => {
+            const next = new Set(previous);
+            next.delete(key);
+            return next;
+          });
+          setRevision((count) => count + 1);
+        }, 0),
+      );
+    },
+    [engine],
+  );
+
+  const erase = useCallback(
+    (modelId: string, metricId: MetricId) => {
+      engine.erase(metricId, modelId);
+      setRevision((count) => count + 1);
+    },
+    [engine],
+  );
+
+  return useMemo<ModelMetrics>(() => {
+    const { inputsFor, contextFor } = access;
     return {
       unavailable(modelId, metricId) {
         if (METRIC_UI[metricId].pair && referenceId === modelId) return IS_REFERENCE;
@@ -101,6 +158,26 @@ export function useModelMetrics(args: {
         const model = inputsFor(modelId);
         return model ? engine.resolve(metricId, model, contextFor(modelId)) : NOT_LOADED;
       },
+      requested(modelId, metricId) {
+        if (!METRIC_UI[metricId].onRequest) return null;
+        if (METRIC_UI[metricId].pair && referenceId === modelId) return { status: "blocked", reason: IS_REFERENCE };
+        const model = inputsFor(modelId);
+        if (!model) return { status: "blocked", reason: NOT_LOADED };
+        const context = contextFor(modelId);
+        const reason = engine.blocked(metricId, model, context);
+        if (reason) return { status: "blocked", reason };
+        if (computing.has(`${modelId}|${metricId}`)) return { status: "computing" };
+        return { status: engine.unavailable(metricId, model, context) ? "absent" : "ready" };
+      },
+      compute,
+      erase,
+      statesOf(modelId) {
+        const model = inputsFor(modelId);
+        if (!model) return null;
+        return model.ensemble ? model.ensemble.tables() : [model.table];
+      },
     };
-  }, [engine, catalogued, bundleStates, stored, primary, referenceId, comparedIds, maps, resolution]);
+    // `revision` is read by nothing: it makes a new object when a kept track lands or goes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine, access, referenceId, computing, revision, compute, erase]);
 }

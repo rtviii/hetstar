@@ -602,6 +602,53 @@
   animation: hs-blink 1.6s ease-in-out infinite;
 }
 
+/* Waiting on a computation: the Prism mark, its two triangles lit one after the other as on
+   the Dynamic PDB site. Each triangle is an element of its own and only its opacity moves,
+   so the beat stays on the compositor while a computation holds the main thread. */
+
+@keyframes hs-prism-beat {
+  0%, 100% {
+    opacity: 0.18;
+  }
+
+  35% {
+    opacity: 1;
+  }
+
+  70% {
+    opacity: 0.18;
+  }
+}
+
+.hetstar .hs-prism {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  color: #663be4;
+}
+
+.hetstar .hs-prism > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+  opacity: 0.18;
+  will-change: opacity;
+  animation: hs-prism-beat 1.4s ease-in-out infinite;
+}
+
+.hetstar .hs-prism > svg + svg {
+  animation-delay: 0.28s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hetstar .hs-prism > svg {
+    opacity: 0.7;
+    animation: none;
+  }
+}
+
 /* The one shell of every floating surface (tooltip, popover, flyout, popup, dock box):
    a white sheet, one hairline, the only shadow in the viewer. */
 
@@ -756,6 +803,10 @@
   left: 0.5rem;
 }
 
+.hetstar .right-0 {
+  right: 0px;
+}
+
 .hetstar .right-1 {
   right: 0.25rem;
 }
@@ -778,6 +829,10 @@
 
 .hetstar .top-2 {
   top: 0.5rem;
+}
+
+.hetstar .top-7 {
+  top: 1.75rem;
 }
 
 .hetstar .isolate {
@@ -853,6 +908,10 @@
   display: grid;
 }
 
+.hetstar .contents {
+  display: contents;
+}
+
 .hetstar .\!hidden {
   display: none !important;
 }
@@ -913,6 +972,10 @@
   max-height: 140px;
 }
 
+.hetstar .max-h-\[60vh\] {
+  max-height: 60vh;
+}
+
 .hetstar .min-h-0 {
   min-height: 0px;
 }
@@ -945,6 +1008,10 @@
   width: 264px;
 }
 
+.hetstar .w-\[272px\] {
+  width: 272px;
+}
+
 .hetstar .w-\[300px\] {
   width: 300px;
 }
@@ -955,6 +1022,10 @@
 
 .hetstar .min-w-0 {
   min-width: 0px;
+}
+
+.hetstar .min-w-3 {
+  min-width: 0.75rem;
 }
 
 .hetstar .max-w-\[150px\] {
@@ -1056,6 +1127,10 @@
   grid-template-columns: auto auto 1fr auto auto auto auto auto;
 }
 
+.hetstar .grid-cols-\[minmax\(0\2c 1fr\)_auto_auto\] {
+  grid-template-columns: minmax(0,1fr) auto auto;
+}
+
 .hetstar .flex-col {
   flex-direction: column;
 }
@@ -1153,6 +1228,10 @@
 
 .hetstar .gap-y-1 {
   row-gap: 0.25rem;
+}
+
+.hetstar .gap-y-px {
+  row-gap: 1px;
 }
 
 .hetstar .self-start {
@@ -1261,6 +1340,11 @@
 .hetstar .border-accent {
   --tw-border-opacity: 1;
   border-color: rgb(102 59 228 / var(--tw-border-opacity, 1));
+}
+
+.hetstar .border-accent-line {
+  --tw-border-opacity: 1;
+  border-color: rgb(217 207 250 / var(--tw-border-opacity, 1));
 }
 
 .hetstar .border-amber-400\/70 {
@@ -1374,6 +1458,11 @@
 .hetstar .px-\[3px\] {
   padding-left: 3px;
   padding-right: 3px;
+}
+
+.hetstar .px-px {
+  padding-left: 1px;
+  padding-right: 1px;
 }
 
 .hetstar .py-0\.5 {
@@ -1704,6 +1793,10 @@
   will-change: transform;
 }
 
+.hetstar .first\:border-t-0:first-child {
+  border-top-width: 0px;
+}
+
 .hetstar .last\:border-b-0:last-child {
   border-bottom-width: 0px;
 }
@@ -1716,11 +1809,6 @@
 .hetstar .hover\:border-accent-line:hover {
   --tw-border-opacity: 1;
   border-color: rgb(217 207 250 / var(--tw-border-opacity, 1));
-}
-
-.hetstar .hover\:border-danger:hover {
-  --tw-border-opacity: 1;
-  border-color: rgb(180 35 29 / var(--tw-border-opacity, 1));
 }
 
 .hetstar .hover\:bg-accent-soft:hover {
@@ -1740,11 +1828,6 @@
 .hetstar .hover\:text-accent:hover {
   --tw-text-opacity: 1;
   color: rgb(102 59 228 / var(--tw-text-opacity, 1));
-}
-
-.hetstar .hover\:text-danger:hover {
-  --tw-text-opacity: 1;
-  color: rgb(180 35 29 / var(--tw-text-opacity, 1));
 }
 
 .hetstar .hover\:underline:hover {
@@ -1783,8 +1866,4 @@
 
 .hetstar .disabled\:hover\:bg-transparent:hover:disabled {
   background-color: transparent;
-}
-
-.hetstar :is(.group:hover .group-hover\:flex) {
-  display: flex;
 }

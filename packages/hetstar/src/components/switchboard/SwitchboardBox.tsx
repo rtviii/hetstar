@@ -12,7 +12,7 @@ import type { ResidueRange } from "../../lib/molstar/conformers";
 import type { ReplicaFacet, ReplicaGlass } from "../../lib/molstar/replica";
 import type { SelRepOverlay } from "../../lib/molstar/selrep";
 import type { PickInfo } from "../../lib/molstar/viewer";
-import { CARD_SHELL, Spinner, Tooltip } from "../compare/ui";
+import { CARD_SHELL, OnRequestControls, PrismMark, Spinner, Tooltip } from "../compare/ui";
 
 export interface FacetOption {
   id: string;
@@ -43,6 +43,8 @@ interface SwitchboardBoxProps {
   onFacet: (id: string) => void;
   facet: ReplicaFacet;
   legend: FacetLegend | null;
+  /** set while the facet is a metric computed on request: where it stands and its controls */
+  request: { status: "absent" | "computing" | "ready"; what: string; onCompute: () => void; onErase: () => void } | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   colorThemes: readonly ColorTheme.Provider<any, any>[];
   poseGroup: PoseGroup;
@@ -72,6 +74,7 @@ export default function SwitchboardBox({
   onFacet,
   facet,
   legend,
+  request,
   colorThemes,
   poseGroup,
   selection,
@@ -217,10 +220,20 @@ export default function SwitchboardBox({
             <Spinner className="h-3.5 w-3.5" />
           </div>
         )}
+        {request?.status === "computing" && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/40">
+            <PrismMark size={28} label={`computing ${request.what}`} />
+          </div>
+        )}
         {problem && (
           <div className="absolute inset-0 overflow-hidden bg-white/90 p-1.5 text-[10px] leading-snug text-danger">{problem}</div>
         )}
       </div>
+      {request && request.status !== "computing" && (
+        <div className="flex items-center justify-end border-t border-line px-1.5 py-0.5">
+          <OnRequestControls small status={request.status} what={request.what} onCompute={request.onCompute} onErase={request.onErase} />
+        </div>
+      )}
       {legend && (
         <div className="flex items-center gap-1 border-t border-line px-1.5 py-0.5 font-mono text-[9px] tabular-nums text-ink-muted">
           <span>{formatBound(legend.domain[0])}</span>

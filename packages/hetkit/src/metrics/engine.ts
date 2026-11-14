@@ -14,6 +14,8 @@ export interface MetricSources {
   reference?: AtomTable | null;
   /** one table per ensemble member */
   members?: readonly AtomTable[];
+  /** one table per member of the reference, when it is an ensemble */
+  referenceMembers?: readonly AtomTable[];
   maps?: { twoFoFc?: MapSampler | null; foFc?: MapSampler | null };
   /** resolution limit of the data behind the maps, in A */
   resolution?: number | null;
@@ -28,7 +30,8 @@ export interface MetricNeeds {
   reference: boolean;
   /** computable only for a multi-member ensemble */
   ensemble: boolean;
-  /** reads every member of an ensemble when there are any, and the model alone otherwise */
+  /** reads every member of an ensemble when there are any, and the model alone otherwise
+   * (of the reference too, when the metric has one) */
   states: boolean;
   map: MapKind | null;
 }
@@ -39,11 +42,15 @@ export type MetricResolution = { track: Track } | { missing: MetricMissing };
 export function metricNeeds(id: string): MetricNeeds | null {
   const metric = METRICS.get(id);
   if (!metric) return null;
-  const usesMap = metric.input === "model-map" || metric.input === "model-pair-map" || metric.input === "states-map";
+  const usesMap =
+    metric.input === "model-map" ||
+    metric.input === "model-pair-map" ||
+    metric.input === "states-map" ||
+    metric.input === "states-pair-map";
   return {
-    reference: metric.input === "model-pair" || metric.input === "model-pair-map",
+    reference: metric.input === "model-pair" || metric.input === "model-pair-map" || metric.input === "states-pair-map",
     ensemble: metric.input === "model-list",
-    states: metric.input === "states" || metric.input === "states-map",
+    states: metric.input === "states" || metric.input === "states-map" || metric.input === "states-pair-map",
     map: usesMap ? (metric.map ?? "2fofc") : null,
   };
 }
@@ -51,7 +58,7 @@ export function metricNeeds(id: string): MetricNeeds | null {
 export function resolveMetric(id: string, sources: MetricSources): MetricResolution {
   const metric = METRICS.get(id);
   if (!metric) return { missing: "unknown" };
-  const { table, reference, members, maps } = sources;
+  const { table, reference, members, referenceMembers, maps } = sources;
   const sample = (metric.map ?? "2fofc") === "fofc" ? maps?.foFc : maps?.twoFoFc;
   switch (metric.input) {
     case "model":
@@ -78,6 +85,20 @@ export function resolveMetric(id: string, sources: MetricSources): MetricResolut
           kind: "states-map",
           model: table,
           members: members ? [...members] : [],
+          sample,
+          resolution: sources.resolution ?? FALLBACK_RESOLUTION,
+        }),
+      };
+    case "states-pair-map":
+      if (!reference) return { missing: "reference" };
+      if (!sample) return { missing: "map" };
+      return {
+        track: metric.compute({
+          kind: "states-pair-map",
+          model: table,
+          members: members ? [...members] : [],
+          reference,
+          referenceMembers: referenceMembers ? [...referenceMembers] : [],
           sample,
           resolution: sources.resolution ?? FALLBACK_RESOLUTION,
         }),

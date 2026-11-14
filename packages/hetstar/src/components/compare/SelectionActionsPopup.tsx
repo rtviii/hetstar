@@ -3,9 +3,8 @@ import { useRef, useState, type ReactNode } from "react";
 import type { ResidueRange } from "../../lib/molstar/conformers";
 import type { RepType } from "../../lib/molstar/repstyle";
 import { altColorCss } from "../../lib/molstar/altloc-theme";
-import { MAX_BOOKMARKS } from "../../lib/lab/bookmarks";
 import { CARD_SHELL, IconButton, Segmented, SwitchButton, Tooltip, useDismiss } from "./ui";
-import { AtomModeIcon, BondsIcon, BookmarkIcon, ConformersIcon, ResidueModeIcon, RulerIcon, SpreadIcon } from "./icons";
+import { AtomModeIcon, BondsIcon, ConformersIcon, ResidueModeIcon, RulerIcon, SpreadIcon } from "./icons";
 
 // The Selection Actions Panel: opened by a (non-drag) right click, fixed at the cursor
 // and clamped to the viewport. Always acts on the WHOLE current selection — one residue
@@ -51,8 +50,7 @@ export default function SelectionActionsPopup({
   target,
   pickMode,
   onPickMode,
-  onBookmark,
-  bookmarkCount,
+  onCreateLocus,
   conformersShown,
   mutedLetters,
   onToggleLetter,
@@ -78,9 +76,8 @@ export default function SelectionActionsPopup({
   target: ActionTarget | null;
   pickMode: PickMode;
   onPickMode: (mode: PickMode) => void;
-  /** save the selection as a bookmark; null when there is nothing to save or the cap is reached */
-  onBookmark: (() => void) | null;
-  bookmarkCount: number;
+  /** set the selection apart as a locus; null when there is nothing to set apart */
+  onCreateLocus: (() => void) | null;
   /** residue: its conformers expanded; range: EVERY split residue in it expanded */
   conformersShown: boolean;
   /** letters currently toggled OFF for this selection (only meaningful while shown) */
@@ -180,21 +177,31 @@ export default function SelectionActionsPopup({
           <span className="hs-label">{subline}</span>
           <Tooltip
             content={
-              onBookmark
-                ? `bookmark this selection (${bookmarkCount + 1}/${MAX_BOOKMARKS}); the numbered buttons by the tray restore it`
-                : `bookmarks full (${MAX_BOOKMARKS}/${MAX_BOOKMARKS}) — delete one from the tray first`
+              <div className="flex flex-col gap-1">
+                <div className="font-medium">create a locus</div>
+                <div>
+                  Sets this selection apart: its atoms become a component of their own, drawn as sticks in their own
+                  colour over the structure, which stays as it is underneath.
+                </div>
+                <div>
+                  Each locus gets a row in the loci stack (the bracket icon at the top right), where it can be hidden,
+                  selected again or removed, and where its RSCC against the density is computed and painted. Any number
+                  of loci; they are kept for this entry.
+                </div>
+              </div>
             }
           >
-            <IconButton
-              disabled={!onBookmark}
-              label="bookmark selection"
+            <button
+              type="button"
+              className="hs-btn"
+              disabled={!onCreateLocus}
               onClick={() => {
-                onBookmark?.();
+                onCreateLocus?.();
                 onClose();
               }}
             >
-              <BookmarkIcon />
-            </IconButton>
+              + create locus
+            </button>
           </Tooltip>
         </div>
       )}
@@ -331,7 +338,7 @@ export default function SelectionActionsPopup({
 
       <div className="flex items-center justify-between border-t border-line px-2 py-1">
         <span className="hs-label">structure changes</span>
-        <Tooltip content="back to the freshly-loaded look: collapse conformers, default style, remove bond/representation overlays, clip and measurements. Bookmarks persist.">
+        <Tooltip content="back to the freshly-loaded look: collapse conformers, default style, remove bond/representation overlays, clip and measurements. Loci persist.">
           <button
             type="button"
             className="hs-btn hs-btn-danger"

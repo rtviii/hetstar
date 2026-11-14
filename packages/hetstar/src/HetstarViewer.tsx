@@ -30,6 +30,7 @@ import {
   ensureLabComponents,
   NO_HYDROGENS,
   reprSpecForRole,
+  sanitizeRepStyle,
   SELREP_BALLSTICK_SIZE,
   type CompSplit,
   type RepStyle,
@@ -76,7 +77,18 @@ import {
   type AtomSel,
   type LabSelection,
 } from "./lib/lab/selection";
-import { loadBookmarks, MAX_BOOKMARKS, sanitizeRepStyle, saveBookmarks, type SelectionBookmark } from "./lib/lab/bookmarks";
+import {
+  loadLoci,
+  LOCUS_RSCC_DOMAIN,
+  newLocus,
+  saveLoci,
+  scoreLocus,
+  type Locus,
+  type LocusModel,
+  type LocusScore,
+} from "./lib/lab/loci";
+import { syncLocusComponents, type LocusNodes } from "./lib/molstar/loci";
+import { modelDisplayName } from "./lib/dpdb/names";
 import SlicePanel, { slicePlaneFor, type SliceAxis, type SlicePlane } from "./components/SlicePanel";
 import DensityFlyout from "./components/compare/DensityFlyout";
 import EntryCard from "./components/compare/EntryCard";
@@ -87,12 +99,13 @@ import type { BondRow } from "./components/compare/BondList";
 import StyleTray from "./components/compare/StyleTray";
 import { dynamicpdbPreset } from "./presets/dynamicpdb";
 import type { HetstarPreset } from "./presets/types";
-import BookmarkTray from "./components/compare/BookmarkTray";
+import LociTray from "./components/compare/LociTray";
 import { CARD_SHELL, CardBoundsContext, Spinner, useStoredFlag } from "./components/compare/ui";
 import ModelsSwitchboard, { type SwitchboardOptions } from "./components/switchboard/ModelsSwitchboard";
 import type { HoverTarget } from "./components/switchboard/SwitchboardBox";
 import { useModelBundles } from "./hooks/useModelBundles";
 import { useModelMetrics, type PrimaryModel } from "./hooks/useModelMetrics";
+import { NOT_COMPUTED } from "./lib/lab/metric-engine";
 import { useStoredResidueData } from "./hooks/useStoredResidueData";
 import { createEmitter } from "./lib/lab/emitter";
 import { bundleFromText, fetchModelText, memberTablesOfFile } from "./lib/lab/model-bundle";
@@ -142,7 +155,13 @@ import {
   type ResidueRef,
 } from "@dynamic-pdb/hetkit/model";
 import type { AltGroupSelector } from "./lib/molstar/queries";
-import { rankSegments, type Track, type TrackSegment } from "@dynamic-pdb/hetkit/metrics";
+import {
+  FALLBACK_RESOLUTION,
+  rankSegments,
+  RSCC_DEFAULT_MASK_RADIUS,
+  type Track,
+  type TrackSegment,
+} from "@dynamic-pdb/hetkit/metrics";
 import { Structure, StructureElement } from "molstar/lib/mol-model/structure";
 import { setSubtreeVisibility } from "molstar/lib/mol-plugin/behavior/static/state";
 
@@ -438,8 +457,14 @@ export default function HetstarViewer({
   // merged) — what every residue-keyed consumer reads; sel stays the source of truth
   const residueRanges = useMemo(() => selectionToRanges(sel), [sel]);
 
-  // --- selection bookmarks (selection + RepStyle snapshot, persisted per entry) ---
-  const [bookmarks, setBookmarks] = useState<SelectionBookmark[]>([]);
+  // --- loci: selections set apart, each with a component, a row in the stack and metrics
+  // (persisted per entry; the scores and the paint are session-only) ---
+  const [loci, setLoci] = useState<Locus[]>([]);
+  const [lociOpen, setLociOpen] = useState(false);
+  const locusNodesRef = useRef<LocusNodes>(new Map());
+  const [locusScores, setLocusScores] = useState<ReadonlyMap<string, LocusScore>>(() => new Map());
+  const [locusComputing, setLocusComputing] = useState<ReadonlySet<string>>(() => new Set());
+  const [paintLocusId, setPaintLocusId] = useState<string | null>(null);
 
   // --- PDBe annotations (lanes) ---
   const [pdbeRaw, setPdbeRaw] = useState<PdbeRaw | "loading" | null>(null);
@@ -606,6 +631,7 @@ export default function HetstarViewer({
       bondDashRef.current = null;
       setSelRepOverlays([]);
       selRepRefs.current.clear();
+      locusNodesRef.current.clear();
       worldSticksRef.current = null;
       setMeasureArm(null);
       setMeasureVersion((v) => v + 1);
@@ -747,6 +773,22 @@ export default function HetstarViewer({
       });
     });
   }, [viewer, primaryLoaded, selRepOverlays, runStyling]);
+
+  // --- loci: a component per locus, over the structure and independent of its styling ---
+
+  useEffect(() => {
+    const ctx = viewer?.ctx;
+    if (!ctx || !viewer || !primaryLoaded) return;
+    const structureRef = viewer.getPrimaryStructureRef();
+    if (!structureRef) return;
+    runStyling("loci", async () => {
+      if (viewer.getPrimaryStructureRef() !== structureRef) return;
+      await syncLocusComponents(ctx, structureRef, locusNodesRef.current, loci, {
+        quality: repStyleRef.current.quality,
+        maskRadius: RSCC_DEFAULT_MASK_RADIUS,
+      });
+    });
+  }, [viewer, primaryLoaded, loci, runStyling]);
 
   // --- single-conformer collapse (per-residue expansion + naive global letter state) ---
 
@@ -1670,25 +1712,72 @@ export default function HetstarViewer({
     return out;
   }, [pair, primaryModel, modelMetrics]);
 
+  // the main view's on-request metrics, for the paint picker
+  const mainModelId = pair?.a.id ?? null;
+  const mainRequests = useMemo(
+    () =>
+      mainModelId
+        ? {
+            state: (id: MetricId) => modelMetrics.requested(mainModelId, id),
+            compute: (id: MetricId) => modelMetrics.compute(mainModelId, id),
+            erase: (id: MetricId) => modelMetrics.erase(mainModelId, id),
+          }
+        : null,
+    [mainModelId, modelMetrics],
+  );
+
   const metricLaneModules = useMemo(
     () => METRIC_ORDER.map((id) => makeMetricLane(id, metricLabel(id), metricDescription(id))),
     [],
   );
 
   const projectedMetric = metricId === "none" ? null : (laneMetrics.get(metricId) ?? null);
+  const paintedLocusScore = paintLocusId ? (locusScores.get(paintLocusId) ?? null) : null;
   useEffect(() => {
     const ctx = viewer?.ctx;
     if (!ctx || !aTable) return;
     const r = reprsRef.current;
-    if (metricId === "none") {
-      if (r?.twoFoFc && projectorRef.current.getVolumeRef()) {
+    const clearPaint = () => {
+      if (!r?.twoFoFc || !projectorRef.current.getVolumeRef()) return;
+      runProjection(async () => {
+        await projectorRef.current.clear(ctx, new Map([[r.twoFoFc as string, TWO_FOFC_COLOR]]));
+        setProjected(null);
+        setProjVersion((v) => v + 1);
+        setStatus(null);
+      });
+    };
+    // a locus: its residues' RSCC, splatted from the atoms that define its shared mask at
+    // the mask radius, so exactly the mask is coloured and the rest of the map keeps its own
+    if (paintLocusId) {
+      if (!paintedLocusScore || !paintedLocusScore.paintPoints.length) {
+        clearPaint();
+        return;
+      }
+      if (densityState !== "ready" || !r?.twoFoFc) return;
+      const points = paintedLocusScore.paintPoints;
+      const t = setTimeout(() => {
         runProjection(async () => {
-          await projectorRef.current.clear(ctx, new Map([[r.twoFoFc as string, TWO_FOFC_COLOR]]));
+          await projectorRef.current.project(ctx, {
+            points,
+            targets: [r.twoFoFc],
+            domain: LOCUS_RSCC_DOMAIN,
+            colors: METRIC_UI["rscc-computed"].colors,
+            spacing: 0.5,
+            radius: RSCC_DEFAULT_MASK_RADIUS,
+            defaultColor: TWO_FOFC_COLOR,
+            label: "RSCC of a locus",
+          });
           setProjected(null);
           setProjVersion((v) => v + 1);
-          setStatus(null);
+          setStatus(`RSCC of a locus: painted inside its mask from ${points.length} atoms`);
         });
-      }
+      }, 120);
+      return () => clearTimeout(t);
+    }
+    // nothing to show: no metric chosen, or one computed on request that was erased or whose
+    // inputs (the reference, the map) were replaced since
+    if (metricId === "none" || projectedMetric === NOT_COMPUTED) {
+      clearPaint();
       return;
     }
     if (densityState !== "ready" || !r?.twoFoFc) return; // the projection target is the 2Fo-Fc surface
@@ -1713,7 +1802,7 @@ export default function HetstarViewer({
       });
     }, 120);
     return () => clearTimeout(t);
-  }, [viewer, aTable, referenceTable, metricId, densityState, densityVersion, projectedMetric, runProjection]);
+  }, [viewer, aTable, referenceTable, metricId, densityState, densityVersion, projectedMetric, paintLocusId, paintedLocusScore, runProjection]);
 
   // --- samplers for the slice panel + support table ---
 
@@ -2076,7 +2165,7 @@ export default function HetstarViewer({
   );
 
   // back to the freshly-loaded look: conformers collapsed, default style, no overlays,
-  // no clip, no measurements, empty selection. Bookmarks and density settings persist.
+  // no clip, no measurements, empty selection. Loci and density settings persist.
   const resetAll = useCallback(() => {
     setSel(EMPTY_SELECTION);
     setPopup(null);
@@ -2116,45 +2205,127 @@ export default function HetstarViewer({
     setPopup(null);
   }, []);
 
-  // --- bookmarks: load per entry; persist ONLY from the action callbacks (a
-  // save-on-change effect would clobber storage with [] during the entry switch) ---
+  // --- loci: load per entry; persist ONLY from the action callbacks (a save-on-change
+  // effect would clobber storage with [] during the entry switch) ---
 
+  const lociEntryId = entry?.pdbId ?? null;
   useEffect(() => {
-    setBookmarks(entry ? loadBookmarks(entry.pdbId, preset.repStyle) : []);
-  }, [entry, preset.repStyle]);
+    setLoci(lociEntryId ? loadLoci(lociEntryId) : []);
+    setLocusScores(new Map());
+    setLocusComputing(new Set());
+    setPaintLocusId(null);
+  }, [lociEntryId]);
 
-  const addBookmark = useCallback(() => {
-    const entryId = entry?.pdbId;
-    if (!entryId || selectionIsEmpty(sel)) return;
-    setBookmarks((prev) => {
-      if (prev.length >= MAX_BOOKMARKS) return prev;
-      const next = [
-        ...prev,
-        { id: `${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6)}`, createdAt: Date.now(), selection: sel, repStyle },
-      ];
-      saveBookmarks(entryId, next);
-      return next;
-    });
-  }, [entry, sel, repStyle]);
-
-  const deleteBookmark = useCallback(
-    (bookmarkId: string) => {
-      const entryId = entry?.pdbId;
-      if (!entryId) return;
-      setBookmarks((prev) => {
-        const next = prev.filter((b) => b.id !== bookmarkId);
-        saveBookmarks(entryId, next);
+  const updateLoci = useCallback(
+    (change: (previous: Locus[]) => Locus[]) => {
+      if (!lociEntryId) return;
+      setLoci((previous) => {
+        const next = change(previous);
+        saveLoci(lociEntryId, next);
         return next;
       });
     },
-    [entry],
+    [lociEntryId],
   );
 
-  // resurrect the SELECTION only. Bookmarks still store the RepStyle they were saved
-  // with (schema unchanged), but applying one no longer touches the global style — a
-  // bookmark saved under "atoms" used to silently switch the whole structure.
-  const applyBookmark = useCallback((b: SelectionBookmark) => {
-    setSel(normalizeSelection(b.selection));
+  const createLocus = useCallback(() => {
+    if (selectionIsEmpty(sel)) return;
+    updateLoci((previous) => [...previous, newLocus(sel, previous)]);
+    setLociOpen(true);
+  }, [sel, updateLoci]);
+
+  const eraseLocusScore = useCallback((locusId: string) => {
+    setLocusScores((previous) => {
+      const next = new Map(previous);
+      next.delete(locusId);
+      return next;
+    });
+    setPaintLocusId((current) => (current === locusId ? null : current));
+  }, []);
+
+  const deleteLocus = useCallback(
+    (locusId: string) => {
+      updateLoci((previous) => previous.filter((locus) => locus.id !== locusId));
+      eraseLocusScore(locusId);
+    },
+    [updateLoci, eraseLocusScore],
+  );
+
+  const toggleLocusVisible = useCallback(
+    (locusId: string) =>
+      updateLoci((previous) => previous.map((locus) => (locus.id === locusId ? { ...locus, visible: !locus.visible } : locus))),
+    [updateLoci],
+  );
+
+  const toggleLocusMask = useCallback(
+    (locusId: string) =>
+      updateLoci((previous) => previous.map((locus) => (locus.id === locusId ? { ...locus, maskShown: !locus.maskShown } : locus))),
+    [updateLoci],
+  );
+
+  const selectLocus = useCallback(
+    (locusId: string) => {
+      const locus = loci.find((candidate) => candidate.id === locusId);
+      if (locus) setSel(normalizeSelection(locus.selection));
+    },
+    [loci],
+  );
+
+  // what a locus is scored from: the main view's model first, then the reference and the
+  // other compared models that are loaded. Read through a ref by the deferred computation.
+  const locusInputs = useMemo(() => {
+    const sample = mapSamplers.twoFoFc;
+    const ids = mainModelId ? [...new Set([mainModelId, ...(referenceId ? [referenceId] : []), ...comparedIds])] : [];
+    const models: LocusModel[] = [];
+    for (const id of ids) {
+      const states = modelMetrics.statesOf(id);
+      const model = entry?.models.find((candidate) => candidate.id === id);
+      if (!states || !model || !entry) continue;
+      models.push({ modelId: id, name: modelDisplayName(model, entry.models), states });
+    }
+    return { sample, models: models.slice(0, 8), resolution: entry?.resolution ?? FALLBACK_RESOLUTION };
+  }, [mapSamplers, mainModelId, referenceId, comparedIds, modelMetrics, entry]);
+  const locusInputsRef = useRef(locusInputs);
+  useEffect(() => {
+    locusInputsRef.current = locusInputs;
+  }, [locusInputs]);
+  const locusBlocked = !locusInputs.sample ? "enables with the density" : !locusInputs.models.length ? "model not loaded" : null;
+
+  const computeLocusScore = useCallback(
+    (locusId: string) => {
+      const locus = loci.find((candidate) => candidate.id === locusId);
+      if (!locus) return;
+      setLocusComputing((previous) => new Set(previous).add(locusId));
+      // the pass holds the main thread: let the loading mark reach the screen first
+      requestAnimationFrame(() =>
+        setTimeout(() => {
+          const { sample, models, resolution } = locusInputsRef.current;
+          if (sample && models.length) {
+            const score = scoreLocus(locus, models, sample, resolution);
+            setLocusScores((previous) => new Map(previous).set(locusId, score));
+          }
+          setLocusComputing((previous) => {
+            const next = new Set(previous);
+            next.delete(locusId);
+            return next;
+          });
+        }, 0),
+      );
+    },
+    [loci],
+  );
+
+  // one thing is painted on the density at a time: a metric of the model, or a locus
+  const chooseMetric = useCallback((id: MetricId | "none") => {
+    setMetricId(id);
+    setPaintLocusId(null);
+  }, []);
+  const paintLocus = useCallback((locusId: string | null) => {
+    setPaintLocusId(locusId);
+    if (locusId) {
+      setMetricId("none");
+      setShowDensity(true);
+    }
   }, []);
 
   // every altloc letter of model A, with how many residues carry it (the state buttons)
@@ -2401,10 +2572,11 @@ export default function HetstarViewer({
   const densityFlyout = (
     <DensityFlyout
       metricId={metricId}
-      onMetricId={setMetricId}
+      onMetricId={chooseMetric}
       densityReady={ready}
       densityBusy={densityBusy}
       metrics={laneMetrics}
+      requests={mainRequests}
       provenance={{
         aUrl: pair?.a.url ?? "model A file",
         bUrl: referenceModel?.url ?? "no reference model",
@@ -2552,7 +2724,23 @@ export default function HetstarViewer({
               </div>
             )}
             <div data-hetstar-part="tray" className="absolute right-2 top-2 z-10 flex items-start gap-1.5">
-              <BookmarkTray bookmarks={bookmarks} onApply={applyBookmark} onDelete={deleteBookmark} />
+              <LociTray
+                loci={loci}
+                open={lociOpen}
+                onOpen={setLociOpen}
+                onVisible={toggleLocusVisible}
+                onMask={toggleLocusMask}
+                onSelect={selectLocus}
+                onDelete={deleteLocus}
+                scores={locusScores}
+                computing={locusComputing}
+                blocked={locusBlocked}
+                onCompute={computeLocusScore}
+                onErase={eraseLocusScore}
+                paintedId={paintLocusId}
+                onPaint={paintLocus}
+                paintDomain={LOCUS_RSCC_DOMAIN}
+              />
               <StyleTray
                 ready={primaryLoaded}
                 densityReady={ready}
@@ -2582,8 +2770,7 @@ export default function HetstarViewer({
                 target={popupTarget}
                 pickMode={pickMode}
                 onPickMode={setPickMode}
-                onBookmark={popupTarget && entry && bookmarks.length < MAX_BOOKMARKS ? addBookmark : null}
-                bookmarkCount={bookmarks.length}
+                onCreateLocus={popupTarget && entry ? createLocus : null}
                 conformersShown={popupShown}
                 mutedLetters={selectionMutedLetters}
                 onToggleLetter={toggleConformerLetter}

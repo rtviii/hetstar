@@ -58,6 +58,8 @@ export interface ProjectOptions {
   colors?: number[];
   spacing?: number;
   radius?: number;
+  /** the colour of the targets where the volume has no value; default the missing-data grey */
+  defaultColor?: number;
   label?: string;
 }
 
@@ -85,7 +87,9 @@ export class MetricProjector {
       label: opts.label ?? "Metric field",
     });
     const targets = opts.targets.filter((t): t is string => !!t);
-    for (const t of targets) await colorReprByVolume(ctx, t, volumeRef, opts.domain, { colors: opts.colors });
+    for (const t of targets) {
+      await colorReprByVolume(ctx, t, volumeRef, opts.domain, { colors: opts.colors, defaultColor: opts.defaultColor });
+    }
     this.volumeRef = volumeRef;
     this.coloredTargets = targets;
     // Delete the old volume only after nothing references it anymore.

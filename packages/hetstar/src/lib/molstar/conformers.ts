@@ -158,9 +158,16 @@ export function isWorldSticksComponent(c: StructureComponentRef): boolean {
   return !!c.cell.transform.tags?.includes(WORLD_STICKS_TAG);
 }
 
+// a locus (lib/molstar/loci.ts): a selection set apart as a component of its own. Exempt
+// from the rep-style pass, the chemistry rebuild and the collapse/accent layers alike: it
+// shows every conformer of its atoms whatever the structure underneath is showing.
+export function isLocusComponent(c: StructureComponentRef): boolean {
+  return !!c.cell.transform.tags?.includes("lab-locus");
+}
+
 /** any app-managed overlay component whose lifecycle its own effect owns */
 export function isOverlayComponent(c: StructureComponentRef): boolean {
-  return isBondsComponent(c) || isSelRepComponent(c) || isWorldSticksComponent(c);
+  return isBondsComponent(c) || isSelRepComponent(c) || isWorldSticksComponent(c) || isLocusComponent(c);
 }
 
 /**
@@ -251,7 +258,7 @@ export async function applyConformerStyling(
   // the filtered set
   await clearStructureTransparency(ctx, comps);
   await clearStructureOverpaint(ctx, comps);
-  const baseComps = comps.filter((c) => !isBondsComponent(c));
+  const baseComps = comps.filter((c) => !isBondsComponent(c) && !isLocusComponent(c));
   if (state.polymerAsTrace && state.polymerFade) {
     const polymerComps = baseComps.filter(isPolymerComponent);
     for (const { test, value } of conformerFadeLayers(state.polymerFade)) {

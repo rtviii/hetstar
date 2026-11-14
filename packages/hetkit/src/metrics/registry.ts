@@ -1,4 +1,5 @@
 import type { AtomTable } from "../model/atoms";
+import { isPolymerComp } from "../model/sequence";
 import { altlocRmsf, conformerCount, occupancyEntropy } from "./altloc-metrics";
 import { bIsoMean } from "./bfactor";
 import { ensembleRmsf } from "./ensemble-rmsf";
@@ -6,7 +7,7 @@ import type { MapSampler } from "./map";
 import { mapSupportDelta, mapValueTracks } from "./map";
 import { motionTracks } from "./motion";
 import { modelRmsd } from "./rmsd";
-import { realSpaceCorrelation } from "./rscc";
+import { realSpaceCorrelation, realSpaceCorrelationJoint } from "./rscc";
 import type { Level, Track } from "./tracks";
 import { trackDelta } from "./tracks";
 
@@ -22,7 +23,17 @@ export type MetricInput =
   /** a model as its coordinate frames: `members` holds one table per ensemble member, empty for a single model */
   | { kind: "states"; model: AtomTable; members: AtomTable[] }
   /** the same, against a map from data that reach `resolution` (A) */
-  | { kind: "states-map"; model: AtomTable; members: AtomTable[]; sample: MapSampler; resolution: number };
+  | { kind: "states-map"; model: AtomTable; members: AtomTable[]; sample: MapSampler; resolution: number }
+  /** two models as their coordinate frames, against one map */
+  | {
+      kind: "states-pair-map";
+      model: AtomTable;
+      members: AtomTable[];
+      reference: AtomTable;
+      referenceMembers: AtomTable[];
+      sample: MapSampler;
+      resolution: number;
+    };
 
 /** which of an entry's maps a map metric samples */
 export type MapKind = "2fofc" | "fofc";
@@ -47,11 +58,15 @@ export type AnyMetric =
   | MetricDescriptor<"model-pair-map">
   | MetricDescriptor<"model-list">
   | MetricDescriptor<"states">
-  | MetricDescriptor<"states-map">;
+  | MetricDescriptor<"states-map">
+  | MetricDescriptor<"states-pair-map">;
 
 function statesOf(input: { model: AtomTable; members: AtomTable[] }): AtomTable[] {
   return input.members.length >= 2 ? input.members : [input.model];
 }
+
+/** the mask rule of rscc-delta; the hetkit function takes any MaskRule */
+export const RSCC_DELTA_MASK = "union";
 
 const list: AnyMetric[] = [
   {
@@ -181,6 +196,23 @@ const list: AnyMetric[] = [
     input: "states-map",
     map: "2fofc",
     compute: (i) => realSpaceCorrelation(statesOf(i), i.sample, { resolution: i.resolution }),
+  },
+  {
+    id: "rscc-delta",
+    label: "RSCC vs reference (shared mask)",
+    description:
+      "Computed RSCC of the model minus that of the reference model, per polymer residue, both scored over the same points: the union of the two models' masks, in one pass on one lattice. Positive: the model's simulated density agrees with the map better there than the reference's does.",
+    level: "residue",
+    input: "states-pair-map",
+    map: "2fofc",
+    compute: (i) => {
+      const [own, reference] = realSpaceCorrelationJoint(
+        [statesOf(i), statesOf({ model: i.reference, members: i.referenceMembers })],
+        i.sample,
+        { resolution: i.resolution, mask: RSCC_DELTA_MASK, include: (residue) => isPolymerComp(residue.compId) },
+      );
+      return trackDelta(own, reference, { metricId: "rscc-delta" });
+    },
   },
   {
     id: "support-delta",
