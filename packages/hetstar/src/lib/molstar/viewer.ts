@@ -121,7 +121,8 @@ export class MolstarViewer {
       renderer: { backgroundColor: WHITE_BACKGROUND },
       // Never let an implicit scene change (e.g. adding a representation) auto-refit the camera.
       // The camera only moves on the explicit resetCamera() after load and focusLoci() on pin.
-      camera: { manualReset: true },
+      // no orientation gizmo in the corner of the canvas
+      camera: { manualReset: true, helper: { axes: { name: "off", params: {} } } },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
     this.ctx.managers.structure.component.setOptions({

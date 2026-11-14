@@ -1,6 +1,7 @@
 import type { FC } from "react";
 import { DefaultPluginUISpec, type PluginUISpec } from "molstar/lib/mol-plugin-ui/spec";
 import { DefaultPluginSpec, PluginSpec } from "molstar/lib/mol-plugin/spec";
+import { PluginConfig } from "molstar/lib/mol-plugin/config";
 import { PluginBehaviors } from "molstar/lib/mol-plugin/behavior";
 
 // A component that renders nothing, used to strip Mol*'s viewport button strip
@@ -16,8 +17,10 @@ const NoViewportControls: FC = () => null;
 //  - DefaultLociLabelProvider (the hover label toast; the lab renders its own readout),
 //  - State.SnapshotControls, Camera.CameraControls (keyboard shortcuts) and the optional
 //    CustomProps providers the lab never reads.
+//  - Camera.CameraAxisHelper (the orientation gizmo; its axes are switched off on the
+//    canvas in viewer.ts) and the "Select Animation" button of the viewport (config below).
 // Kept: hover highlight marking, SelectLoci (inert outside selection mode; harmless and
-// available for programmatic marking later), the axes gizmo, StructureInfo, and
+// available for programmatic marking later), StructureInfo, and
 // CustomProps.Interactions — it registers the InteractionsProvider custom property and
 // the "interactions" representation the selection-bonds overlay uses (autoAttach off:
 // the property computes on demand for the overlay component only, never for a whole
@@ -34,10 +37,10 @@ export const labViewerSpec: PluginUISpec = {
     // trace; the app marks visibility-filtered loci instead.
     PluginSpec.Behavior(PluginBehaviors.Representation.HighlightLoci, { mark: false }),
     PluginSpec.Behavior(PluginBehaviors.Representation.SelectLoci),
-    PluginSpec.Behavior(PluginBehaviors.Camera.CameraAxisHelper),
     PluginSpec.Behavior(PluginBehaviors.CustomProps.StructureInfo),
     PluginSpec.Behavior(PluginBehaviors.CustomProps.Interactions, { autoAttach: false, showTooltip: false }),
   ],
+  config: [[PluginConfig.Viewport.ShowAnimation, false]],
   components: {
     controls: { top: "none", bottom: "none", left: "none", right: "none" },
     viewport: { controls: NoViewportControls },
