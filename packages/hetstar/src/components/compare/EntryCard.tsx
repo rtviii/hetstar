@@ -4,14 +4,16 @@ import { useMemo, type ReactNode } from "react";
 import { WATER_COMPS, type ProvenanceRecord } from "../../lib/lab/entries";
 import { ROLE_LABELS, type EntryManifest } from "../../lib/dpdb/types";
 import { isHeavy, isPolymerComp, type AltlocSummary, type AtomTable, type EntryDescription } from "@dynamic-pdb/hetkit/model";
-import { Num, Section, TinyText } from "./ui";
+import { HintMark, Num, Section, TinyText, type TipContent } from "./ui";
 
 // The rail's body: what this structure IS, grouped by concept, each group a section that
-// folds (ui.tsx Section; the fold is remembered). Experiment, source, the model on screen,
-// the entry's models with their global metrics, ligands, and the files everything was read
-// from. Facts come from the deposited CIF's header (hetkit describeEntry) with the dpdb
-// catalogue overlaid for live entries; an absent field does not render, an empty section
-// does not either. Prose (the entry's details) stays folded until asked for.
+// folds (ui.tsx Section; the fold is remembered). Experiment, source and references, the
+// model on screen, the entry's models with their global metrics, and the files everything
+// was read from. Facts come from the deposited CIF's header (hetkit describeEntry) with the
+// dpdb catalogue overlaid for live entries; an absent field does not render, an empty
+// section does not either. Whatever has a page of its own elsewhere (the PDB entry, the
+// paper, the UniProt record, the organism) is a link to it. Prose (the entry's details)
+// stays folded until asked for. The rail is set dense (styles.css .hs-dense).
 
 const FOLD = "hetstar.rail.";
 
@@ -34,21 +36,70 @@ function metric(v: number | undefined, digits: number): string {
   return v == null ? "-" : v.toFixed(digits);
 }
 
+function Link({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  );
+}
+
+const isPdbId = (id: string) => /^[0-9][A-Za-z0-9]{3}$/.test(id);
+
+// the catalogue's whole-model figures, defined for the reader who does not carry them around
+const METRIC_TIPS: Record<"r_work" | "r_free" | "clashscore" | "ramachandran_outliers", TipContent> = {
+  r_work: {
+    title: "R-work",
+    is: "Disagreement between the measured structure-factor amplitudes and those computed from the model.",
+    rows: [
+      { label: "over", text: "The reflections used in refinement." },
+      { label: "read", text: "0 is perfect agreement; lower is better. Roughly a tenth of the resolution in A is typical." },
+      { label: "source", text: "The model's refinement, as stored in the catalogue." },
+    ],
+  },
+  r_free: {
+    title: "R-free",
+    is: "The same disagreement, over reflections kept out of refinement.",
+    rows: [
+      { label: "over", text: "The test set, usually 5% of the reflections." },
+      { label: "read", text: "Lower is better. A gap to R-work much above 0.05 points at overfitting." },
+      { label: "source", text: "The model's refinement, as stored in the catalogue." },
+    ],
+  },
+  clashscore: {
+    title: "Clashscore",
+    is: "Serious steric overlaps per 1,000 atoms.",
+    rows: [
+      { label: "overlap", text: "Two non-bonded atoms closer than their radii allow by 0.4 A or more (MolProbity)." },
+      { label: "read", text: "Lower is better." },
+    ],
+  },
+  ramachandran_outliers: {
+    title: "Ramachandran outliers",
+    unit: "%",
+    is: "Residues whose backbone phi and psi angles fall outside the allowed regions.",
+    rows: [
+      { label: "of", text: "All residues with both angles defined." },
+      { label: "read", text: "Lower is better; a well-refined model has well under 1%." },
+    ],
+  },
+};
+
 function FileRow({ p }: { p: ProvenanceRecord }) {
   const isHttp = !!p.url && /^https?:\/\//.test(p.url);
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
       <div className="flex items-baseline gap-2">
         <span className="hs-label">{p.role}</span>
-        <span className="min-w-0 text-[10.5px] text-ink-secondary">{p.desc}</span>
+        <span className="min-w-0 text-[10px] leading-snug text-ink-secondary">{p.desc}</span>
       </div>
       {p.url &&
         (isHttp ? (
-          <a href={p.url} target="_blank" rel="noreferrer" className="break-all font-mono text-[9.5px] leading-tight text-accent hover:underline">
+          <a href={p.url} target="_blank" rel="noreferrer" className="break-all font-mono text-[9px] leading-tight">
             {p.url}
           </a>
         ) : (
-          <div className="break-all font-mono text-[9.5px] leading-tight text-ink-muted">{p.url}</div>
+          <div className="break-all font-mono text-[9px] leading-tight text-ink-muted">{p.url}</div>
         ))}
     </div>
   );
@@ -79,15 +130,10 @@ export default function EntryCard({
     if (!aTable) return null;
     let polymerResidues = 0;
     const chains = new Set<string>();
-    const ligands = new Map<string, number>();
     for (const res of aTable.residues) {
-      if (WATER_COMPS.has(res.compId)) continue;
-      if (isPolymerComp(res.compId)) {
-        polymerResidues++;
-        chains.add(res.ref.chain);
-      } else {
-        ligands.set(res.compId, (ligands.get(res.compId) ?? 0) + 1);
-      }
+      if (WATER_COMPS.has(res.compId) || !isPolymerComp(res.compId)) continue;
+      polymerResidues++;
+      chains.add(res.ref.chain);
     }
     // heavy atoms only: hydrogens are never drawn, so they don't count either
     let atoms = 0;
@@ -97,7 +143,6 @@ export default function EntryCard({
       polymerResidues,
       chains: chains.size,
       splitResidues: altSummary?.residues.length ?? 0,
-      ligands: [...ligands.entries()].sort((a, b) => a[0].localeCompare(b[0])),
     };
   }, [aTable, altSummary]);
 
@@ -114,16 +159,20 @@ export default function EntryCard({
   const ph = desc?.ph ?? cat?.growthPh ?? null;
   const organism = firstEntity?.organism ?? cat?.entities[0]?.organism ?? null;
   const uniprot = firstEntity?.uniprot ?? cat?.entities[0]?.uniprot ?? null;
+  const taxonomyId = firstEntity?.organism ? firstEntity.taxonomyId : null;
+  const citation = desc?.citation ?? null;
+  const pdbId = isPdbId(entry.pdbId) ? entry.pdbId.toUpperCase() : null;
   const modelsWithMetrics = entry.models.filter((m) => Object.keys(m.metrics).length > 0);
   const hasExperiment = !!method || resolution != null || !!spaceGroup || tempK != null || ph != null;
-  const hasSource = !!organism || !!uniprot || !!desc?.depositedDate || !!cat?.publishedAt || !!desc?.firstAuthor;
+  const hasSource =
+    !!organism || !!uniprot || !!desc?.depositedDate || !!cat?.publishedAt || !!desc?.firstAuthor || !!citation || !!pdbId;
   const splitPercent = stats && stats.polymerResidues ? Math.round((100 * stats.splitResidues) / stats.polymerResidues) : 0;
 
   return (
     <div className="flex flex-col">
       {(title || memberCount > 1) && (
-        <div className="flex flex-col gap-1.5 px-2.5 py-2">
-          {title && <div className="text-[11.5px] font-medium leading-snug text-ink">{title}</div>}
+        <div className="flex flex-col gap-1 px-2 py-1.5">
+          {title && <div className="text-[10.5px] leading-snug text-ink">{title}</div>}
           {memberCount > 1 && (
             <div className="flex flex-wrap items-center gap-1">
               <span className="hs-tag hs-tag-accent">{memberCount} members</span>
@@ -167,16 +216,52 @@ export default function EntryCard({
       {hasSource && (
         <Section title="Source" storageKey={`${FOLD}source`} summary={organism ?? undefined}>
           <dl className="hs-kv">
-            {organism && <Row label="Organism">{organism}</Row>}
+            {organism && (
+              <Row label="Organism">
+                {taxonomyId ? <Link href={`https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=${taxonomyId}`}>{organism}</Link> : organism}
+              </Row>
+            )}
             {uniprot && (
               <Row label="UniProt">
-                <span className="hs-value">{uniprot}</span>
+                <span className="hs-value">
+                  <Link href={`https://www.uniprot.org/uniprotkb/${uniprot}/entry`}>{uniprot}</Link>
+                </span>
+              </Row>
+            )}
+            {pdbId && (
+              <Row label="PDB">
+                <span className="hs-value">
+                  <Link href={`https://www.rcsb.org/structure/${pdbId}`}>RCSB</Link>
+                  <span className="hs-unit"> · </span>
+                  <Link href={`https://www.ebi.ac.uk/pdbe/entry/pdb/${pdbId.toLowerCase()}`}>PDBe</Link>
+                </span>
+              </Row>
+            )}
+            {entry.source === "dpdb" && (
+              <Row label="Dynamic PDB">
+                <span className="hs-value">
+                  <Link href={`https://dynamicpdb.com/entries/${entry.id}`}>{entry.id}</Link>
+                </span>
               </Row>
             )}
             {desc?.firstAuthor && (
               <Row label="Authors">
                 {desc.firstAuthor}
                 {desc.authorCount > 1 && <span className="hs-unit"> et al. ({desc.authorCount})</span>}
+              </Row>
+            )}
+            {citation && (citation.title || citation.doi || citation.pubmedId) && (
+              <Row label="Paper">
+                {citation.title && <span title={citation.title}>{citation.title} </span>}
+                <span className="hs-unit">
+                  {[citation.journal, citation.year].filter(Boolean).join(" ")}
+                  {(citation.journal || citation.year) && (citation.doi || citation.pubmedId) ? " · " : ""}
+                </span>
+                <span className="hs-value">
+                  {citation.doi && <Link href={`https://doi.org/${citation.doi}`}>DOI</Link>}
+                  {citation.doi && citation.pubmedId && <span className="hs-unit"> · </span>}
+                  {citation.pubmedId && <Link href={`https://pubmed.ncbi.nlm.nih.gov/${citation.pubmedId}/`}>PubMed</Link>}
+                </span>
               </Row>
             )}
             {desc?.depositedDate && (
@@ -239,21 +324,33 @@ export default function EntryCard({
             <thead>
               <tr>
                 <th>Model</th>
-                <th className="hs-num">R-work</th>
-                <th className="hs-num">R-free</th>
-                <th className="hs-num" title="clashscore">
-                  Clash
+                <th className="hs-num">
+                  R-work
+                  <HintMark tip={METRIC_TIPS.r_work} />
                 </th>
-                <th className="hs-num" title="Ramachandran outliers, %">
+                <th className="hs-num">
+                  R-free
+                  <HintMark tip={METRIC_TIPS.r_free} />
+                </th>
+                <th className="hs-num">
+                  Clash
+                  <HintMark tip={METRIC_TIPS.clashscore} />
+                </th>
+                <th className="hs-num">
                   Rama
+                  <HintMark tip={METRIC_TIPS.ramachandran_outliers} />
                 </th>
               </tr>
             </thead>
             <tbody>
               {modelsWithMetrics.map((m) => (
                 <tr key={m.id}>
-                  <td className="max-w-[84px] truncate font-sans text-[10.5px]" title={m.title}>
-                    {ROLE_LABELS[m.role]}
+                  <td className="max-w-[72px] truncate font-sans" title={m.title}>
+                    {m.pdbRef && isPdbId(m.pdbRef) ? (
+                      <Link href={`https://www.rcsb.org/structure/${m.pdbRef.toUpperCase()}`}>{ROLE_LABELS[m.role]}</Link>
+                    ) : (
+                      ROLE_LABELS[m.role]
+                    )}
                   </td>
                   <td className="hs-num">{metric(m.metrics.r_work, 3)}</td>
                   <td className="hs-num">{metric(m.metrics.r_free, 3)}</td>
@@ -266,30 +363,9 @@ export default function EntryCard({
         </Section>
       )}
 
-      {stats && stats.ligands.length > 0 && (
-        <Section
-          title="Ligands and ions"
-          count={stats.ligands.length}
-          storageKey={`${FOLD}ligands`}
-          summary={stats.ligands
-            .slice(0, 4)
-            .map(([comp]) => comp)
-            .join(" ")}
-        >
-          <div className="flex flex-wrap gap-1">
-            {stats.ligands.map(([comp, n]) => (
-              <span key={comp} className="hs-tag">
-                {comp}
-                {n > 1 && <span className="hs-unit">x{n}</span>}
-              </span>
-            ))}
-          </div>
-        </Section>
-      )}
-
       {cat?.details && (
         <Section title="Notes" defaultOpen={false} storageKey={`${FOLD}notes`}>
-          <div className="text-[10.5px] leading-snug text-ink-secondary">{cat.details}</div>
+          <div className="text-[10px] leading-snug text-ink-secondary">{cat.details}</div>
         </Section>
       )}
 

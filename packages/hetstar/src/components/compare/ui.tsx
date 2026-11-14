@@ -2,6 +2,7 @@
 import {
   createContext,
   type CSSProperties,
+  isValidElement,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -117,7 +118,7 @@ export function Section({
         {count != null && <span className="hs-value text-[9.5px] text-ink-muted">{count}</span>}
         {!open && summary && <span className="ml-auto min-w-0 truncate text-[10px] text-ink-muted">{summary}</span>}
       </button>
-      {open && <div className={flush ? "min-w-0" : "min-w-0 px-2.5 py-2"}>{children}</div>}
+      {open && <div className={flush ? "min-w-0" : "hs-section-body min-w-0 px-2.5 py-2"}>{children}</div>}
     </section>
   );
 }
@@ -265,9 +266,49 @@ export function useDismiss(ref: RefObject<HTMLElement | null>, open: boolean, on
   }, [ref, open, onClose]);
 }
 
+// What a tooltip says, as parts instead of a paragraph: the name of the thing, one line on
+// what it is, then labelled rows (method, scope, caveat, files). Every tooltip longer than a
+// phrase is written as one of these, so they all read the same way.
+export interface TipContent {
+  title: string;
+  /** the unit of a quantity, a step back from its name */
+  unit?: string;
+  /** one sentence: what the thing is */
+  is?: string;
+  rows?: readonly { label: string; text: ReactNode }[];
+}
+
+function isTip(content: ReactNode | TipContent): content is TipContent {
+  return typeof content === "object" && content !== null && !isValidElement(content) && "title" in content;
+}
+
+export function TipCard({ tip }: { tip: TipContent }) {
+  const rows = (tip.rows ?? []).filter((row) => row.text !== null && row.text !== undefined && row.text !== "");
+  return (
+    <div className="hs-tip">
+      <div className="hs-tip-title">
+        {tip.title}
+        {tip.unit && <span className="hs-unit"> {tip.unit}</span>}
+      </div>
+      {tip.is && <div className="hs-tip-is">{tip.is}</div>}
+      {rows.length > 0 && (
+        <dl className="hs-tip-rows">
+          {rows.map((row, index) => (
+            <div key={index} className="contents">
+              <dt>{row.label}</dt>
+              <dd>{row.text}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
 // Hover tooltip, hand-rolled: the card is position:fixed (measured once on open) so it
-// escapes the overflow-y-auto side columns. ~250 ms open delay, closes on leave.
-export function Tooltip({ content, children }: { content: ReactNode; children: ReactNode }) {
+// escapes the overflow-y-auto side columns. ~250 ms open delay, closes on leave. A phrase
+// goes in as a string; anything longer as a TipContent.
+export function Tooltip({ content, children }: { content: ReactNode | TipContent; children: ReactNode }) {
   const anchorRef = useRef<HTMLSpanElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pos, setPos] = useState<{ x: number; y: number; above: boolean } | null>(null);
@@ -300,10 +341,21 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
           className={`pointer-events-none fixed z-50 w-72 p-2 font-sans text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary ${CARD_SHELL}`}
           style={{ left: pos.x, top: pos.above ? undefined : pos.y, bottom: pos.above ? window.innerHeight - pos.y : undefined }}
         >
-          {content}
+          {isTip(content) ? <TipCard tip={content} /> : content}
         </div>
       )}
     </span>
+  );
+}
+
+/** the dim asterisk beside a term the reader may not know; its tooltip defines the term */
+export function HintMark({ tip }: { tip: TipContent }) {
+  return (
+    <Tooltip content={tip}>
+      <span className="hs-hint" tabIndex={0} role="note" aria-label={`what ${tip.title} is`}>
+        *
+      </span>
+    </Tooltip>
   );
 }
 

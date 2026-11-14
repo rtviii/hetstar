@@ -649,6 +649,292 @@
   }
 }
 
+/* A tooltip in parts: the name, one line on what it is, then labelled rows. */
+
+.hetstar .hs-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hetstar .hs-tip-title {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #1a1e2a;
+}
+
+.hetstar .hs-tip-title > .hs-unit {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.hetstar .hs-tip-is {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: #3d414f;
+}
+
+.hetstar .hs-tip-rows {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  -moz-column-gap: 8px;
+       column-gap: 8px;
+  row-gap: 3px;
+  margin: 0;
+  padding-top: 4px;
+  border-top: 1px solid #e6e7f0;
+}
+
+.hetstar .hs-tip-rows dt {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 8.5px;
+  line-height: 1.6;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #9a9dab;
+}
+
+.hetstar .hs-tip-rows dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+  line-height: 1.35;
+  color: #3d414f;
+}
+
+/* the dim asterisk that carries a term's definition */
+
+.hetstar .hs-hint {
+  display: inline-block;
+  padding: 0 1px;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9px;
+  line-height: 1;
+  color: #b9bccf;
+  cursor: help;
+}
+
+.hetstar .hs-hint:hover, .hetstar .hs-hint:focus-visible {
+  outline: none;
+  color: #663be4;
+}
+
+/* A dense panel (the entry rail): the same pieces a step smaller and in regular weight, so
+   that the one bold thing on it is the entry's id. */
+
+.hetstar .hs-dense .hs-head {
+  min-height: 18px;
+  gap: 5px;
+  padding: 0 5px 0 8px;
+}
+
+.hetstar .hs-dense .hs-head-title {
+  font-size: 8.5px;
+  font-weight: 400;
+}
+
+.hetstar .hs-dense .hs-label {
+  font-size: 8.5px;
+  font-weight: 400;
+}
+
+.hetstar .hs-dense .hs-value {
+  font-size: 10px;
+}
+
+.hetstar .hs-dense .hs-kv {
+  --hs-kv-key: 68px;
+  row-gap: 1px;
+  -moz-column-gap: 6px;
+       column-gap: 6px;
+}
+
+.hetstar .hs-dense .hs-kv > dt {
+  font-size: 8.5px;
+  font-weight: 400;
+}
+
+.hetstar .hs-dense .hs-kv > dd {
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.hetstar .hs-dense .hs-table th {
+  padding: 2px 5px;
+  font-size: 8px;
+  font-weight: 400;
+}
+
+.hetstar .hs-dense .hs-table td {
+  padding: 2px 5px;
+  font-size: 10px;
+}
+
+.hetstar .hs-dense .hs-section-body {
+  padding: 4px 8px 5px;
+}
+
+.hetstar .hs-dense a {
+  color: #663be4;
+}
+
+.hetstar .hs-dense a:hover {
+  text-decoration: underline;
+}
+
+/* The colour board: sources down the side, targets across the top, one mark per cell. */
+
+.hetstar .hs-matrix {
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.hetstar .hs-matrix th, .hetstar .hs-matrix td {
+  padding: 0;
+  font-weight: 400;
+  text-align: left;
+}
+
+.hetstar .hs-matrix thead th {
+  position: sticky;
+  z-index: 2;
+  background: #ffffff;
+}
+
+.hetstar .hs-matrix thead tr:first-child th {
+  top: 0;
+  height: 15px;
+}
+
+.hetstar .hs-matrix thead tr:last-child th {
+  top: 15px;
+  height: 26px;
+  box-shadow: 0 1px 0 #d0d2e0;
+}
+
+.hetstar .hs-matrix .hs-matrix-span {
+  padding: 0 4px;
+  border-left: 1px solid #e6e7f0;
+}
+
+.hetstar .hs-matrix .hs-matrix-col {
+  width: 40px;
+  min-width: 40px;
+  max-width: 40px;
+  text-align: center;
+  vertical-align: bottom;
+  padding-bottom: 2px;
+}
+
+.hetstar .hs-matrix .hs-matrix-col > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 8.5px;
+  line-height: 1.2;
+  color: #3d414f;
+}
+
+.hetstar .hs-matrix .hs-matrix-first {
+  border-left: 1px solid #e6e7f0;
+}
+
+.hetstar .hs-matrix [data-focus="true"] {
+  background: #f1edfd;
+}
+
+.hetstar .hs-matrix thead th[data-focus="true"] {
+  background: #f1edfd;
+}
+
+.hetstar .hs-matrix tbody tr:hover > * {
+  background: #f4f4f9;
+}
+
+.hetstar .hs-matrix tbody tr:hover > [data-focus="true"] {
+  background: #e9e3fb;
+}
+
+.hetstar .hs-matrix .hs-matrix-group > * {
+  height: 17px;
+  background: #f6f4fd;
+  box-shadow: 0 1px 0 #e4dff5;
+}
+
+.hetstar .hs-matrix tbody tr.hs-matrix-group:hover > * {
+  background: #efebfb;
+}
+
+.hetstar .hs-matrix .hs-matrix-name {
+  height: 17px;
+  padding: 0 6px 0 10px;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: #1a1e2a;
+}
+
+.hetstar .hs-matrix .hs-matrix-ramp {
+  display: inline-block;
+  flex: none;
+  width: 16px;
+  height: 5px;
+  border-radius: 1px;
+}
+
+.hetstar .hs-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 17px;
+}
+
+.hetstar .hs-cell-mark {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border: 1px solid #c3c6d6;
+  border-radius: 1px;
+  background: #ffffff;
+}
+
+.hetstar button.hs-cell:hover .hs-cell-mark {
+  border-color: #663be4;
+}
+
+.hetstar button.hs-cell:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px #663be4;
+}
+
+.hetstar .hs-cell[aria-pressed="true"] .hs-cell-mark {
+  border-color: #663be4;
+  background: #663be4;
+}
+
+.hetstar .hs-cell[data-request="true"] .hs-cell-mark {
+  border-style: dashed;
+  border-color: #a58cf0;
+}
+
+.hetstar .hs-cell-off {
+  display: block;
+  width: 5px;
+  height: 1px;
+  background: #d0d2e0;
+}
+
+.hetstar .hs-cell[data-stale="true"] .hs-cell-mark {
+  border-color: #663be4;
+  background: #d9cffa;
+}
+
 /* The one shell of every floating surface (tooltip, popover, flyout, popup, dock box):
    a white sheet, one hairline, the only shadow in the viewer. */
 
@@ -807,20 +1093,12 @@
   right: 0px;
 }
 
-.hetstar .right-1 {
-  right: 0.25rem;
-}
-
 .hetstar .right-2 {
   right: 0.5rem;
 }
 
 .hetstar .top-0 {
   top: 0px;
-}
-
-.hetstar .top-1 {
-  top: 0.25rem;
 }
 
 .hetstar .top-10 {
@@ -864,12 +1142,12 @@
   margin-right: auto;
 }
 
-.hetstar .ml-auto {
-  margin-left: auto;
+.hetstar .mb-0\.5 {
+  margin-bottom: 0.125rem;
 }
 
-.hetstar .mr-5 {
-  margin-right: 1.25rem;
+.hetstar .ml-auto {
+  margin-left: auto;
 }
 
 .hetstar .block {
@@ -944,6 +1222,10 @@
   height: 8rem;
 }
 
+.hetstar .h-4 {
+  height: 1rem;
+}
+
 .hetstar .h-6 {
   height: 1.5rem;
 }
@@ -952,16 +1234,16 @@
   height: 18px;
 }
 
+.hetstar .h-\[20px\] {
+  height: 20px;
+}
+
 .hetstar .h-\[22px\] {
   height: 22px;
 }
 
-.hetstar .h-\[30px\] {
-  height: 30px;
-}
-
-.hetstar .h-auto {
-  height: auto;
+.hetstar .h-\[26px\] {
+  height: 26px;
 }
 
 .hetstar .h-full {
@@ -980,8 +1262,8 @@
   min-height: 0px;
 }
 
-.hetstar .min-h-\[1rem\] {
-  min-height: 1rem;
+.hetstar .w-0 {
+  width: 0px;
 }
 
 .hetstar .w-3 {
@@ -1004,16 +1286,16 @@
   width: 18rem;
 }
 
-.hetstar .w-\[264px\] {
-  width: 264px;
+.hetstar .w-\[248px\] {
+  width: 248px;
 }
 
 .hetstar .w-\[272px\] {
   width: 272px;
 }
 
-.hetstar .w-\[300px\] {
-  width: 300px;
+.hetstar .w-auto {
+  width: auto;
 }
 
 .hetstar .w-full {
@@ -1028,16 +1310,32 @@
   min-width: 0.75rem;
 }
 
+.hetstar .min-w-full {
+  min-width: 100%;
+}
+
 .hetstar .max-w-\[150px\] {
   max-width: 150px;
+}
+
+.hetstar .max-w-\[160px\] {
+  max-width: 160px;
 }
 
 .hetstar .max-w-\[260px\] {
   max-width: 260px;
 }
 
+.hetstar .max-w-\[72px\] {
+  max-width: 72px;
+}
+
 .hetstar .max-w-\[84px\] {
   max-width: 84px;
+}
+
+.hetstar .max-w-\[calc\(100\%-16px\)\] {
+  max-width: calc(100% - 16px);
 }
 
 .hetstar .max-w-\[calc\(100\%-1rem\)\] {
@@ -1095,6 +1393,10 @@
   cursor: help;
 }
 
+.hetstar .cursor-move {
+  cursor: move;
+}
+
 .hetstar .cursor-pointer {
   cursor: pointer;
 }
@@ -1117,6 +1419,10 @@
 
 .hetstar .resize {
   resize: both;
+}
+
+.hetstar .grid-cols-\[52px_minmax\(0\2c 1fr\)_44px\] {
+  grid-template-columns: 52px minmax(0,1fr) 44px;
 }
 
 .hetstar .grid-cols-\[auto_auto_1fr_auto_auto_auto\] {
@@ -1159,6 +1465,10 @@
   align-items: baseline;
 }
 
+.hetstar .justify-start {
+  justify-content: flex-start;
+}
+
 .hetstar .justify-end {
   justify-content: flex-end;
 }
@@ -1191,10 +1501,6 @@
   gap: 0.625rem;
 }
 
-.hetstar .gap-3 {
-  gap: 0.75rem;
-}
-
 .hetstar .gap-\[2px\] {
   gap: 2px;
 }
@@ -1220,6 +1526,11 @@
 .hetstar .gap-x-2\.5 {
   -moz-column-gap: 0.625rem;
        column-gap: 0.625rem;
+}
+
+.hetstar .gap-x-3 {
+  -moz-column-gap: 0.75rem;
+       column-gap: 0.75rem;
 }
 
 .hetstar .gap-y-0\.5 {
@@ -1260,20 +1571,8 @@
   white-space: nowrap;
 }
 
-.hetstar .whitespace-normal {
-  white-space: normal;
-}
-
 .hetstar .whitespace-nowrap {
   white-space: nowrap;
-}
-
-.hetstar .whitespace-pre-wrap {
-  white-space: pre-wrap;
-}
-
-.hetstar .break-words {
-  overflow-wrap: break-word;
 }
 
 .hetstar .break-all {
@@ -1298,10 +1597,6 @@
 
 .hetstar .border {
   border-width: 1px;
-}
-
-.hetstar .border-0 {
-  border-width: 0px;
 }
 
 .hetstar .border-2 {
@@ -1404,10 +1699,6 @@
 .hetstar .bg-surface-muted {
   --tw-bg-opacity: 1;
   background-color: rgb(244 244 249 / var(--tw-bg-opacity, 1));
-}
-
-.hetstar .bg-transparent {
-  background-color: transparent;
 }
 
 .hetstar .bg-white {
@@ -1517,6 +1808,10 @@
 
 .hetstar .pr-1\.5 {
   padding-right: 0.375rem;
+}
+
+.hetstar .pr-2 {
+  padding-right: 0.5rem;
 }
 
 .hetstar .pt-1 {
@@ -1747,12 +2042,6 @@
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
-.hetstar .shadow-\[inset_2px_0_0_\#663be4\] {
-  --tw-shadow: inset 2px 0 0 #663be4;
-  --tw-shadow-colored: inset 2px 0 0 var(--tw-shadow-color);
-  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
-}
-
 .hetstar .outline {
   outline-style: solid;
 }
@@ -1761,11 +2050,6 @@
   --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
   --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(3px + var(--tw-ring-offset-width)) var(--tw-ring-color);
   box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
-}
-
-.hetstar .grayscale {
-  --tw-grayscale: grayscale(100%);
-  filter: var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow);
 }
 
 .hetstar .invert {
@@ -1830,8 +2114,9 @@
   color: rgb(102 59 228 / var(--tw-text-opacity, 1));
 }
 
-.hetstar .hover\:underline:hover {
-  text-decoration-line: underline;
+.hetstar .hover\:text-danger:hover {
+  --tw-text-opacity: 1;
+  color: rgb(180 35 29 / var(--tw-text-opacity, 1));
 }
 
 .hetstar .hover\:opacity-100:hover {

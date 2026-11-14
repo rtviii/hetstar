@@ -176,20 +176,16 @@ export default function SelectionActionsPopup({
         <div className="flex items-center justify-between gap-2 border-t border-line px-2 py-1">
           <span className="hs-label">{subline}</span>
           <Tooltip
-            content={
-              <div className="flex flex-col gap-1">
-                <div className="font-medium">create a locus</div>
-                <div>
-                  Sets this selection apart: its atoms become a component of their own, drawn as sticks in their own
-                  colour over the structure, which stays as it is underneath.
-                </div>
-                <div>
-                  Each locus gets a row in the loci stack (the bracket icon at the top right), where it can be hidden,
-                  selected again or removed, and where its RSCC against the density is computed and painted. Any number
-                  of loci; they are kept for this entry.
-                </div>
-              </div>
-            }
+            content={{
+              title: "Create a locus",
+              is: "Sets this selection apart as a component of its own.",
+              rows: [
+                { label: "drawn", text: "Sticks in the locus's own colour over the structure, which stays as it is underneath." },
+                { label: "where", text: "A row in the loci stack (the bracket icon, top right): hide, select again, remove." },
+                { label: "metrics", text: "Its RSCC against the density, computed and painted from that row or the colour board." },
+                { label: "kept", text: "For this entry, any number of them." },
+              ],
+            }}
           >
             <button
               type="button"
@@ -304,7 +300,16 @@ export default function SelectionActionsPopup({
           <span className="hs-label">
             {!bondsReady ? "computing bonds…" : `${bondCount} bond${bondCount === 1 ? "" : "s"}`}
           </span>
-          <Tooltip content="paint this selection's bonds in the 3D view as dashed contacts, colored by the conformer that forms them (gray = shared atoms); stays on after the selection clears, until toggled off here">
+          <Tooltip
+            content={{
+              title: "Bonds in 3D",
+              is: "This selection's non-covalent bonds as dashed contacts.",
+              rows: [
+                { label: "colour", text: "The conformer that forms the bond; grey for shared atoms." },
+                { label: "stays", text: "After the selection clears, until toggled off here on the same residues." },
+              ],
+            }}
+          >
             <SwitchButton pressed={showBonds3d} disabled={!bondsReady || bondCount === 0} onClick={onShowBonds3d}>
               <BondsIcon />
             </SwitchButton>
@@ -316,7 +321,13 @@ export default function SelectionActionsPopup({
         <div className="flex items-center justify-between border-t border-line px-2 py-1">
           <span className="hs-label">representation</span>
           <div className="hs-seg">
-            <Tooltip content="draw this selection as atoms (spacefill) on top of the global style; press again to remove — persists until then">
+            <Tooltip
+              content={{
+                title: "As atoms",
+                is: "This selection as spacefill on top of the global style.",
+                rows: [{ label: "stays", text: "Until pressed again on the same residues." }],
+              }}
+            >
               <SwitchButton
                 pressed={selRep === "spacefill"}
                 onClick={() => onSelRep(selRep === "spacefill" ? null : "spacefill")}
@@ -324,7 +335,13 @@ export default function SelectionActionsPopup({
                 atoms
               </SwitchButton>
             </Tooltip>
-            <Tooltip content="draw this selection as sticks&balls on top of the global style; press again to remove — persists until then">
+            <Tooltip
+              content={{
+                title: "As sticks",
+                is: "This selection as ball-and-stick on top of the global style.",
+                rows: [{ label: "stays", text: "Until pressed again on the same residues." }],
+              }}
+            >
               <SwitchButton
                 pressed={selRep === "ball-and-stick"}
                 onClick={() => onSelRep(selRep === "ball-and-stick" ? null : "ball-and-stick")}
@@ -338,7 +355,16 @@ export default function SelectionActionsPopup({
 
       <div className="flex items-center justify-between border-t border-line px-2 py-1">
         <span className="hs-label">structure changes</span>
-        <Tooltip content="back to the freshly-loaded look: collapse conformers, default style, remove bond/representation overlays, clip and measurements. Loci persist.">
+        <Tooltip
+          content={{
+            title: "Reset the view",
+            is: "Back to the freshly loaded look.",
+            rows: [
+              { label: "undone", text: "Expanded conformers, style changes, bond and representation overlays, the clip, measurements, the selection." },
+              { label: "kept", text: "Loci and the map settings." },
+            ],
+          }}
+        >
           <button
             type="button"
             className="hs-btn hs-btn-danger"

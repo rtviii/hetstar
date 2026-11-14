@@ -293,6 +293,112 @@
   .hetstar .hs-prism > svg { opacity: 0.7; animation: none; }
 }
 
+/* A tooltip in parts: the name, one line on what it is, then labelled rows. */
+.hetstar .hs-tip { display: flex; flex-direction: column; gap: 4px; }
+.hetstar .hs-tip-title {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #1a1e2a;
+}
+.hetstar .hs-tip-title > .hs-unit { text-transform: none; letter-spacing: 0; }
+.hetstar .hs-tip-is { font-size: 10.5px; line-height: 1.35; color: #3d414f; }
+.hetstar .hs-tip-rows {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 3px;
+  margin: 0;
+  padding-top: 4px;
+  border-top: 1px solid #e6e7f0;
+}
+.hetstar .hs-tip-rows dt {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 8.5px;
+  line-height: 1.6;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #9a9dab;
+}
+.hetstar .hs-tip-rows dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 10px; line-height: 1.35; color: #3d414f; }
+/* the dim asterisk that carries a term's definition */
+.hetstar .hs-hint {
+  display: inline-block;
+  padding: 0 1px;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9px;
+  line-height: 1;
+  color: #b9bccf;
+  cursor: help;
+}
+.hetstar .hs-hint:hover, .hetstar .hs-hint:focus-visible { outline: none; color: #663be4; }
+
+/* A dense panel (the entry rail): the same pieces a step smaller and in regular weight, so
+   that the one bold thing on it is the entry's id. */
+.hetstar .hs-dense .hs-head { min-height: 18px; gap: 5px; padding: 0 5px 0 8px; }
+.hetstar .hs-dense .hs-head-title { font-size: 8.5px; font-weight: 400; }
+.hetstar .hs-dense .hs-label { font-size: 8.5px; font-weight: 400; }
+.hetstar .hs-dense .hs-value { font-size: 10px; }
+.hetstar .hs-dense .hs-kv { --hs-kv-key: 68px; row-gap: 1px; column-gap: 6px; }
+.hetstar .hs-dense .hs-kv > dt { font-size: 8.5px; font-weight: 400; }
+.hetstar .hs-dense .hs-kv > dd { font-size: 10px; line-height: 1.35; }
+.hetstar .hs-dense .hs-table th { padding: 2px 5px; font-size: 8px; font-weight: 400; }
+.hetstar .hs-dense .hs-table td { padding: 2px 5px; font-size: 10px; }
+.hetstar .hs-dense .hs-section-body { padding: 4px 8px 5px; }
+.hetstar .hs-dense a { color: #663be4; }
+.hetstar .hs-dense a:hover { text-decoration: underline; }
+
+/* The colour board: sources down the side, targets across the top, one mark per cell. */
+.hetstar .hs-matrix { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.hetstar .hs-matrix th, .hetstar .hs-matrix td { padding: 0; font-weight: 400; text-align: left; }
+.hetstar .hs-matrix thead th { position: sticky; z-index: 2; background: #ffffff; }
+.hetstar .hs-matrix thead tr:first-child th { top: 0; height: 15px; }
+.hetstar .hs-matrix thead tr:last-child th { top: 15px; height: 26px; box-shadow: 0 1px 0 #d0d2e0; }
+.hetstar .hs-matrix .hs-matrix-span { padding: 0 4px; border-left: 1px solid #e6e7f0; }
+.hetstar .hs-matrix .hs-matrix-col {
+  width: 40px;
+  min-width: 40px;
+  max-width: 40px;
+  text-align: center;
+  vertical-align: bottom;
+  padding-bottom: 2px;
+}
+.hetstar .hs-matrix .hs-matrix-col > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 8.5px;
+  line-height: 1.2;
+  color: #3d414f;
+}
+.hetstar .hs-matrix .hs-matrix-first { border-left: 1px solid #e6e7f0; }
+.hetstar .hs-matrix [data-focus="true"] { background: #f1edfd; }
+.hetstar .hs-matrix thead th[data-focus="true"] { background: #f1edfd; }
+.hetstar .hs-matrix tbody tr:hover > * { background: #f4f4f9; }
+.hetstar .hs-matrix tbody tr:hover > [data-focus="true"] { background: #e9e3fb; }
+.hetstar .hs-matrix .hs-matrix-group > * { height: 17px; background: #f6f4fd; box-shadow: 0 1px 0 #e4dff5; }
+.hetstar .hs-matrix tbody tr.hs-matrix-group:hover > * { background: #efebfb; }
+.hetstar .hs-matrix .hs-matrix-name { height: 17px; padding: 0 6px 0 10px; white-space: nowrap; font-size: 10.5px; color: #1a1e2a; }
+.hetstar .hs-matrix .hs-matrix-ramp { display: inline-block; flex: none; width: 16px; height: 5px; border-radius: 1px; }
+.hetstar .hs-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 17px;
+}
+.hetstar .hs-cell-mark { display: block; width: 7px; height: 7px; border: 1px solid #c3c6d6; border-radius: 1px; background: #ffffff; }
+.hetstar button.hs-cell:hover .hs-cell-mark { border-color: #663be4; }
+.hetstar button.hs-cell:focus-visible { outline: none; box-shadow: inset 0 0 0 1px #663be4; }
+.hetstar .hs-cell[aria-pressed="true"] .hs-cell-mark { border-color: #663be4; background: #663be4; }
+.hetstar .hs-cell[data-request="true"] .hs-cell-mark { border-style: dashed; border-color: #a58cf0; }
+.hetstar .hs-cell-off { display: block; width: 5px; height: 1px; background: #d0d2e0; }
+.hetstar .hs-cell[data-stale="true"] .hs-cell-mark { border-color: #663be4; background: #d9cffa; }
+
 /* The one shell of every floating surface (tooltip, popover, flyout, popup, dock box):
    a white sheet, one hairline, the only shadow in the viewer. */
 .hetstar .hs-card {

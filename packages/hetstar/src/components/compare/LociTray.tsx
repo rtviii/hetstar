@@ -3,7 +3,7 @@ import { hexCss } from "../../lib/lab/color";
 import { locusLabel, type Locus, type LocusScore } from "../../lib/lab/loci";
 import { EyeIcon, LocusIcon, MaskIcon, TargetIcon } from "./icons";
 import { TrayButton } from "./StyleTray";
-import { CARD_SHELL, OnRequestControls, SwitchButton, TinyText, Tooltip } from "./ui";
+import { CARD_SHELL, OnRequestControls, SwitchButton, TinyText, Tooltip, type TipContent } from "./ui";
 
 // The loci stack: one tray icon carrying the number of loci, which opens (and, pressed
 // again, closes) a stack of rows, one per locus. A row names the locus and holds its
@@ -12,7 +12,28 @@ import { CARD_SHELL, OnRequestControls, SwitchButton, TinyText, Tooltip } from "
 // surface inside that mask. Renders nothing while the entry has no loci.
 
 const MASK_TEXT =
-  "The mask of a locus is every point within 1.5 A of its heavy atoms, in every conformer and every ensemble member: the points over which RSCC compares the map with a model's simulated density.";
+  "Every point within 1.5 A of the locus's heavy atoms, in every conformer and every ensemble member: the points over which RSCC compares the map with a model's simulated density.";
+
+const MASK_TIP: TipContent = {
+  title: "Draw the mask",
+  is: "A faint shell around this model's atoms of the locus.",
+  rows: [
+    { label: "mask", text: MASK_TEXT },
+    { label: "shared", text: "The numbers below are taken over this shell plus the same shell around the other models' atoms." },
+  ],
+};
+
+const RSCC_TIP: TipContent = {
+  title: "RSCC of the locus",
+  is: "One correlation per loaded model between the 2Fo-Fc map and the model's simulated density, over the whole locus at once.",
+  rows: [
+    { label: "mask", text: MASK_TEXT },
+    { label: "shared", text: "Every model is scored over the same points, the union of the loaded models' masks, so the numbers compare." },
+    { label: "changes", text: "When another model is loaded and the locus is computed again." },
+    { label: "ensembles", text: "A large ensemble widens the union, which then describes the surroundings more than the locus." },
+    { label: "map", text: "Phased by the deposited model, so it favours that model." },
+  ],
+};
 
 function formatScore(value: number): string {
   return Number.isNaN(value) ? "n/a" : value.toFixed(3);
@@ -73,18 +94,7 @@ export default function LociTray({
                 <EyeIcon />
               </SwitchButton>
             </Tooltip>
-            <Tooltip
-              content={
-                <div className="flex flex-col gap-1">
-                  <div className="font-medium">draw the mask</div>
-                  <div>{MASK_TEXT}</div>
-                  <div>
-                    Drawn as a faint shell around this model&apos;s atoms of the locus. The shared mask the numbers below
-                    are taken over adds the same shell around the other models&apos; atoms.
-                  </div>
-                </div>
-              }
-            >
+            <Tooltip content={MASK_TIP}>
               <SwitchButton pressed={locus.maskShown} disabled={!locus.visible} onClick={() => onMask(locus.id)}>
                 <MaskIcon />
               </SwitchButton>
@@ -108,24 +118,7 @@ export default function LociTray({
         </div>
 
         <div className="flex items-center justify-between gap-1.5">
-          <Tooltip
-            content={
-              <div className="flex flex-col gap-1">
-                <div className="font-medium">RSCC of the locus</div>
-                <div>
-                  One correlation per loaded model between the 2Fo-Fc map and the model&apos;s simulated density, taken
-                  over the whole locus at once instead of residue by residue.
-                </div>
-                <div>{MASK_TEXT}</div>
-                <div>
-                  Every model is scored over the same points, the union of the loaded models&apos; masks of this locus,
-                  so the numbers compare; they change when another model is loaded and the locus is computed again. A
-                  large ensemble widens the union, which then describes the surroundings more than the locus.
-                </div>
-                <div>The map is phased by the deposited model, so it favours that model.</div>
-              </div>
-            }
-          >
+          <Tooltip content={RSCC_TIP}>
             <span className="hs-label">RSCC, shared mask</span>
           </Tooltip>
           {blocked && status !== "ready" ? (
@@ -161,7 +154,17 @@ export default function LociTray({
                   ? `painted: ${paintDomain[0].toFixed(2)} (red) to ${paintDomain[1].toFixed(2)} (grey)`
                   : `${score.residues.keys.length} residue${score.residues.keys.length === 1 ? "" : "s"} scored`}
               </TinyText>
-              <Tooltip content="paint the 2Fo-Fc surface inside this locus's shared mask, residue by residue, with the RSCC of the main view's model; the rest of the map keeps its colour">
+              <Tooltip
+                content={{
+                  title: "Paint on the map",
+                  is: "The 2Fo-Fc surface inside this locus's shared mask, residue by residue.",
+                  rows: [
+                    { label: "value", text: "RSCC of the main view's model." },
+                    { label: "rest", text: "The map outside the mask keeps its colour." },
+                    { label: "also", text: "The same switch as the map column of the colour board." },
+                  ],
+                }}
+              >
                 <SwitchButton pressed={paintedId === locus.id} onClick={() => onPaint(paintedId === locus.id ? null : locus.id)}>
                   paint
                 </SwitchButton>

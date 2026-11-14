@@ -35,16 +35,15 @@ export default function ConformerStatesPanel({
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
       <Tooltip
-        content={
-          <div className="flex flex-col gap-1">
-            <div className="font-medium">Conformer state, model A</div>
-            <div>
-              Force one letter on every split residue; the residues it actually switches are painted in the letter
-              color (residues without the letter keep their top-occupancy conformer and the base color). Naive: letters
-              are NOT coupled across residues.
-            </div>
-          </div>
-        }
+        content={{
+          title: "Conformer state",
+          is: "Forces one altloc letter on every split residue of the main view's model.",
+          rows: [
+            { label: "painted", text: "The residues the letter actually switches, in the letter's colour." },
+            { label: "others", text: "Residues without the letter keep their top-occupancy conformer and the base colour." },
+            { label: "caveat", text: "Naive: letters are not coupled across residues." },
+          ],
+        }}
       >
         <span className="cursor-help">
           <SectionLabel>Conformer state</SectionLabel>
