@@ -17,7 +17,7 @@ export { bIsoMean } from "./bfactor";
 export { ensembleRmsf } from "./ensemble-rmsf";
 export { conformerSupport, mapSupportDelta, mapValueTracks, stateSupport } from "./map";
 export type { ConformerSupportRow, MapSampler, StateSupportRow } from "./map";
-export { modelRmsd } from "./rmsd";
+export { frameOffset, modelRmsd } from "./rmsd";
 export {
   realSpaceCorrelation,
   realSpaceCorrelationJoint,

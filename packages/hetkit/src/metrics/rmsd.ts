@@ -67,3 +67,30 @@ export function modelRmsd(a: AtomTable, b: AtomTable): Track {
     { unit: "A" },
   );
 }
+
+/** the atom a residue's position is read from: CA for protein, C4' or P for nucleic acid */
+const TRACE_ATOMS = ["CA", "C4'", "P"];
+
+/**
+ * How far two models of the same molecule sit from each other as filed: the mean distance
+ * between the trace atoms of the residues both have (occupancy-weighted over conformers),
+ * with no superposition. Near zero for models refined against the same data; several
+ * angstrom when one was filed in another frame (a different origin or symmetry copy).
+ */
+export function frameOffset(a: AtomTable, b: AtomTable): { mean: number; matched: number } {
+  let sum = 0;
+  let matched = 0;
+  for (const res of a.residues) {
+    const bi = b.residueIndex.get(residueKey(res.ref));
+    if (bi === undefined) continue;
+    const ca = residueCentroidsByAtomName(a, res.rows);
+    const cb = residueCentroidsByAtomName(b, b.residues[bi].rows);
+    const name = TRACE_ATOMS.find((candidate) => ca.has(candidate) && cb.has(candidate));
+    if (!name) continue;
+    const pa = ca.get(name)!;
+    const pb = cb.get(name)!;
+    sum += Math.hypot(pa.x - pb.x, pa.y - pb.y, pa.z - pb.z);
+    matched++;
+  }
+  return { mean: matched > 0 ? sum / matched : NaN, matched };
+}
