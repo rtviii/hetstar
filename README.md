@@ -8,21 +8,31 @@ would need from that API.
 
 ## What it shows
 
-- Two models of one entry in one scene. Model A is the qFit multiconformer model, collapsed
-  to its highest-occupancy conformer by default and expandable per residue. Model B is the
-  deposited model, drawn as a toggleable ghost. A multi-model ensemble (so far the NMR
-  examples fetched from RCSB) loads as model A with a frame scrubber and per-residue RMSF.
+- The models of one entry in one scene. One of them is the main view's model (the qFit
+  multiconformer model by default): picks, the sequence lanes and the conformer tools act on
+  it, and it is collapsed to its highest-occupancy conformer by default and expandable per
+  residue. The others stand behind it as translucent ghosts, each shown or hidden on its own;
+  the deposited model is shown on load. Any model becomes the main view from its card in the
+  Models Switchboard, in place: the maps, the camera, the selection and the clip sphere stay.
+  A multi-model ensemble loads with a frame scrubber and per-residue RMSF.
+- The Models Switchboard: one card per model of the entry, saying what it is (kind, software,
+  R-work and R-free, altlocs or members, distance from the main model as filed), with switches
+  for main view, drawn in the main view, reference, and its replica (the model alone in a
+  small canvas turned like the main view).
 - Experimental density computed in the browser. The deposited structure factors (sf-cif) are
   FFT'd by Mol* into 2Fo-Fc and Fo-Fc maps, then carved around the model. Sigma, opacity and
   clip controls are available. Density loads in the background and is off until toggled.
 - Per-residue metrics from `@dynamic-pdb/hetkit`: conformer count, occupancy entropy, mean
   B-iso, bond variability, ensemble RMSF, model A vs B RMSD, altloc RMSF delta, and Fo-Fc
   mean, peak and support delta.
-- One colour board for every colour choice. Its rows are the sources of colour, grouped by
-  concept (looks, motion, heterogeneity, comparisons, fit to the map, stored values, loci);
-  its columns are the things that can be coloured (the main view's model, its 2Fo-Fc map, the
-  sequence lane, each replica box). A cell switches one target, the "all" column every target
-  that can show the row.
+- One style board for every choice of look. Its rows are what a look is made of: shape first
+  (cartoon, cartoon with side chains, sticks, atoms; ligands and ions on or off), then the
+  sources of colour grouped by concept (looks, motion, heterogeneity, comparisons, fit to the
+  map, stored values, loci). Its columns are the things that have a look: each model drawn in
+  the main view, the 2Fo-Fc map, the sequence lane, each replica. A cell switches one target,
+  the "all" column every target that can show the row, and the eye under a column's name
+  shows or hides that target. A metric is coloured on one range in every 3D view showing it;
+  the range is printed at the end of its row.
 - A sequence lane viewer under the canvas: one chain at a time, secondary structure, PDBe
   domain and modification annotations, ligand contacts, and metric plots, all linked to the 3D
   selection.
@@ -71,7 +81,7 @@ import "@dynamic-pdb/hetstar/styles.css";
 - `dpdb.fileProxy` is a route that takes `?u=<artifact uri>` and returns the file (default
   `/api/dpdb-file`). An empty string fetches artifact URIs directly.
 - `preset` carries a consumer's opinions and nothing else: the representation the viewer
-  opens with, the colour modes the style tray offers, the Mol* colour themes to register, and
+  opens with, the colour modes the style board offers, the Mol* colour themes to register, and
   the example entries the entry chip lists (`packages/hetstar/src/presets/`). Omitted, the
   viewer uses `dynamicpdbPreset`, the structure-card look (ghost cartoon, purple ramp by
   conformer count, ligand hues), so the website passes nothing. `hetcifPreset` is
@@ -80,17 +90,21 @@ import "@dynamic-pdb/hetstar/styles.css";
   under every preset; a preset must not be the place where engine behaviour changes. One
   example: under a cartoon, the polymer residues hetcif variables cover are drawn as thin
   sticks over the trace, so a world choice moves atoms under the card look too.
-- `switchboard` controls the Models Switchboard, the dock of model replicas at the bottom
-  right of the canvas (`packages/hetstar/src/components/switchboard/`). It is on by default;
-  `false` removes it, and `{ defaultOpen, boxes, maxBoxes }` sets whether it starts open, whether
-  an entry opens with its primary model's box alone or with one per model (`boxes: "all"`), and
-  how many boxes it allows (4 by default, 6 at most: every box is a WebGL context of its own).
-  The dev app's `/switchboard` page opens a real deposition with every model boxed
-  (`?entry=dpdb_...`, `?model=<model id>`, `?boxes=primary`). Each box
-  shows one whole model of the entry turned like the main view, mirrors the main view's
-  selection, hover and selection representations, and draws a translucent sphere where the
-  main view is (its clip sphere, or what its camera frames once zoomed in). Rotating any view
-  rotates all of them; clicking a residue in a box sends the main view there. Hosts that need
+- `modelId` is the model the main view opens on; omitted, the viewer picks (qFit, else the
+  ensemble, else the deposited model). Changing it while `entryId` stays the same switches the
+  main view in place, as the card's own switch does.
+- `switchboard` controls the Models Switchboard, the dock of model cards at the bottom right
+  of the canvas (`packages/hetstar/src/components/switchboard/`). It is on by default; `false`
+  removes it, and `{ defaultOpen, boxes, maxBoxes }` sets whether it starts open, whether an
+  entry opens with a replica for every model whose file is small (the default, `boxes: "all"`)
+  or for the main view's model alone (`boxes: "primary"`), and how many replicas it allows (4
+  by default, 6 at most: every replica is a WebGL context of its own). A model file above 5 MB
+  is fetched only when its model is asked for. The dev app's `/switchboard` page opens a real
+  deposition (`?entry=dpdb_...`, `?model=<model id>`, `?boxes=primary`). A replica shows one
+  whole model of the entry turned like the main view, mirrors the main view's selection,
+  hover and selection representations, and draws a translucent sphere where the main view is
+  (its clip sphere, or what its camera frames once zoomed in). Rotating any view rotates all
+  of them; clicking a residue in a replica sends the main view there. Hosts that need
   to find the dock or the top-right tray in the DOM can use `[data-hetstar-part="switchboard"]`
   and `[data-hetstar-part="tray"]`.
 - It is client-only. Mol* needs `window` and WebGL, so render it through
@@ -146,9 +160,13 @@ How the responses are interpreted:
 - Structure factors come from the first `structure_factors` artifact listed. If there is
   none, the viewer uses `https://files.rcsb.org/download/{PDB}-sf.cif`. Above 50 MB the viewer
   asks before downloading, because PanDDA deposits reach hundreds of MB.
-- Pairing (`types.ts`, `pickPair`): model A is the model the host passed as `modelId`, else
-  qFit if present, else the ensemble, else the deposited model. Model B is the deposited model
-  when A is not.
+- The main view's model (`types.ts`, `pickMainModel`) is the one the host passed as
+  `modelId`, else qFit if present, else the ensemble, else the deposited model. The deposited
+  model is fetched with it: it is the ghost an entry opens with, and its file frames the
+  sequence lanes. The other models are fetched ahead when their files are small.
+- No model is superposed on another. Models refined against the same data share a frame; each
+  card shows the mean trace-atom distance of its model from the main one as filed, and marks
+  a model that is more than 1 A off.
 - PDB-format models (re-refined `_020.pdb`, ensemble PDBs) are converted to mmCIF text in the
   browser on arrival (`pdbToCifText` in hetkit, through Mol*'s own PDB converter). Everything
   after the download reads CIF, so once the catalogue serves mmCIF this step is simply skipped.
