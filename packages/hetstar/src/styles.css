@@ -274,23 +274,29 @@
 .hetstar .hs-blink { animation: hs-blink 1.6s ease-in-out infinite; }
 
 /* Waiting on a computation: the Prism mark, its two triangles lit one after the other as on
-   the Dynamic PDB site. Each triangle is an element of its own and only its opacity moves,
-   so the beat stays on the compositor while a computation holds the main thread. */
-@keyframes hs-prism-beat { 0%, 100% { opacity: 0.18; } 35% { opacity: 1; } 70% { opacity: 0.18; } }
+   the Dynamic PDB site. Each triangle is a clipped box of its own and only its opacity and
+   scale move, so the beat stays on the compositor while a computation holds the main thread. */
+@keyframes hs-prism-beat {
+  0%, 100% { opacity: 0.15; transform: scale(0.82); }
+  40% { opacity: 1; transform: scale(1); }
+}
 .hetstar .hs-prism { position: relative; display: inline-block; flex: none; color: #663be4; }
-.hetstar .hs-prism > svg {
+.hetstar .hs-prism > i {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  fill: currentColor;
-  opacity: 0.18;
-  will-change: opacity;
-  animation: hs-prism-beat 1.4s ease-in-out infinite;
+  background: currentColor;
+  opacity: 0.15;
+  will-change: opacity, transform;
+  animation: hs-prism-beat 1.1s ease-in-out infinite;
 }
-.hetstar .hs-prism > svg + svg { animation-delay: 0.28s; }
-@media (prefers-reduced-motion: reduce) {
-  .hetstar .hs-prism > svg { opacity: 0.7; animation: none; }
+.hetstar .hs-prism > i:first-child {
+  clip-path: polygon(9.6% 67.6%, 30.8% 67.6%, 9.6% 88.8%);
+  transform-origin: 17% 75%;
+}
+.hetstar .hs-prism > i + i {
+  clip-path: polygon(88% 12%, 88% 66.8%, 33.2% 66.8%);
+  transform-origin: 70% 48%;
+  animation-delay: 0.3s;
 }
 
 /* A tooltip in parts: the name, one line on what it is, then labelled rows. */
@@ -352,22 +358,26 @@
 
 /* The style board: rows down the side, targets across the top, one mark per cell. The
    table fills its card; the name and row-end columns keep to their content and the target
-   columns share what is left. */
+   columns share what is left. Rows are tall enough to be hit without aiming. */
 .hetstar .hs-matrix { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .hetstar .hs-matrix th, .hetstar .hs-matrix td { padding: 0; font-weight: 400; text-align: left; }
 .hetstar .hs-matrix thead { position: sticky; top: 0; z-index: 2; }
 .hetstar .hs-matrix thead th { background: #ffffff; }
-.hetstar .hs-matrix thead tr:first-child th { height: 15px; }
+.hetstar .hs-matrix thead tr.hs-matrix-spans th { height: 15px; }
 .hetstar .hs-matrix thead tr:last-child th { box-shadow: 0 1px 0 #d0d2e0; }
 .hetstar .hs-matrix .hs-matrix-namecol, .hetstar .hs-matrix .hs-matrix-endcol { width: 1%; }
-.hetstar .hs-matrix .hs-matrix-allcol { width: 40px; }
+.hetstar .hs-matrix .hs-matrix-allcol { width: 44px; }
+.hetstar .hs-matrix .hs-matrix-onecol { width: 56px; }
 .hetstar .hs-matrix .hs-matrix-span { padding: 0 4px; border-left: 1px solid #e6e7f0; white-space: nowrap; }
 .hetstar .hs-matrix .hs-matrix-col {
   min-width: 56px;
   text-align: center;
   vertical-align: bottom;
-  padding: 2px 3px;
+  padding: 4px 3px 3px;
 }
+/* the main view's model: its column is ruled in the accent, no tag */
+.hetstar .hs-matrix thead th.hs-matrix-col[data-main="true"] { box-shadow: inset 0 2px 0 #663be4; }
+.hetstar .hs-matrix thead tr:last-child th.hs-matrix-col[data-main="true"] { box-shadow: inset 0 2px 0 #663be4, 0 1px 0 #d0d2e0; }
 .hetstar .hs-matrix .hs-matrix-label {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -379,7 +389,6 @@
   color: #1a1e2a;
 }
 .hetstar .hs-matrix .hs-matrix-end { padding: 0 8px 0 6px; white-space: nowrap; }
-.hetstar .hs-matrix .hs-matrix-section > th { height: 16px; padding: 0 10px; background: #ece8fb; box-shadow: inset 2px 0 0 #663be4, 0 1px 0 #d9d2f3; }
 .hetstar .hs-matrix [data-off="true"] > * { opacity: 0.3; }
 .hetstar .hs-matrix thead th[data-off="true"] > * { opacity: 0.45; }
 .hetstar .hs-matrix .hs-matrix-first { border-left: 1px solid #e6e7f0; }
@@ -387,23 +396,25 @@
 .hetstar .hs-matrix thead th[data-focus="true"] { background: #f1edfd; }
 .hetstar .hs-matrix tbody tr:hover > * { background: #f4f4f9; }
 .hetstar .hs-matrix tbody tr:hover > [data-focus="true"] { background: #e9e3fb; }
-.hetstar .hs-matrix .hs-matrix-group > * { height: 17px; background: #f6f4fd; box-shadow: 0 1px 0 #e4dff5; }
+.hetstar .hs-matrix .hs-matrix-group > * { height: 20px; background: #f6f4fd; box-shadow: 0 1px 0 #e4dff5; }
 .hetstar .hs-matrix tbody tr.hs-matrix-group:hover > * { background: #efebfb; }
-.hetstar .hs-matrix .hs-matrix-name { height: 17px; padding: 0 6px 0 10px; white-space: nowrap; font-size: 10.5px; color: #1a1e2a; }
-.hetstar .hs-matrix .hs-matrix-ramp { display: inline-block; flex: none; width: 16px; height: 5px; border-radius: 1px; }
+.hetstar .hs-matrix .hs-matrix-name { height: 24px; padding: 0 6px 0 10px; white-space: nowrap; font-size: 11px; color: #1a1e2a; }
+.hetstar .hs-matrix .hs-matrix-ramp { display: inline-block; flex: none; width: 18px; height: 6px; border-radius: 1px; }
 .hetstar .hs-cell {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 17px;
+  height: 24px;
 }
-.hetstar .hs-cell-mark { display: block; width: 7px; height: 7px; border: 1px solid #c3c6d6; border-radius: 1px; background: #ffffff; }
+.hetstar .hs-matrix .hs-matrix-group .hs-cell { height: 20px; }
+.hetstar .hs-cell-mark { display: block; width: 12px; height: 12px; border: 1px solid #b9bccf; border-radius: 2px; background: #ffffff; }
+.hetstar button.hs-cell:hover { background: #ece8fb; }
 .hetstar button.hs-cell:hover .hs-cell-mark { border-color: #663be4; }
 .hetstar button.hs-cell:focus-visible { outline: none; box-shadow: inset 0 0 0 1px #663be4; }
 .hetstar .hs-cell[aria-pressed="true"] .hs-cell-mark { border-color: #663be4; background: #663be4; }
 .hetstar .hs-cell[data-request="true"] .hs-cell-mark { border-style: dashed; border-color: #a58cf0; }
-.hetstar .hs-cell-off { display: block; width: 5px; height: 1px; background: #d0d2e0; }
+.hetstar .hs-cell-off { display: block; width: 7px; height: 1px; background: #d0d2e0; }
 .hetstar .hs-cell[data-stale="true"] .hs-cell-mark { border-color: #663be4; background: #d9cffa; }
 
 /* The one shell of every floating surface (tooltip, popover, flyout, popup, dock box):
@@ -414,6 +425,10 @@
   background: #ffffff;
   box-shadow: 0 6px 18px rgba(26, 30, 42, 0.1);
 }
+
+/* The main view's model in the Models Switchboard: the whole card is ruled in the accent. */
+.hetstar .hs-panel .hs-card { box-shadow: none; }
+.hetstar .hs-card[data-main="true"], .hetstar .hs-panel .hs-card[data-main="true"] { border-color: #663be4; box-shadow: 0 0 0 1px #663be4; }
 
 @tailwind components;
 @tailwind utilities;

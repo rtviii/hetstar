@@ -27,28 +27,21 @@ export const GHOST_CHAIN_COLORS = [
   Color(0xcfd3da), // cool grey
 ];
 
-export type ConformerRamp = "fade" | "brand" | "wide" | "muted" | "dark";
-export const CONFORMER_RAMP_NAMES: ConformerRamp[] = ["fade", "brand", "wide", "muted", "dark"];
-
 // Indexed by conformer count: 0 and 1 are never read (those residues take the chain colour),
 // then two, three, four, five or more.
-export const CONFORMER_RAMPS: Record<ConformerRamp, Color[]> = {
-  brand: [GREY, GREY, Color(0xa78bf0), Color(0x8257ea), Color(0x663be4), Color(0x663be4)],
-  wide: [GREY, GREY, Color(0xd6c9f9), Color(0x9c7ff0), Color(0x5a2fd0), Color(0x3a1a99)],
-  muted: [GREY, GREY, Color(0xc9c0dc), Color(0x9478e4), Color(0x663be4), Color(0x4b26b8)],
-  dark: [GREY, GREY, Color(0xb9a4f3), Color(0x7d53e7), Color(0x4b26b8), Color(0x2e1575)],
-  // "brand" colours, with two- and three-conformer residues partly transparent (see
-  // conformerFadeLayers) so the count reads as solidity as well as hue
-  fade: [GREY, GREY, Color(0xa78bf0), Color(0x7d53e7), Color(0x5730c7), Color(0x5730c7)],
-};
+const CONFORMER_COLORS: Color[] = [GREY, GREY, Color(0xa78bf0), Color(0x7d53e7), Color(0x5730c7), Color(0x5730c7)];
 
-/** Transparency per conformer-count class on the cartoon: single-conformer residues always ghost. */
-export function conformerFadeLayers(ramp: ConformerRamp): { test: (count: number) => boolean; value: number }[] {
-  const layers = [{ test: (count: number) => count < 2, value: 0.65 }];
-  if (ramp === "fade") {
-    layers.push({ test: (count) => count === 2, value: 0.4 }, { test: (count) => count === 3, value: 0.15 });
-  }
-  return layers;
+/**
+ * Transparency per conformer-count class on the cartoon: single-conformer residues are
+ * ghosted and two- and three-conformer residues partly so, so that the count reads as
+ * solidity as well as hue.
+ */
+export function conformerFadeLayers(): { test: (count: number) => boolean; value: number }[] {
+  return [
+    { test: (count) => count < 2, value: 0.65 },
+    { test: (count) => count === 2, value: 0.4 },
+    { test: (count) => count === 3, value: 0.15 },
+  ];
 }
 
 const conformerCounts = new WeakMap<Model, Uint8Array>();
@@ -110,16 +103,14 @@ function ghostConformerColor(unit: Unit, element: ElementIndex, ramp: Color[]): 
   return GHOST_CHAIN_COLORS[chainPaletteIndex(unit.model, element) % GHOST_CHAIN_COLORS.length];
 }
 
-export const GhostConformerColorThemeParams = {
-  ramp: PD.Select<ConformerRamp>("fade", CONFORMER_RAMP_NAMES.map((name) => [name, name] as [ConformerRamp, string])),
-};
+export const GhostConformerColorThemeParams = {};
 export type GhostConformerColorThemeParams = typeof GhostConformerColorThemeParams;
 
 export function GhostConformerColorTheme(
   _ctx: ThemeDataContext,
   props: PD.Values<GhostConformerColorThemeParams>,
 ): ColorTheme<GhostConformerColorThemeParams> {
-  const ramp = CONFORMER_RAMPS[props.ramp] ?? CONFORMER_RAMPS.fade;
+  const ramp = CONFORMER_COLORS;
   return {
     factory: GhostConformerColorTheme,
     granularity: "group",

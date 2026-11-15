@@ -12,7 +12,6 @@ export const CARD_REP_STYLE: RepStyle = {
   ...DEFAULT_REP_STYLE,
   type: "cartoon",
   colorMode: "conformer",
-  ramp: "fade",
 };
 
 export const dynamicpdbPreset: HetstarPreset = {

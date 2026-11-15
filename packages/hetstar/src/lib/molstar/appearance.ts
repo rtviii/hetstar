@@ -18,7 +18,6 @@ import {
   type ConformerPlan,
 } from "./conformers";
 import { removeNode, setReprsPickable, type ClipObjectSpec } from "./density";
-import type { ConformerRamp } from "./ghost-theme";
 import { buildSideChainQuery, structureToLoci } from "./queries";
 import {
   applyRepStyle,
@@ -41,7 +40,7 @@ import { TRACK_THEME_NAME, type TrackPaint } from "./track-theme";
 /** what a model is painted with */
 export type ModelPaint =
   | { kind: "ghost" }
-  | { kind: "color"; mode: RepColorMode; ramp: ConformerRamp }
+  | { kind: "color"; mode: RepColorMode }
   | { kind: "track"; paint: TrackPaint };
 
 export interface ModelLook {
@@ -145,7 +144,6 @@ export async function applyModelLook(
     ...opts.base,
     type,
     colorMode: paint.kind === "color" ? paint.mode : "model",
-    ramp: paint.kind === "color" ? paint.ramp : opts.base.ramp,
   };
   const ghost = paint.kind === "ghost" && opts.flatGhost;
   const colorOverride: ColorOverride | undefined =
@@ -177,7 +175,7 @@ export async function applyModelLook(
       shown: new Set(),
       globalAlt: null,
       polymerAsTrace: type === "cartoon",
-      polymerFade: paint.kind === "color" && paint.mode === "conformer" ? paint.ramp : null,
+      polymerFade: paint.kind === "color" && paint.mode === "conformer",
     });
   }
   if (!opts.pickable) setReprsPickable(ctx, representationRefsForStructure(ctx, structureRef), false);

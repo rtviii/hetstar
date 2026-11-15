@@ -5,7 +5,7 @@ import { Color } from "molstar/lib/mol-util/color";
 import { isHeavy, isPolymerComp, type AtomTable } from "@dynamic-pdb/hetkit/model";
 import { WATER_COMPS } from "../lab/entries";
 import { componentsForStructure, isOverlayComponent } from "./conformers";
-import { CONFORMER_RAMP_NAMES, type ConformerRamp, ION_COLOR } from "./ghost-theme";
+import { ION_COLOR } from "./ghost-theme";
 import { setReprsPickable } from "./density";
 import { buildComponentQuery, mergeExpressions } from "./queries";
 
@@ -48,8 +48,6 @@ export type RepQuality = "auto" | "high" | "medium" | "low";
 export interface RepStyle {
   type: RepType;
   colorMode: RepColorMode;
-  /** the conformer-count ramp of colorMode "conformer" */
-  ramp: ConformerRamp;
   quality: RepQuality;
   ballStick: { sizeFactor: number };
   spacefill: { sizeFactor: number };
@@ -61,7 +59,6 @@ export interface RepStyle {
 export const DEFAULT_REP_STYLE: RepStyle = {
   type: "ball-and-stick",
   colorMode: "model",
-  ramp: "fade",
   quality: "auto",
   ballStick: { sizeFactor: 0.15 },
   spacefill: { sizeFactor: 1 },
@@ -79,7 +76,6 @@ export function sanitizeRepStyle(s: unknown, d: RepStyle = DEFAULT_REP_STYLE): R
   return {
     type: oneOf(r.type, ["ball-and-stick", "spacefill", "cartoon"] as const, d.type),
     colorMode: oneOf(r.colorMode, ["conformer", "model", "element", "chain"] as const, d.colorMode),
-    ramp: oneOf(r.ramp, CONFORMER_RAMP_NAMES, d.ramp),
     quality: oneOf(r.quality, ["auto", "high", "medium", "low"] as const, d.quality),
     ballStick: { sizeFactor: num(r.ballStick?.sizeFactor, d.ballStick.sizeFactor) },
     spacefill: { sizeFactor: num(r.spacefill?.sizeFactor, d.spacefill.sizeFactor) },
@@ -222,9 +218,9 @@ export function reprSpecForRole(role: LabRole, style: RepStyle, opts: { uniformC
   return { type, typeParams, ...color };
 }
 
-const ghostConformerColor = (style: RepStyle) => ({
+const ghostConformerColor = () => ({
   color: "ghost-conformer" as const,
-  colorParams: { ramp: style.ramp },
+  colorParams: {},
 });
 
 /**
@@ -248,7 +244,7 @@ function cardSpecForRole(role: LabRole, style: RepStyle, opts: { uniformColor: n
   const color = opts.ghost
     ? uniformOnly(opts.uniformColor)
     : role === "polymer"
-      ? ghostConformerColor(style)
+      ? ghostConformerColor()
       : role === "het"
         ? { color: "ligand-hue" as const }
         : uniformOnly(ION_COLOR);

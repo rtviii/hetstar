@@ -50,7 +50,7 @@ interface Applied {
 
 function samePaint(a: ModelLook["paint"], b: ModelLook["paint"]): boolean {
   if (a.kind !== b.kind) return false;
-  if (a.kind === "color" && b.kind === "color") return a.mode === b.mode && a.ramp === b.ramp;
+  if (a.kind === "color" && b.kind === "color") return a.mode === b.mode;
   if (a.kind === "track" && b.kind === "track") return a.paint === b.paint;
   return true;
 }

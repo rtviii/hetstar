@@ -603,20 +603,18 @@
 }
 
 /* Waiting on a computation: the Prism mark, its two triangles lit one after the other as on
-   the Dynamic PDB site. Each triangle is an element of its own and only its opacity moves,
-   so the beat stays on the compositor while a computation holds the main thread. */
+   the Dynamic PDB site. Each triangle is a clipped box of its own and only its opacity and
+   scale move, so the beat stays on the compositor while a computation holds the main thread. */
 
 @keyframes hs-prism-beat {
   0%, 100% {
-    opacity: 0.18;
+    opacity: 0.15;
+    transform: scale(0.82);
   }
 
-  35% {
+  40% {
     opacity: 1;
-  }
-
-  70% {
-    opacity: 0.18;
+    transform: scale(1);
   }
 }
 
@@ -627,26 +625,24 @@
   color: #663be4;
 }
 
-.hetstar .hs-prism > svg {
+.hetstar .hs-prism > i {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  fill: currentColor;
-  opacity: 0.18;
-  will-change: opacity;
-  animation: hs-prism-beat 1.4s ease-in-out infinite;
+  background: currentColor;
+  opacity: 0.15;
+  will-change: opacity, transform;
+  animation: hs-prism-beat 1.1s ease-in-out infinite;
 }
 
-.hetstar .hs-prism > svg + svg {
-  animation-delay: 0.28s;
+.hetstar .hs-prism > i:first-child {
+  clip-path: polygon(9.6% 67.6%, 30.8% 67.6%, 9.6% 88.8%);
+  transform-origin: 17% 75%;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .hetstar .hs-prism > svg {
-    opacity: 0.7;
-    animation: none;
-  }
+.hetstar .hs-prism > i + i {
+  clip-path: polygon(88% 12%, 88% 66.8%, 33.2% 66.8%);
+  transform-origin: 70% 48%;
+  animation-delay: 0.3s;
 }
 
 /* A tooltip in parts: the name, one line on what it is, then labelled rows. */
@@ -788,7 +784,7 @@
 
 /* The style board: rows down the side, targets across the top, one mark per cell. The
    table fills its card; the name and row-end columns keep to their content and the target
-   columns share what is left. */
+   columns share what is left. Rows are tall enough to be hit without aiming. */
 
 .hetstar .hs-matrix {
   width: 100%;
@@ -812,7 +808,7 @@
   background: #ffffff;
 }
 
-.hetstar .hs-matrix thead tr:first-child th {
+.hetstar .hs-matrix thead tr.hs-matrix-spans th {
   height: 15px;
 }
 
@@ -825,7 +821,11 @@
 }
 
 .hetstar .hs-matrix .hs-matrix-allcol {
-  width: 40px;
+  width: 44px;
+}
+
+.hetstar .hs-matrix .hs-matrix-onecol {
+  width: 56px;
 }
 
 .hetstar .hs-matrix .hs-matrix-span {
@@ -838,7 +838,17 @@
   min-width: 56px;
   text-align: center;
   vertical-align: bottom;
-  padding: 2px 3px;
+  padding: 4px 3px 3px;
+}
+
+/* the main view's model: its column is ruled in the accent, no tag */
+
+.hetstar .hs-matrix thead th.hs-matrix-col[data-main="true"] {
+  box-shadow: inset 0 2px 0 #663be4;
+}
+
+.hetstar .hs-matrix thead tr:last-child th.hs-matrix-col[data-main="true"] {
+  box-shadow: inset 0 2px 0 #663be4, 0 1px 0 #d0d2e0;
 }
 
 .hetstar .hs-matrix .hs-matrix-label {
@@ -855,13 +865,6 @@
 .hetstar .hs-matrix .hs-matrix-end {
   padding: 0 8px 0 6px;
   white-space: nowrap;
-}
-
-.hetstar .hs-matrix .hs-matrix-section > th {
-  height: 16px;
-  padding: 0 10px;
-  background: #ece8fb;
-  box-shadow: inset 2px 0 0 #663be4, 0 1px 0 #d9d2f3;
 }
 
 .hetstar .hs-matrix [data-off="true"] > * {
@@ -893,7 +896,7 @@
 }
 
 .hetstar .hs-matrix .hs-matrix-group > * {
-  height: 17px;
+  height: 20px;
   background: #f6f4fd;
   box-shadow: 0 1px 0 #e4dff5;
 }
@@ -903,18 +906,18 @@
 }
 
 .hetstar .hs-matrix .hs-matrix-name {
-  height: 17px;
+  height: 24px;
   padding: 0 6px 0 10px;
   white-space: nowrap;
-  font-size: 10.5px;
+  font-size: 11px;
   color: #1a1e2a;
 }
 
 .hetstar .hs-matrix .hs-matrix-ramp {
   display: inline-block;
   flex: none;
-  width: 16px;
-  height: 5px;
+  width: 18px;
+  height: 6px;
   border-radius: 1px;
 }
 
@@ -923,16 +926,24 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 17px;
+  height: 24px;
+}
+
+.hetstar .hs-matrix .hs-matrix-group .hs-cell {
+  height: 20px;
 }
 
 .hetstar .hs-cell-mark {
   display: block;
-  width: 7px;
-  height: 7px;
-  border: 1px solid #c3c6d6;
-  border-radius: 1px;
+  width: 12px;
+  height: 12px;
+  border: 1px solid #b9bccf;
+  border-radius: 2px;
   background: #ffffff;
+}
+
+.hetstar button.hs-cell:hover {
+  background: #ece8fb;
 }
 
 .hetstar button.hs-cell:hover .hs-cell-mark {
@@ -956,7 +967,7 @@
 
 .hetstar .hs-cell-off {
   display: block;
-  width: 5px;
+  width: 7px;
   height: 1px;
   background: #d0d2e0;
 }
@@ -974,6 +985,17 @@
   border-radius: 2px;
   background: #ffffff;
   box-shadow: 0 6px 18px rgba(26, 30, 42, 0.1);
+}
+
+/* The main view's model in the Models Switchboard: the whole card is ruled in the accent. */
+
+.hetstar .hs-panel .hs-card {
+  box-shadow: none;
+}
+
+.hetstar .hs-card[data-main="true"], .hetstar .hs-panel .hs-card[data-main="true"] {
+  border-color: #663be4;
+  box-shadow: 0 0 0 1px #663be4;
 }
 
 .\!container {
@@ -1173,6 +1195,10 @@
   margin-right: auto;
 }
 
+.hetstar .ml-1 {
+  margin-left: 0.25rem;
+}
+
 .hetstar .ml-auto {
   margin-left: auto;
 }
@@ -1225,6 +1251,10 @@
   display: none;
 }
 
+.hetstar .aspect-\[4\/3\] {
+  aspect-ratio: 4/3;
+}
+
 .hetstar .h-1 {
   height: 0.25rem;
 }
@@ -1239,10 +1269,6 @@
 
 .hetstar .h-3\.5 {
   height: 0.875rem;
-}
-
-.hetstar .h-32 {
-  height: 8rem;
 }
 
 .hetstar .h-4 {
@@ -1267,6 +1293,10 @@
 
 .hetstar .h-full {
   height: 100%;
+}
+
+.hetstar .max-h-64 {
+  max-height: 16rem;
 }
 
 .hetstar .max-h-\[140px\] {
@@ -1301,10 +1331,6 @@
   width: 10rem;
 }
 
-.hetstar .w-48 {
-  width: 12rem;
-}
-
 .hetstar .w-6 {
   width: 1.5rem;
 }
@@ -1337,14 +1363,6 @@
   min-width: 0.75rem;
 }
 
-.hetstar .max-w-\[136px\] {
-  max-width: 136px;
-}
-
-.hetstar .max-w-\[150px\] {
-  max-width: 150px;
-}
-
 .hetstar .max-w-\[160px\] {
   max-width: 160px;
 }
@@ -1363,10 +1381,6 @@
 
 .hetstar .max-w-\[calc\(100\%-16px\)\] {
   max-width: calc(100% - 16px);
-}
-
-.hetstar .max-w-\[calc\(100\%-1rem\)\] {
-  max-width: calc(100% - 1rem);
 }
 
 .hetstar .flex-1 {
@@ -1476,16 +1490,8 @@
   flex-wrap: wrap;
 }
 
-.hetstar .flex-wrap-reverse {
-  flex-wrap: wrap-reverse;
-}
-
 .hetstar .items-start {
   align-items: flex-start;
-}
-
-.hetstar .items-end {
-  align-items: flex-end;
 }
 
 .hetstar .items-center {
@@ -1498,10 +1504,6 @@
 
 .hetstar .justify-start {
   justify-content: flex-start;
-}
-
-.hetstar .justify-end {
-  justify-content: flex-end;
 }
 
 .hetstar .justify-center {
@@ -1530,6 +1532,10 @@
 
 .hetstar .gap-2\.5 {
   gap: 0.625rem;
+}
+
+.hetstar .gap-3 {
+  gap: 0.75rem;
 }
 
 .hetstar .gap-\[2px\] {
@@ -1602,8 +1608,16 @@
   white-space: nowrap;
 }
 
+.hetstar .whitespace-normal {
+  white-space: normal;
+}
+
 .hetstar .whitespace-nowrap {
   white-space: nowrap;
+}
+
+.hetstar .break-words {
+  overflow-wrap: break-word;
 }
 
 .hetstar .break-all {
@@ -1755,6 +1769,11 @@
 
 .hetstar .p-2 {
   padding: 0.5rem;
+}
+
+.hetstar .px-0\.5 {
+  padding-left: 0.125rem;
+  padding-right: 0.125rem;
 }
 
 .hetstar .px-1 {
@@ -2041,6 +2060,10 @@
   text-decoration-line: line-through;
 }
 
+.hetstar .accent-\[\#663be4\] {
+  accent-color: #663be4;
+}
+
 .hetstar .opacity-40 {
   opacity: 0.4;
 }
@@ -2129,6 +2152,10 @@
 
 .hetstar .hover\:bg-accent\/20:hover {
   background-color: rgb(102 59 228 / 0.2);
+}
+
+.hetstar .hover\:bg-accent\/30:hover {
+  background-color: rgb(102 59 228 / 0.3);
 }
 
 .hetstar .hover\:bg-accent\/40:hover {

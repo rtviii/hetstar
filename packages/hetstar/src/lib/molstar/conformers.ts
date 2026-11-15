@@ -21,7 +21,7 @@ import {
 } from "@dynamic-pdb/hetkit/model";
 import { ALT_FALLBACK_COLOR, AltColors } from "./altloc-theme";
 import { type AltGroupSelector, buildAltGroupExpression, executeQuery } from "./queries";
-import { type ConformerRamp, conformerFadeLayers, lociWhereConformerCount } from "./ghost-theme";
+import { conformerFadeLayers, lociWhereConformerCount } from "./ghost-theme";
 
 // The collapse engine for the viewer. One ball-and-stick representation covers
 // the whole structure (splitting conformers into components leaves cross-component bonds
@@ -107,7 +107,7 @@ export interface ConformerStyleState {
   polymerAsTrace?: boolean;
   /** the card look's per-count transparency on the polymer trace (single-conformer residues
    * ghosted); only read with polymerAsTrace, where the collapse layers leave the polymer alone */
-  polymerFade?: ConformerRamp | null;
+  polymerFade?: boolean;
   /** a world from the file's hetcif categories (one state per variable): it decides the
    * hidden conformers of every residue a variable covers; residues with altlocs that no
    * variable covers fall back to the per-residue collapse; globalAlt is ignored */
@@ -270,7 +270,7 @@ export async function applyConformerStyling(
   const baseComps = comps.filter((c) => !isBondsComponent(c) && !isLocusComponent(c));
   if (state.polymerAsTrace && state.polymerFade) {
     const polymerComps = baseComps.filter(isPolymerComponent);
-    for (const { test, value } of conformerFadeLayers(state.polymerFade)) {
+    for (const { test, value } of conformerFadeLayers()) {
       await setStructureTransparency(ctx, polymerComps, value, async (root) => lociWhereConformerCount(root, test));
     }
   }

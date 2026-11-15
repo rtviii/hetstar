@@ -94,7 +94,6 @@ import StyleBoard from "./components/board/StyleBoard";
 import {
   appearanceShows,
   appearanceWith,
-  boxTarget,
   colorSourceGroups,
   colorSourceLabel,
   isShapeRow,
@@ -106,8 +105,9 @@ import {
   metricCell,
   metricOfSource,
   metricSource,
+  modelTarget,
   repOfRow,
-  sceneTarget,
+  SCOPE_ALL,
   shapeGroups,
   shapeTip,
   SOURCE_GHOST,
@@ -116,6 +116,8 @@ import {
   TARGET_SEQUENCE,
   type BoardCell,
   type BoardRowId,
+  type BoardScope,
+  type BoardTab,
   type BoardTarget,
   type ColorSourceId,
 } from "./components/board/board";
@@ -137,10 +139,10 @@ import {
   isSmallFile,
   modelIdentityColors,
   withCard,
+  withMainMoved,
   type ModelCards,
   type SwitchboardOptions,
 } from "./components/switchboard/cards";
-import { CONFORMER_RAMP_NAMES, type ConformerRamp } from "./lib/molstar/ghost-theme";
 import { TRACK_THEME_NAME, TrackColorThemeProvider, trackPaint, type TrackPaint } from "./lib/molstar/track-theme";
 import type { HoverTarget } from "./components/switchboard/SwitchboardBox";
 import { useModelBundles } from "./hooks/useModelBundles";
@@ -148,7 +150,9 @@ import { useSceneModels, type SceneModelSpec } from "./hooks/useSceneModels";
 import { useModelMetrics, type PrimaryModel } from "./hooks/useModelMetrics";
 import { NOT_COMPUTED } from "./lib/lab/metric-engine";
 import { useStoredResidueData } from "./hooks/useStoredResidueData";
+import { afterPaint } from "./lib/lab/after-paint";
 import { createEmitter } from "./lib/lab/emitter";
+import { timing } from "./lib/lab/timing";
 import { bundleFromText, conformerPlanOf, fetchModelText, memberTablesOfFile } from "./lib/lab/model-bundle";
 import { bondVariabilityTrack, type MemberBondRecord } from "./lib/lab/bond-variability";
 import { syncSelRepOverlays, type SelRepOverlay } from "./lib/molstar/selrep";
@@ -265,20 +269,22 @@ const VIEW: StructureView = { representation: "ball-and-stick", colorTheme: "uni
 interface Paints {
   /** on the main view's model */
   main: TrackPaint | null;
-  /** on the other models in the main view, by model id */
-  scene: ReadonlyMap<string, TrackPaint>;
-  /** on the replicas, by model id */
-  box: ReadonlyMap<string, TrackPaint>;
+  /** on every model that is drawn somewhere and shows a metric, by model id (the main one included) */
+  models: ReadonlyMap<string, TrackPaint>;
   domains: ReadonlyMap<MetricId, [number, number]>;
 }
-const NO_PAINTS: Paints = { main: null, scene: new Map(), box: new Map(), domains: new Map() };
+const NO_PAINTS: Paints = { main: null, models: new Map(), domains: new Map() };
 const NO_PLAN = planConformers(null);
 
 /** what a model is painted with: its metric when that resolved, else its look, else the ghost */
-function paintOf(color: ColorSourceId, track: TrackPaint | undefined, ramp: ConformerRamp): ModelPaint {
+function paintOf(color: ColorSourceId, track: TrackPaint | undefined): ModelPaint {
   if (track) return { kind: "track", paint: track };
   const mode = lookOfSource(color);
-  return mode ? { kind: "color", mode, ramp } : { kind: "ghost" };
+  return mode ? { kind: "color", mode } : { kind: "ghost" };
+}
+
+function sameScope(a: BoardScope, b: BoardScope): boolean {
+  return a.kind === b.kind && (a.kind !== "model" || (b.kind === "model" && a.modelId === b.modelId));
 }
 
 function formatBound(value: number): string {
@@ -431,6 +437,7 @@ export default function HetstarViewer({
   // the models whose replica is on while the dock is open
   const [boxedModelIds, setBoxedModelIds] = useState<readonly string[]>([]);
   const switchboardOptions = typeof switchboard === "object" ? switchboard : undefined;
+  const [switchboardOpen, setSwitchboardOpen] = useState(switchboardOptions?.defaultOpen ?? true);
   const switchboardOptionsRef = useRef(switchboardOptions);
   switchboardOptionsRef.current = switchboardOptions;
   // hover from any source (3D, lanes, bond list), mirrored onto the switchboard boxes
@@ -548,7 +555,12 @@ export default function HetstarViewer({
   const structurePaint = paints.main;
   // the residues of the sequence lane
   const [sequenceColorId, setSequenceColorId] = useState<MetricId | "none">("none");
-  const [colorBoard, setColorBoard] = useState<{ open: boolean; focus: string | null }>({ open: false, focus: null });
+  // the style board: closed, or open on everything, on one model, or on the sequence lane
+  const [colorBoard, setColorBoard] = useState<{ open: boolean; scope: BoardScope; focus: string | null }>({
+    open: false,
+    scope: SCOPE_ALL,
+    focus: null,
+  });
   const [projected, setProjected] = useState<{ id: MetricId; domain: [number, number] } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -570,14 +582,14 @@ export default function HetstarViewer({
   }, [lanesHeight, lanesOpen, onLanesHeight]);
 
   // --- style (tray) ---
-  // the knobs every model shares (ramp, mesh quality, the size of each representation) and
+  // the knobs every model shares (mesh quality, the size of each representation) and
   // the look last chosen for the main view's model; what each model is drawn as and coloured
   // by is on its card
   const [baseStyle, setBaseStyle] = useState<RepStyle>(preset.repStyle);
   const mainCard = mainModelId ? cards[mainModelId] : undefined;
-  const mainRep: RepKind = mainCard?.scene.rep ?? preset.repStyle.type;
+  const mainRep: RepKind = mainCard?.look.rep ?? preset.repStyle.type;
   const mainSideChains = mainRep === "cartoon-sticks";
-  const mainLook = mainCard ? lookOfSource(mainCard.scene.color) : null;
+  const mainLook = mainCard ? lookOfSource(mainCard.look.color) : null;
   const repStyle = useMemo<RepStyle>(
     () => ({ ...baseStyle, type: repTypeOfKind(mainRep), colorMode: mainLook ?? baseStyle.colorMode }),
     [baseStyle, mainRep, mainLook],
@@ -614,6 +626,24 @@ export default function HetstarViewer({
   useEffect(() => {
     mainColorRef.current = mainColor;
   }, [mainColor]);
+  // what a model was showing when the main view left it (the member on screen, the expanded
+  // and muted conformers, the state choices), given back when the main view returns to it
+  const keptModelStateRef = useRef(
+    new Map<
+      string,
+      {
+        memberIndex: number;
+        shownConformers: ReadonlySet<string>;
+        globalAlt: string | null;
+        worldChoice: Record<string, string>;
+        mutedAlts: ReadonlySet<string>;
+      }
+    >(),
+  );
+  const liveModelStateRef = useRef({ memberIndex, shownConformers, globalAlt, worldChoice, mutedAlts });
+  liveModelStateRef.current = { memberIndex, shownConformers, globalAlt, worldChoice, mutedAlts };
+  // the member to step back to once the returning model is loaded
+  const restoreMemberRef = useRef(0);
   // set once the hooks they belong to exist, further down
   const resetSceneModelsRef = useRef<() => void>(() => undefined);
   const switchMainRef = useRef<(modelId: string) => void>(() => undefined);
@@ -632,7 +662,7 @@ export default function HetstarViewer({
   // latest request wins PER KEY — rapid updates of one concern (say, conformer styling
   // on every pick) collapse to the newest, without dropping a different concern (say,
   // the ghost transparency or a representation switch) that queued in between.
-  const makeSerializer = () => {
+  const makeSerializer = (onIdle?: () => void) => {
     const busy = { current: false };
     const pending = new Map<string, () => Promise<void>>();
     const run = (key: string, fn: () => Promise<void>, onError: (e: unknown) => void) => {
@@ -653,13 +683,27 @@ export default function HetstarViewer({
             const [k, p] = next.value;
             pending.delete(k);
             run(k, p, onError);
+          } else {
+            onIdle?.();
           }
         });
     };
-    return run;
+    return Object.assign(run, { busy: () => busy.current || pending.size > 0 });
   };
   const runProjectionRef = useRef(makeSerializer());
-  const runStylingRef = useRef(makeSerializer());
+  // the timing probe (lib/lab/timing.ts) ends a switch of the main view at the first painted
+  // frame after the new model is in and the styling queue has run dry
+  const timingLoadedRef = useRef(false);
+  const settleTimingRef = useRef<() => void>(() => undefined);
+  const runStylingRef = useRef(makeSerializer(() => settleTimingRef.current()));
+  settleTimingRef.current = () => {
+    if (!timing.running() || !timingLoadedRef.current) return;
+    afterPaint(() => {
+      if (runStylingRef.current.busy() || !timing.running() || !timingLoadedRef.current) return;
+      timingLoadedRef.current = false;
+      timing.end("styling passes, to the painted frame");
+    });
+  };
   const runProjection = useCallback((fn: () => Promise<void>) => {
     runProjectionRef.current("projection", fn, (e) =>
       setStatus(`projection failed: ${e instanceof Error ? e.message : String(e)}`),
@@ -689,6 +733,8 @@ export default function HetstarViewer({
       const bundleToken = resetBundles();
       setReferenceChoice(null);
       setCards({});
+      keptModelStateRef.current.clear();
+      restoreMemberRef.current = 0;
       setBoxedModelIds([]);
       resetSceneModelsRef.current();
       setSceneSerial((serial) => serial + 1);
@@ -834,6 +880,7 @@ export default function HetstarViewer({
       // bail — the fresh effect run handles the new tree
       if (viewer.getPrimaryStructureRef() !== structureRef) return;
       await ensureLabComponents(ctx, structureRef, aSplit, repStyleRef.current, { uniformColor: mainColorRef.current });
+      timing.mark("component rebuild");
     });
   }, [viewer, primaryLoaded, aSplit, runStyling]);
 
@@ -956,8 +1003,8 @@ export default function HetstarViewer({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
     });
-    // colorMode/ramp: the sticks follow the tray's colour mode, so a mode change rebuilds them
-  }, [viewer, primaryLoaded, worldSticks, repStyle.colorMode, repStyle.ramp, runStyling]);
+    // colorMode: the sticks follow the model's colour mode, so a mode change rebuilds them
+  }, [viewer, primaryLoaded, worldSticks, repStyle.colorMode, runStyling]);
 
   // --- side chains over the trace ("cartoon + side chains"): an overlay like the world
   // sticks, over every side chain of the polymer. Declared before the conformer layers, which
@@ -977,7 +1024,7 @@ export default function HetstarViewer({
       });
     });
     // the overlay is outside the rep-style pass, so whatever colours the polymer restyles it here
-  }, [viewer, primaryLoaded, mainSideChains, aSplit, repStyle.colorMode, repStyle.ramp, repStyle.quality, structurePaint, mainColor, runStyling]);
+  }, [viewer, primaryLoaded, mainSideChains, aSplit, repStyle.colorMode, repStyle.quality, structurePaint, mainColor, runStyling]);
 
   useEffect(() => {
     const ctx = viewer?.ctx;
@@ -992,7 +1039,7 @@ export default function HetstarViewer({
         muted: mutedAlts,
         polymerAsTrace: repStyle.type === "cartoon",
         // a metric painted on the model is read at full strength: no per-count fade under it
-        polymerFade: repStyle.colorMode === "conformer" && !structurePaint ? repStyle.ramp : null,
+        polymerFade: repStyle.colorMode === "conformer" && !structurePaint,
         world: worldStyle,
       });
     });
@@ -1000,8 +1047,8 @@ export default function HetstarViewer({
     // aSplit: a component rebuild drops them too; repStyle.type: cartoon excludes the
     // polymer from the collapse layers, so a type switch re-applies them;
     // selRepOverlays / worldSticks / mainSideChains: a fresh overlay component needs the layers applied to it;
-    // colorMode/ramp/structurePaint: the card look's polymer fade is one of these layers
-  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, mutedAlts, worldStyle, memberIndex, aSplit, repStyle.type, repStyle.colorMode, repStyle.ramp, structurePaint, selRepOverlays, worldSticks, mainSideChains, runStyling]);
+    // colorMode/structurePaint: the card look's per-count transparency is one of these layers
+  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, mutedAlts, worldStyle, memberIndex, aSplit, repStyle.type, repStyle.colorMode, structurePaint, selRepOverlays, worldSticks, mainSideChains, runStyling]);
 
   // --- representation style: in-place state-tree updates on the main view's model ---
 
@@ -1023,8 +1070,8 @@ export default function HetstarViewer({
   // the main view's model shown or hidden, and its ligands and ions within it. Declared after
   // everything that makes components on it, since those are born visible.
   const mainVisible = mainCard?.sceneVisible ?? true;
-  const mainHet = mainCard?.scene.het ?? true;
-  const mainIons = mainCard?.scene.ions ?? true;
+  const mainHet = mainCard?.look.het ?? true;
+  const mainIons = mainCard?.look.ions ?? true;
   useEffect(() => {
     const ctx = viewer?.ctx;
     if (!ctx || !viewer || !primaryLoaded) return;
@@ -1044,7 +1091,7 @@ export default function HetstarViewer({
     () => ({ ...baseStyle, colorMode: "model" }),
     // only what a non-main model reads of the shared knobs
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [baseStyle.quality, baseStyle.ramp, baseStyle.ballStick.sizeFactor, baseStyle.spacefill.sizeFactor, baseStyle.cartoon.sizeFactor],
+    [baseStyle.quality, baseStyle.ballStick.sizeFactor, baseStyle.spacefill.sizeFactor, baseStyle.cartoon.sizeFactor],
   );
   const sceneSpecs = useMemo<SceneModelSpec[]>(() => {
     if (!entry || !mainModelId) return [];
@@ -1062,17 +1109,17 @@ export default function HetstarViewer({
         label: `${entry.pdbId} ${model.title}`,
         color: identityColors.get(model.id) ?? MODEL_A_COLOR,
         look: {
-          rep: card.scene.rep,
-          het: card.scene.het,
-          ions: card.scene.ions,
+          rep: card.look.rep,
+          het: card.look.het,
+          ions: card.look.ions,
           // the copy of the main view's own model stays a ghost while it is hidden
-          paint: isMain ? { kind: "ghost" } : paintOf(card.scene.color, paints.scene.get(model.id), baseStyle.ramp),
+          paint: isMain ? { kind: "ghost" } : paintOf(card.look.color, paints.models.get(model.id)),
         },
         plan: bundle ? conformerPlanOf(bundle) : NO_PLAN,
       });
     }
     return specs;
-  }, [entry, mainModelId, cards, bundles.states, identityColors, paints.scene, baseStyle.ramp]);
+  }, [entry, mainModelId, cards, bundles.states, identityColors, paints.models]);
   const sceneModels = useSceneModels({
     viewer,
     ready: primaryLoaded,
@@ -1697,6 +1744,13 @@ export default function HetstarViewer({
     },
     [memberTables, viewer],
   );
+  // a model that returns as the main view steps back to the member it was left on
+  useEffect(() => {
+    if (!primaryLoaded) return;
+    const member = restoreMemberRef.current;
+    restoreMemberRef.current = 0;
+    if (member > 0 && member < memberTables.length) setMember(member);
+  }, [primaryLoaded, memberTables, setMember]);
 
   // --- cross-member bond presence: compute every member's bond set off-tree (each
   // trajectory frame -> Structure.ofModel -> the same interaction pass the current-frame
@@ -1906,19 +1960,15 @@ export default function HetstarViewer({
   const paintCacheRef = useRef(new WeakMap<Track, { low: number; high: number; paint: TrackPaint }>());
   const paintsMemo = useMemo<Paints>(() => {
     if (!entry || !mainModelId) return NO_PAINTS;
-    const shown: { place: "main" | "scene" | "box"; modelId: string; id: MetricId; track: Track }[] = [];
-    const want = (place: "main" | "scene" | "box", modelId: string, source: ColorSourceId) => {
-      const id = metricOfSource(source);
-      if (!id) return;
-      const outcome = modelMetrics.resolve(modelId, id);
-      if (typeof outcome !== "string") shown.push({ place, modelId, id, track: outcome });
-    };
+    const shown: { modelId: string; id: MetricId; track: Track }[] = [];
     for (const model of entry.models) {
       const card = cards[model.id];
-      if (!card) continue;
-      if (model.id === mainModelId) want("main", model.id, card.scene.color);
-      else if (card.sceneVisible) want("scene", model.id, card.scene.color);
-      if (boxedModelIds.includes(model.id)) want("box", model.id, card.box.color);
+      // a model's metric is resolved while it is drawn somewhere: as the main view, behind it, or as a replica
+      if (!card || !(model.id === mainModelId || card.sceneVisible || boxedModelIds.includes(model.id))) continue;
+      const id = metricOfSource(card.look.color);
+      if (!id) continue;
+      const outcome = modelMetrics.resolve(model.id, id);
+      if (typeof outcome !== "string") shown.push({ modelId: model.id, id, track: outcome });
     }
     const domains = new Map<MetricId, [number, number]>();
     const widen = (id: MetricId, own: [number, number]) => {
@@ -1940,16 +1990,9 @@ export default function HetstarViewer({
       }
       return cached.paint;
     };
-    let main: TrackPaint | null = null;
-    const scene = new Map<string, TrackPaint>();
-    const box = new Map<string, TrackPaint>();
-    for (const { place, modelId, id, track } of shown) {
-      const paint = paintFor(id, track);
-      if (place === "main") main = paint;
-      else if (place === "scene") scene.set(modelId, paint);
-      else box.set(modelId, paint);
-    }
-    return { main, scene, box, domains };
+    const models = new Map<string, TrackPaint>();
+    for (const { modelId, id, track } of shown) models.set(modelId, paintFor(id, track));
+    return { main: models.get(mainModelId) ?? null, models, domains };
   }, [entry, mainModelId, cards, boxedModelIds, metricId, modelMetrics]);
   useEffect(() => {
     setPaints((previous) => {
@@ -1958,8 +2001,7 @@ export default function HetstarViewer({
       const identical = (x: TrackPaint, y: TrackPaint) => x === y;
       const unchanged =
         previous.main === paintsMemo.main &&
-        sameMap(previous.scene, paintsMemo.scene, identical) &&
-        sameMap(previous.box, paintsMemo.box, identical) &&
+        sameMap(previous.models, paintsMemo.models, identical) &&
         sameMap(previous.domains, paintsMemo.domains, (x, y) => x[0] === y[0] && x[1] === y[1]);
       return unchanged ? previous : paintsMemo;
     });
@@ -2349,7 +2391,7 @@ export default function HetstarViewer({
         withCard(previous, mainModelId, (card) => ({
           ...card,
           sceneVisible: true,
-          scene: { color: lookSource(preset.repStyle.colorMode), rep: preset.repStyle.type, het: true, ions: true },
+          look: { color: lookSource(preset.repStyle.colorMode), rep: preset.repStyle.type, het: true, ions: true },
         })),
       );
     }
@@ -2378,13 +2420,19 @@ export default function HetstarViewer({
       }
       const bundle = state.bundle;
       const previousId = mainModelId;
+      timing.begin(`main view to ${bundle.model.title} (${(bundle.text.length / 1e6).toFixed(1)} MB of text)`);
+      timingLoadedRef.current = false;
+      // the model that is left keeps what it was showing; the one that returns gets its own back
+      keptModelStateRef.current.set(previousId, liveModelStateRef.current);
+      const kept = keptModelStateRef.current.get(modelId);
+      restoreMemberRef.current = kept?.memberIndex ?? 0;
       setPendingMainId(null);
       setPrimaryLoaded(false);
       setMemberIndex(0);
-      setShownConformers(new Set());
-      setGlobalAlt(null);
-      setWorldChoice({});
-      setMutedAlts(new Set());
+      setShownConformers(kept?.shownConformers ?? new Set());
+      setGlobalAlt(kept?.globalAlt ?? null);
+      setWorldChoice(kept?.worldChoice ?? {});
+      setMutedAlts(kept?.mutedAlts ?? new Set());
       setPopup(null);
       setHoverInfo(null);
       setBondOverlays([]);
@@ -2400,17 +2448,9 @@ export default function HetstarViewer({
         await clearMeasurements(ctx);
         bondDashRef.current = await ensureBondDashes(ctx, bondDashRef.current, [], []);
         setMeasureVersion((v) => v + 1);
-        // the active look follows the main view; the model it leaves becomes a ghost
-        setCards((previous) => {
-          const from = previous[previousId];
-          const to = previous[modelId];
-          if (!from || !to) return previous;
-          return {
-            ...previous,
-            [previousId]: { ...from, scene: { ...from.scene, color: SOURCE_GHOST } },
-            [modelId]: { ...to, sceneVisible: true, scene: { ...to.scene, color: from.scene.color } },
-          };
-        });
+        timing.mark("queue wait, root nodes of the old model removed");
+        // every model keeps its own look; a ghost that becomes the main view trades with the model it replaces
+        setCards((previous) => withMainMoved(previous, previousId, modelId));
         setMainModelId(modelId);
         setAText(bundle.text);
         setATable(bundle.table);
@@ -2545,21 +2585,18 @@ export default function HetstarViewer({
       const locus = loci.find((candidate) => candidate.id === locusId);
       if (!locus) return;
       setLocusComputing((previous) => new Set(previous).add(locusId));
-      // the pass holds the main thread: let the loading mark reach the screen first
-      requestAnimationFrame(() =>
-        setTimeout(() => {
-          const { sample, models, resolution } = locusInputsRef.current;
-          if (sample && models.length) {
-            const score = scoreLocus(locus, models, sample, resolution);
-            setLocusScores((previous) => new Map(previous).set(locusId, score));
-          }
-          setLocusComputing((previous) => {
-            const next = new Set(previous);
-            next.delete(locusId);
-            return next;
-          });
-        }, 0),
-      );
+      afterPaint(() => {
+        const { sample, models, resolution } = locusInputsRef.current;
+        if (sample && models.length) {
+          const score = scoreLocus(locus, models, sample, resolution);
+          setLocusScores((previous) => new Map(previous).set(locusId, score));
+        }
+        setLocusComputing((previous) => {
+          const next = new Set(previous);
+          next.delete(locusId);
+          return next;
+        });
+      });
     },
     [loci],
   );
@@ -2578,23 +2615,34 @@ export default function HetstarViewer({
   }, []);
 
   // --- the style board: every target that has a look against every row a look is made of.
-  // The targets are built here from whatever exists right now (each model drawn in the main
-  // view, the map, the sequence lane, each replica of the switchboard); the board itself
-  // knows none of them. ---
+  // The targets are built here from whatever exists right now (each model of the entry, the
+  // map, the sequence lane); the board itself knows none of them. It opens whole from the
+  // tray, on one model from that model's card, and on the sequence lane from the lanes strip:
+  // one catalogue of rows, three sets of columns. ---
 
-  const openColor = useCallback((targetId?: string) => {
-    setColorBoard((previous) => (targetId ? { open: true, focus: targetId } : { open: !previous.open, focus: null }));
+  /** open the board on a scope; asked for the scope it is already open on (with no column to mark), it closes */
+  const openBoard = useCallback((scope: BoardScope, focus: string | null = null) => {
+    setColorBoard((previous) =>
+      previous.open && !focus && sameScope(previous.scope, scope) ? { open: false, scope, focus: null } : { open: true, scope, focus },
+    );
   }, []);
-  const closeColor = useCallback(() => setColorBoard({ open: false, focus: null }), []);
+  const openColor = useCallback((targetId?: string) => openBoard(SCOPE_ALL, targetId ?? null), [openBoard]);
+  const openModelStyle = useCallback((modelId: string) => openBoard({ kind: "model", modelId }), [openBoard]);
+  const openSequenceColor = useCallback(() => openBoard({ kind: "sequence" }), [openBoard]);
+  const closeColor = useCallback(() => setColorBoard((previous) => ({ ...previous, open: false, focus: null })), []);
 
   const lociNames = useMemo(() => loci.map((locus) => ({ id: locus.id, label: locusLabel(locus) })), [loci]);
-  const boardGroups = useMemo(
+  const boardTabs = useMemo<BoardTab[]>(
     () => [
-      ...shapeGroups(),
-      ...colorSourceGroups({
-        colorModes: preset.colorModes,
-        loci: lociNames.map((locus) => ({ ...locus, ramp: METRIC_UI["rscc-computed"].colors })),
-      }),
+      {
+        id: "colour",
+        title: "Colour",
+        groups: colorSourceGroups({
+          colorModes: preset.colorModes,
+          loci: lociNames.map((locus) => ({ ...locus, ramp: METRIC_UI["rscc-computed"].colors })),
+        }),
+      },
+      { id: "shape", title: "Representation", groups: shapeGroups() },
     ],
     [preset.colorModes, lociNames],
   );
@@ -2606,7 +2654,6 @@ export default function HetstarViewer({
       : metricSource(metricId);
   const sequenceColorSource: ColorSourceId = sequenceColorId === "none" ? SOURCE_NONE : metricSource(sequenceColorId);
 
-  const boxesShown = boxedModelIds.length > 0;
   const sfFile = entry?.sf?.url.split("/").pop() ?? null;
   const hasMaps = !!entry?.sf;
 
@@ -2630,14 +2677,14 @@ export default function HetstarViewer({
       if (locusComputing.has(locusId)) return { state: "request", status: "computing" };
       return locusBlocked ? { state: "unavailable", reason: locusBlocked } : { state: "request", status: "absent" };
     };
-    const setAppearance = (modelId: string, place: "scene" | "box", row: BoardRowId) =>
-      setCards((previous) => withCard(previous, modelId, (card) => ({ ...card, [place]: appearanceWith(card[place], row) })));
+    const setAppearance = (modelId: string, row: BoardRowId) =>
+      setCards((previous) => withCard(previous, modelId, (card) => ({ ...card, look: appearanceWith(card.look, row) })));
     const modelTip = (model: ManifestModel, is: string): TipContent => ({
       title: modelDisplayName(model, entry.models),
       is,
       rows: modelDetailRows(model),
     });
-    // the cells a model shows, in the main view or as a replica
+    // the cells a model shows; the main view's own model is never a ghost
     const modelCell = (model: ManifestModel, row: BoardRowId, ghost: boolean): BoardCell => {
       if (isShapeRow(row)) return available;
       if (row === SOURCE_GHOST) return ghost ? available : null;
@@ -2648,32 +2695,29 @@ export default function HetstarViewer({
     };
 
     const targets: BoardTarget[] = [];
-    // the models drawn in the main view or kept as a replica, the main view's own first
-    const engaged = entry.models.filter((model) => {
-      const card = cards[model.id];
-      return !!card && isLoadable(model) && (model.id === mainModelId || card.sceneVisible || card.replica);
-    });
-    engaged.sort((a, b) => Number(b.id === mainModelId) - Number(a.id === mainModelId));
-    for (const model of engaged) {
+    // every model of the entry that has a file, the main view's own first
+    const listed = entry.models.filter((model) => !!cards[model.id] && isLoadable(model));
+    listed.sort((a, b) => Number(b.id === mainModelId) - Number(a.id === mainModelId));
+    for (const model of listed) {
       const card = cards[model.id];
       const isMain = model.id === mainModelId;
       const name = modelDisplayName(model, entry.models);
       targets.push({
-        id: sceneTarget(model.id),
-        group: "Main view",
+        id: modelTarget(model.id),
+        group: "Models",
         label: modelColumnName(model, entry.models),
-        title: `${name} in the main view`,
+        title: name,
         tip: modelTip(
           model,
           isMain
-            ? "The main view's model: picks, the lanes and the conformer tools act on it."
-            : "Drawn in the main view behind the main model; a click never lands on it.",
+            ? "The main view's model: picks, the lanes and the conformer tools act on it. Its replica looks the same."
+            : "One look for the model, behind the main view's model and in its replica; a click never lands on it.",
         ),
         swatch: identityColors.get(model.id) ?? null,
         main: isMain,
         visible: card.sceneVisible,
         onVisible: (visible) => setCards((previous) => withCard(previous, model.id, (c) => ({ ...c, sceneVisible: visible }))),
-        shows: (row) => appearanceShows(card.scene, row),
+        shows: (row) => appearanceShows(card.look, row),
         cell: (row) => modelCell(model, row, !isMain),
         choose: (row) => {
           const metric = metricOfSource(row);
@@ -2681,14 +2725,14 @@ export default function HetstarViewer({
           const look = lookOfSource(row);
           // remembered as the look that shows through when a metric of the main model is unavailable
           if (isMain && look) setBaseStyle((style) => ({ ...style, colorMode: look }));
-          setAppearance(model.id, "scene", row);
+          setAppearance(model.id, row);
         },
       });
     }
     if (hasMaps) {
       targets.push({
         id: TARGET_MAP,
-        group: "Main view",
+        group: "Map",
         label: "2Fo-Fc map",
         title: "the 2Fo-Fc map",
         tip: {
@@ -2733,7 +2777,7 @@ export default function HetstarViewer({
     }
     targets.push({
       id: TARGET_SEQUENCE,
-      group: "Main view",
+      group: "Sequence",
       label: "Sequence",
       title: "the residues of the sequence lane",
       tip: {
@@ -2742,8 +2786,7 @@ export default function HetstarViewer({
         rows: [{ label: "painted", text: "With a metric of the main view's model, residue by residue." }],
       },
       swatch: null,
-      visible: lanesOpen,
-      onVisible: setLanesOpen,
+      visible: null,
       shows: (row) => sequenceColorSource === row,
       cell: (row) => {
         if (row === SOURCE_NONE) return available;
@@ -2756,28 +2799,6 @@ export default function HetstarViewer({
         setSequenceColorId(metric ?? "none");
       },
     });
-    if (!boxesShown) return targets;
-    for (const model of entry.models) {
-      const card = cards[model.id];
-      if (!card || !boxedModelIds.includes(model.id)) continue;
-      const name = modelDisplayName(model, entry.models);
-      targets.push({
-        id: boxTarget(model.id),
-        group: "Replicas",
-        label: modelColumnName(model, entry.models),
-        title: `the replica of ${name}`,
-        tip: modelTip(model, "The model alone in its card of the Models Switchboard, turned like the main view."),
-        swatch: identityColors.get(model.id) ?? null,
-        visible: null,
-        shows: (row) => appearanceShows(card.box, row),
-        cell: (row) => modelCell(model, row, true),
-        choose: (row) => {
-          const metric = metricOfSource(row);
-          if (metric) computeFor(model.id, metric);
-          setAppearance(model.id, "box", row);
-        },
-      });
-    }
     return targets;
   }, [
     entry,
@@ -2794,17 +2815,33 @@ export default function HetstarViewer({
     computeLocusScore,
     chooseMetric,
     paintLocus,
-    boxedModelIds,
-    boxesShown,
     modelMetrics,
     identityColors,
     hasMaps,
     sfFile,
     densityState,
     showDensity,
-    lanesOpen,
-    setLanesOpen,
   ]);
+
+  // the columns of the board that is open: every model that is drawn somewhere and the map,
+  // one model alone, or the sequence lane alone
+  const boardScope = colorBoard.scope;
+  const scopeModel = boardScope.kind === "model" ? (entry?.models.find((model) => model.id === boardScope.modelId) ?? null) : null;
+  const scopedTargets = boardTargets.filter((target) => {
+    if (boardScope.kind === "sequence") return target.id === TARGET_SEQUENCE;
+    if (boardScope.kind === "model") return target.id === modelTarget(boardScope.modelId);
+    if (target.id === TARGET_SEQUENCE) return false;
+    if (target.id === TARGET_MAP) return true;
+    const model = entry?.models.find((candidate) => modelTarget(candidate.id) === target.id);
+    const card = model ? cards[model.id] : undefined;
+    return !!model && !!card && (model.id === mainModelId || card.sceneVisible || card.replica);
+  });
+  const boardTitle =
+    boardScope.kind === "sequence"
+      ? "Sequence colour"
+      : scopeModel && entry
+        ? `Style of ${modelColumnName(scopeModel, entry.models)}`
+        : "Style";
 
   const referenceName = referenceModel && entry ? modelDisplayName(referenceModel, entry.models) : null;
   const boardTip = (row: BoardRowId): TipContent | null => {
@@ -2814,8 +2851,7 @@ export default function HetstarViewer({
     return metric ? metricTooltip(metric, { referenceName, sfFile }) : lookTip(row);
   };
 
-  // the end of a row: a representation's scale, the ramp of the conformer look, and for a
-  // metric the range it is coloured on, with the recompute and erase of one computed on
+  // the end of a row: a representation's scale, and for a metric the range it is coloured on, with the recompute and erase of one computed on
   // request (acting on every shown model that has it)
   const requestModelIds = [...new Set([...sceneModelIds, ...boxedModelIds])];
   const boardRowExtra = (row: BoardRowId) => {
@@ -2842,23 +2878,6 @@ export default function HetstarViewer({
             }}
           />
         </label>
-      );
-    }
-    if (row === lookSource("conformer")) {
-      return (
-        <select
-          className="hs-field h-4 text-[9px]"
-          title="the ramp the conformer look counts in"
-          aria-label="conformer ramp"
-          value={baseStyle.ramp}
-          onChange={(event) => setBaseStyle((style) => ({ ...style, ramp: event.target.value as ConformerRamp }))}
-        >
-          {CONFORMER_RAMP_NAMES.map((ramp) => (
-            <option key={ramp} value={ramp}>
-              {ramp}
-            </option>
-          ))}
-        </select>
       );
     }
     const metric = metricOfSource(row);
@@ -3060,7 +3079,10 @@ export default function HetstarViewer({
     [viewer, aTable],
   );
 
-  const onPrimaryLoaded = useCallback(() => setPrimaryLoaded(true), []);
+  const onPrimaryLoaded = useCallback(() => {
+    timingLoadedRef.current = true;
+    setPrimaryLoaded(true);
+  }, []);
   // the main model's loads ride the styling queue, so they never overlap another write to the tree
   const scheduleLoad = useCallback((load: () => Promise<void>) => runStyling("primary-load", load), [runStyling]);
   const ready = densityState === "ready";
@@ -3275,19 +3297,29 @@ export default function HetstarViewer({
                 onBoard={openColor}
               />
             </div>
-            {colorBoard.open && boardTargets.length > 0 && (
+            {colorBoard.open && scopedTargets.length > 0 && (
               <StyleBoard
-                targets={boardTargets}
-                groups={boardGroups}
+                kind={boardScope.kind}
+                title={boardTitle}
+                targets={scopedTargets}
+                tabs={boardTabs}
                 focus={colorBoard.focus}
                 onClose={closeColor}
                 tipFor={boardTip}
                 rowExtra={boardRowExtra}
+                defaultWidth={boardScope.kind === "all" ? 880 : 400}
+                defaultPlace={boardScope.kind === "sequence" ? { left: 8, bottom: 8 } : { right: 8, top: 34 }}
                 note={
-                  <span className="flex min-w-0 items-baseline gap-1" title="the model every comparison is made against; mark another with the ref button of its card">
-                    <span className="hs-label">ref</span>
-                    <span className="max-w-[160px] truncate text-[10.5px] text-ink">{referenceName ?? "none"}</span>
-                  </span>
+                  boardScope.kind === "sequence" ? (
+                    <span className="hs-label min-w-0 truncate" title="the residue letters of the sequence lane are coloured by a metric of the main view's model">
+                      of the main view&apos;s model
+                    </span>
+                  ) : (
+                    <span className="flex min-w-0 items-baseline gap-1" title="the model every comparison is made against; mark another with the ref button of its card">
+                      <span className="hs-label">ref</span>
+                      <span className="max-w-[160px] truncate text-[10.5px] text-ink">{referenceName ?? "none"}</span>
+                    </span>
+                  )
                 }
                 footer={
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[9.5px] text-ink-muted">
@@ -3389,40 +3421,60 @@ export default function HetstarViewer({
                 onResetAll={resetAll}
               />
             )}
-            {/* bottom-right: the switchboard dock */}
-            <div className="pointer-events-none absolute bottom-2 right-2 z-10 flex max-w-[calc(100%-1rem)] flex-col items-end gap-1.5">
-              {switchboard !== false && (
-                <ModelsSwitchboard
-                  mainViewer={viewer}
-                  primaryLoaded={primaryLoaded}
-                  entry={entry}
-                  mainId={mainModelId}
-                  mainTable={aTable}
-                  onMain={switchMain}
-                  pendingMainId={pendingMainId}
-                  referenceId={referenceId}
-                  onReference={setReferenceChoice}
-                  cards={cards}
-                  onCards={setCards}
-                  onBoxedModels={onBoxedModels}
-                  colors={identityColors}
-                  paints={paints.box}
-                  ramp={baseStyle.ramp}
-                  bundles={bundles}
-                  metrics={modelMetrics}
-                  onNeedStoredData={needStoredResidueData}
-                  preset={preset}
-                  selection={sel}
-                  selRepOverlays={selRepOverlays}
-                  hoverBus={hoverBus}
-                  clip={clip}
-                  onNavigate={navigateTo}
-                  onHoverResidue={onLaneHover}
-                  options={switchboardOptions}
-                />
-              )}
-            </div>
+            {/* bottom-right: the folded Models Switchboard's chip */}
+            {switchboard !== false && !switchboardOpen && (
+              <div className="pointer-events-none absolute bottom-2 right-2 z-10">
+                <button
+                  type="button"
+                  data-hetstar-part="switchboard-chip"
+                  title="show the Models Switchboard"
+                  aria-expanded={false}
+                  onClick={() => setSwitchboardOpen(true)}
+                  className={`pointer-events-auto flex h-6 items-center gap-1.5 pl-2.5 pr-2 ${CARD_SHELL} bg-surface-head shadow-[inset_2px_0_0_#663be4,0_6px_18px_rgba(26,30,42,0.1)]`}
+                >
+                  <span className="hs-chevron" aria-hidden />
+                  <span className="hs-head-title">Models Switchboard</span>
+                </button>
+              </div>
+            )}
           </div>
+
+          {switchboard !== false && (
+            <ModelsSwitchboard
+              open={switchboardOpen}
+              onOpen={setSwitchboardOpen}
+              mainViewer={viewer}
+              primaryLoaded={primaryLoaded}
+              entry={entry}
+              mainId={mainModelId}
+              mainTable={aTable}
+              onMain={switchMain}
+              pendingMainId={pendingMainId}
+              referenceId={referenceId}
+              onReference={setReferenceChoice}
+              cards={cards}
+              onCards={setCards}
+              onBoxedModels={onBoxedModels}
+              colors={identityColors}
+              paints={paints.models}
+              onStyle={openModelStyle}
+              styleModelId={colorBoard.open && boardScope.kind === "model" ? boardScope.modelId : null}
+              memberNumbers={ensembleInfo?.modelNums ?? []}
+              memberIndex={memberIndex}
+              onMember={setMember}
+              bundles={bundles}
+              metrics={modelMetrics}
+              onNeedStoredData={needStoredResidueData}
+              preset={preset}
+              selection={sel}
+              selRepOverlays={selRepOverlays}
+              hoverBus={hoverBus}
+              clip={clip}
+              onNavigate={navigateTo}
+              onHoverResidue={onLaneHover}
+              options={switchboardOptions}
+            />
+          )}
 
         </div>
 
@@ -3452,7 +3504,7 @@ export default function HetstarViewer({
                 onNaturalHeight={onNaturalHeight}
                 colorBy={sequenceColorBy}
                 colorLabel={colorSourceLabel(sequenceColorSource)}
-                onOpenColor={() => openColor(TARGET_SEQUENCE)}
+                onOpenColor={openSequenceColor}
                 onCollapse={() => setLanesOpen(false)}
                 selectionChip={
                   residueRanges.length > 0 ? (

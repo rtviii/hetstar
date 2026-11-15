@@ -78,7 +78,7 @@ export default function StyleTray({
         active={boardOpen}
         disabled={!ready}
         label="style board"
-        title="style: what each model, the map, the sequence and each replica are drawn as and coloured by"
+        title="style: what each model is drawn as and coloured by, and what the map is painted with"
         onClick={() => onBoard()}
       >
         <ColorIcon />

@@ -4,11 +4,12 @@ import { METRIC_GROUPS, METRIC_UI, metricLabel, type MetricId } from "../compare
 import type { TipContent } from "../compare/ui";
 
 // The style board's model. Everything in the viewer that has a look is a TARGET (each model
-// in the main view, its map, its sequence lane, each replica box), and everything a look is
-// made of is a ROW: what a model is drawn as, which of its parts show, and what colours it (a
-// look, a metric, the RSCC of a locus). A target says which rows it shows now, which it can
-// show, and how to switch; the board lays the two out against each other and knows nothing
-// else about either.
+// of the entry, the map, the sequence lane), and everything a look is made of is a ROW: what
+// a model is drawn as, which of its parts show, and what colours it (a look, a metric, the
+// RSCC of a locus). A target says which rows it shows now, which it can show, and how to
+// switch; the board lays the two out against each other and knows nothing else about either.
+// The same board is opened whole (every model and the map), for one model from its card, or
+// for the sequence lane from the lanes strip: the rows are the same catalogue each time.
 
 /** "none" | "look:ghost" | "look:<colour mode>" | "metric:<metric id>" | "locus:<locus id>" */
 export type ColorSourceId = string;
@@ -80,7 +81,7 @@ export type BoardCell =
   | null;
 
 export interface BoardTarget {
-  /** "scene:<model id>" | "main:map" | "main:sequence" | "box:<model id>" */
+  /** "model:<model id>" | "main:map" | "main:sequence" */
   id: string;
   /** the column group it stands under */
   group: string;
@@ -102,10 +103,19 @@ export interface BoardTarget {
   choose(row: BoardRowId): void;
 }
 
-export const sceneTarget = (modelId: string) => `scene:${modelId}`;
+export const modelTarget = (modelId: string) => `model:${modelId}`;
 export const TARGET_MAP = "main:map";
 export const TARGET_SEQUENCE = "main:sequence";
-export const boxTarget = (modelId: string) => `box:${modelId}`;
+
+/** what a board is opened on: everything, one model, or the sequence lane */
+export type BoardScope = { kind: "all" } | { kind: "model"; modelId: string } | { kind: "sequence" };
+export const SCOPE_ALL: BoardScope = { kind: "all" };
+
+export interface BoardTab {
+  id: string;
+  title: string;
+  groups: BoardGroup[];
+}
 
 export interface BoardRow {
   id: BoardRowId;
@@ -119,8 +129,6 @@ export interface BoardRow {
 export interface BoardGroup {
   id: string;
   title: string;
-  /** the stripe it stands under: shape first, colour after */
-  section: "Shape" | "Colour";
   rows: BoardRow[];
 }
 
@@ -137,13 +145,11 @@ export function shapeGroups(): BoardGroup[] {
     {
       id: "rep",
       title: "Representation",
-      section: "Shape",
       rows: REP_KINDS.map((kind) => ({ id: repRow(kind), label: REP_LABELS[kind] })),
     },
     {
       id: "parts",
       title: "Parts",
-      section: "Shape",
       rows: [
         { id: PART_HET, label: "Ligands", toggle: true },
         { id: PART_IONS, label: "Ions", toggle: true },
@@ -204,7 +210,6 @@ export function colorSourceGroups(args: {
     {
       id: "look",
       title: "Look",
-      section: "Colour",
       rows: [
         { id: SOURCE_NONE, label: "None" },
         { id: SOURCE_GHOST, label: "Ghost" },
@@ -214,7 +219,6 @@ export function colorSourceGroups(args: {
     ...METRIC_GROUPS.map((group) => ({
       id: group.id,
       title: group.title,
-      section: "Colour" as const,
       rows: group.ids.map((id) => ({ id: metricSource(id), label: metricLabel(id), ramp: METRIC_UI[id].colors })),
     })),
   ];
@@ -222,7 +226,6 @@ export function colorSourceGroups(args: {
     groups.push({
       id: "loci",
       title: "Loci",
-      section: "Colour",
       rows: args.loci.map((locus) => ({ id: locusSource(locus.id), label: `RSCC of ${locus.label}`, ramp: locus.ramp })),
     });
   }
@@ -256,10 +259,10 @@ const LOOK_TIPS: Record<RepColorMode, TipContent> = {
     is: "Pale chains; purple deepens with the number of conformers a residue has.",
     rows: [
       { label: "ligands", text: "One quiet hue per compound; ions grey." },
-      { label: "ramp", text: "Chosen at the end of this row; \"fade\" also ghosts single-conformer residues on the cartoon." },
+      { label: "cartoon", text: "Residues with one conformer are drawn translucent, so the others stand out." },
     ],
   },
-  model: { title: "Model", is: "One identity colour per model, the same in the main view, the switchboard and this board." },
+  model: { title: "Model", is: "One identity colour per model, the same in the main view, its replica and this board." },
   element: { title: "Element", is: "Heteroatoms in CPK colours; carbons keep the model's identity colour." },
   chain: { title: "Chain", is: "One colour per chain." },
 };
@@ -270,8 +273,8 @@ export function lookTip(source: ColorSourceId): TipContent | null {
   if (source === SOURCE_GHOST) {
     return {
       title: "Ghost",
-      is: "The model translucent in its identity colour: a silhouette behind the main view's model, or a replica that mirrored selections read through.",
-      rows: [{ label: "main view", text: "Not offered on its own model, which is the one picked and measured." }],
+      is: "The model translucent in its identity colour: a silhouette behind the main view's model, and a replica that mirrored selections read through.",
+      rows: [{ label: "main view", text: "Not offered on the main view's own model, which is the one picked and measured." }],
     };
   }
   const look = lookOfSource(source);

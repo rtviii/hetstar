@@ -14,7 +14,7 @@ import type { ResidueRange } from "../../lib/molstar/conformers";
 import type { ReplicaGlass } from "../../lib/molstar/replica";
 import type { SelRepOverlay } from "../../lib/molstar/selrep";
 import type { PickInfo } from "../../lib/molstar/viewer";
-import { EyeIcon, EyeOffIcon, MainViewIcon, ReplicaIcon } from "../compare/icons";
+import { ColorIcon, EyeIcon, EyeOffIcon, MainViewIcon, ReplicaIcon } from "../compare/icons";
 import { CARD_SHELL, PrismMark, Spinner, Tooltip } from "../compare/ui";
 
 /** residues hovered anywhere in the viewer (null: nothing hovered) */
@@ -92,7 +92,7 @@ function ReplicaCanvas({
   const lookRef = useRef(look);
   lookRef.current = look;
   const paint = look.paint;
-  const paintKey = paint.kind === "color" ? `${paint.mode}|${paint.ramp}` : paint.kind;
+  const paintKey = paint.kind === "color" ? paint.mode : paint.kind;
   const track = paint.kind === "track" ? paint.paint : null;
   useEffect(() => {
     viewer?.setLook(lookRef.current);
@@ -137,7 +137,7 @@ function ReplicaCanvas({
   const busy = !problem && (!viewer || !ready);
 
   return (
-    <div className="relative h-32 w-full border-b border-line bg-white" onContextMenu={(e) => e.preventDefault()}>
+    <div className="relative aspect-[4/3] max-h-64 w-full border-b border-line bg-white" onContextMenu={(e) => e.preventDefault()}>
       <div ref={containerRef} className="absolute inset-0" />
       {busy && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -190,10 +190,17 @@ interface ModelCardProps {
   look: ModelLook;
   computing: string | null;
   wiring: ReplicaWiring;
+  /** open the style board on this model alone */
+  onStyle: () => void;
+  /** its style board is the one open */
+  styleOpen: boolean;
+  /** the members of an ensemble; stepped through only while the model is the main view */
+  members: { count: number; index: number; number: number; onMember: (index: number) => void } | null;
 }
 
 // One model of the entry in the Models Switchboard: what it is, its replica when that is on,
-// and the switches that place it in the viewer (main view, drawn behind it, reference).
+// and the switches that place it in the viewer (main view, drawn behind it, reference). The
+// main view's model is the card ruled in the accent.
 export default function ModelCard({
   name,
   detail,
@@ -214,17 +221,21 @@ export default function ModelCard({
   look,
   computing,
   wiring,
+  onStyle,
+  styleOpen,
+  members,
 }: ModelCardProps) {
   const loading = bundle?.status === "loading";
   return (
-    <div className={`hs-dense pointer-events-auto flex w-48 flex-col overflow-hidden ${CARD_SHELL}`} data-main={isMain}>
+    <div className={`hs-dense flex shrink-0 flex-col overflow-hidden ${CARD_SHELL}`} data-main={isMain}>
       <div className="flex h-[22px] items-center gap-1 border-b border-line pl-1.5 pr-1 text-[10.5px] text-ink">
         <span className="hs-pip" style={{ background: hexCss(color) }} />
-        <Tooltip content={{ title: name, rows: detail }}>
-          <span className="block max-w-[136px] truncate">{name}</span>
-        </Tooltip>
-        {isMain && <span className="hs-tag hs-tag-accent ml-auto">main</span>}
-        {!isMain && (loading || mainPending) && <Spinner className="ml-auto h-3 w-3" />}
+        <span className="min-w-0 flex-1 truncate">
+          <Tooltip content={{ title: name, rows: detail }}>
+            <span className="block truncate">{name}</span>
+          </Tooltip>
+        </span>
+        {!isMain && (loading || mainPending) && <Spinner className="h-3 w-3" />}
       </div>
       {replica && loadable && <ReplicaCanvas bundle={bundle} color={color} look={look} computing={computing} wiring={wiring} />}
       <div className="flex h-[22px] items-center gap-px border-b border-line px-1">
@@ -275,6 +286,17 @@ export default function ModelCard({
         </button>
         <button
           type="button"
+          className={`hs-btn hs-btn-sm hs-btn-icon ${styleOpen ? "" : "hs-btn-quiet"}`}
+          aria-pressed={styleOpen}
+          disabled={!loadable}
+          title="style of this model alone: what it is drawn as and coloured by, wherever it is drawn"
+          aria-label={`style of ${name}`}
+          onClick={onStyle}
+        >
+          <ColorIcon />
+        </button>
+        <button
+          type="button"
           className={`hs-btn hs-btn-sm ml-auto ${isReference ? "" : "hs-btn-quiet"}`}
           aria-pressed={isReference}
           disabled={!loadable}
@@ -288,6 +310,52 @@ export default function ModelCard({
           ref
         </button>
       </div>
+      {members && members.count > 1 && (
+        <div
+          className="flex h-[22px] items-center gap-1 border-b border-line px-1"
+          title={
+            isMain
+              ? "the member of the ensemble on screen; the main view, the lanes and the metrics follow it"
+              : "the members are stepped through while this model is the main view; elsewhere its first member is drawn"
+          }
+        >
+          <span className="hs-seg" role="group" aria-label="ensemble member">
+            <button
+              type="button"
+              className="hs-btn hs-btn-sm hs-btn-icon"
+              disabled={!isMain || members.index <= 0}
+              aria-label="previous member"
+              onClick={() => members.onMember(members.index - 1)}
+            >
+              &minus;
+            </button>
+            <button
+              type="button"
+              className="hs-btn hs-btn-sm hs-btn-icon"
+              disabled={!isMain || members.index >= members.count - 1}
+              aria-label="next member"
+              onClick={() => members.onMember(members.index + 1)}
+            >
+              +
+            </button>
+          </span>
+          <input
+            type="range"
+            className="min-w-0 flex-1 accent-[#663be4]"
+            min={0}
+            max={members.count - 1}
+            step={1}
+            value={members.index}
+            disabled={!isMain}
+            aria-label="ensemble member"
+            onChange={(event) => members.onMember(Number(event.target.value))}
+          />
+          <span className="hs-value shrink-0 text-[9.5px]">
+            {members.number}
+            <span className="hs-unit"> {members.index + 1}/{members.count}</span>
+          </span>
+        </div>
+      )}
       <dl className="hs-kv px-1.5 py-1" style={{ ["--hs-kv-key" as string]: "52px" }}>
         {facts.map((fact) => (
           <Fragment key={fact.label}>

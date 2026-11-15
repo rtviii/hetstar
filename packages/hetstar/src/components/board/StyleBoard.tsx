@@ -1,27 +1,41 @@
 "use client";
-import { Fragment, type PointerEvent as ReactPointerEvent, type ReactNode, useRef, useState } from "react";
+import { type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { hexCss } from "../../lib/lab/color";
 import { EyeIcon, EyeOffIcon } from "../compare/icons";
 import { CARD_SHELL, PrismMark, type TipContent, Tooltip, useStoredFlag } from "../compare/ui";
-import type { BoardGroup, BoardRow, BoardRowId, BoardTarget } from "./board";
+import type { BoardGroup, BoardRow, BoardRowId, BoardTab, BoardTarget } from "./board";
 
-// The style board: one card for every choice of look in the viewer. Rows run down the side,
-// shape first (what a model is drawn as, which parts show) and colour after, grouped by
-// concept; targets run across the top; a cell is marked where the target shows the row, and
-// a click on a cell switches that target alone. The "all" column switches every target that
-// can show the row. The eye under a target's name shows or hides it and dims its column.
-// The card stays where it is put (drag its title stripe, drag its right edge to size it)
-// until the page is left.
+// The style board: a card of looks. Rows run down the side, grouped by concept, on one tab
+// for what colours a target and one for what a model is drawn as; targets run across the
+// top; a cell is marked where the target shows the row, and a click on a cell switches that
+// target alone. With several targets an "all" column switches every one that can show the
+// row. The eye under a target's name shows or hides it and dims its column. The board knows
+// nothing of what its targets are, so the same component is the whole board, the board of
+// one model and the board of the sequence lane. A card stays where it is put (drag its title
+// stripe, drag its right edge to size it) until the page is left; Escape closes it.
 
 const FOLD = "hetstar.color.fold.";
-const DEFAULT_TOP = 34;
 const EDGE = 8;
-const DEFAULT_WIDTH = 880;
-const MIN_WIDTH = 420;
+const MIN_WIDTH = 300;
 
-/** where the card was last put and how wide, kept while the page lives */
-let remembered: { place: { left: number; top: number } | null; width: number | null } = { place: null, width: null };
+export interface BoardPlace {
+  left?: number;
+  right?: number;
+  top?: number;
+  bottom?: number;
+}
+
+/** where each kind of board was last put, how wide and on which tab, kept while the page lives */
+const remembered = new Map<string, { place: { left: number; top: number } | null; width: number | null; tab: string | null }>();
+function recall(kind: string) {
+  let memory = remembered.get(kind);
+  if (!memory) {
+    memory = { place: null, width: null, tab: null };
+    remembered.set(kind, memory);
+  }
+  return memory;
+}
 
 function clamp(value: number, low: number, high: number): number {
   return Math.min(Math.max(value, low), Math.max(low, high));
@@ -45,7 +59,7 @@ function TargetCell({ target, row, focused }: { target: BoardTarget; row: BoardR
     return (
       <td data-focus={focused} data-off={off}>
         <span className="hs-cell">
-          <PrismMark size={10} label={`computing ${row.label} of ${target.title}`} />
+          <PrismMark size={16} label={`computing ${row.label} of ${target.title}`} />
         </span>
       </td>
     );
@@ -112,7 +126,7 @@ function GroupRows({
             <span className="hs-label text-ink-secondary">{group.title}</span>
           </button>
         </th>
-        <td className="hs-matrix-first" />
+        {targets.length > 1 && <td className="hs-matrix-first" />}
         {targets.map((target) => (
           <td key={target.id} data-off={target.visible === false}>
             {!open && group.rows.some((row) => target.shows(row.id)) && (
@@ -143,7 +157,7 @@ function GroupRows({
               <th scope="row" className="hs-matrix-name">
                 {tip ? <Tooltip content={tip}>{name}</Tooltip> : name}
               </th>
-              <AllCell targets={targets} row={row} />
+              {targets.length > 1 && <AllCell targets={targets} row={row} />}
               {targets.map((target) => (
                 <TargetCell key={target.id} target={target} row={row} focused={target.id === focus} />
               ))}
@@ -156,39 +170,79 @@ function GroupRows({
 }
 
 export default function StyleBoard({
-  targets,
-  groups,
+  kind,
+  title,
+  targets: everyTarget,
+  tabs: everyTab,
   focus,
   onClose,
   tipFor,
   rowExtra,
   note,
   footer,
+  defaultWidth = 880,
+  defaultPlace = { right: EDGE, top: 34 },
 }: {
+  /** which board this is ("all", "model", "sequence"): each kind keeps its own place and width */
+  kind: string;
+  title: string;
   targets: readonly BoardTarget[];
-  groups: readonly BoardGroup[];
+  tabs: readonly BoardTab[];
   /** the target whose button opened the board; its column is marked */
   focus: string | null;
   onClose: () => void;
   /** the explanation of a row, shown on its name */
   tipFor: (row: BoardRowId) => TipContent | null;
-  /** controls at a row's end (a representation's scale, a look's options, a metric's range) */
+  /** controls at a row's end (a representation's scale, a metric's range) */
   rowExtra?: (row: BoardRowId) => ReactNode;
   /** beside the title: what the comparisons are made against */
   note?: ReactNode;
   footer?: ReactNode;
+  defaultWidth?: number;
+  /** where the card opens until it is dragged */
+  defaultPlace?: BoardPlace;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
-  const [place, setPlaceState] = useState(remembered.place);
-  const [width, setWidthState] = useState(remembered.width);
+  const memory = recall(kind);
+  const [place, setPlaceState] = useState(memory.place);
+  const [width, setWidthState] = useState(memory.width);
+  const [tabId, setTabState] = useState(memory.tab);
+  // one component instance serves whichever kind is open
+  useEffect(() => {
+    const next = recall(kind);
+    setPlaceState(next.place);
+    setWidthState(next.width);
+    setTabState(next.tab);
+  }, [kind]);
   const setPlace = (next: { left: number; top: number }) => {
-    remembered = { ...remembered, place: next };
+    recall(kind).place = next;
     setPlaceState(next);
   };
   const setWidth = (next: number) => {
-    remembered = { ...remembered, width: next };
+    recall(kind).width = next;
     setWidthState(next);
   };
+  const setTab = (next: string) => {
+    recall(kind).tab = next;
+    setTabState(next);
+  };
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // a tab is offered when one of the targets can show one of its rows
+  const showsAny = (target: BoardTarget, groups: readonly BoardGroup[]) =>
+    groups.some((group) => group.rows.some((row) => target.cell(row.id) !== null));
+  const tabs = everyTab.filter((tab) => everyTarget.some((target) => showsAny(target, tab.groups)));
+  const tab = tabs.find((candidate) => candidate.id === tabId) ?? tabs[0];
+  const groups = tab?.groups ?? [];
+  const targets = everyTarget.filter((target) => showsAny(target, groups));
+  const several = targets.length > 1;
 
   const track = (onMove: (move: PointerEvent) => void) => {
     const onUp = () => {
@@ -239,28 +293,39 @@ export default function StyleBoard({
   }
   const share = `${Math.floor(88 / Math.max(1, targets.length))}%`;
 
-  const top = place?.top ?? DEFAULT_TOP;
+  const placed: BoardPlace = place ?? defaultPlace;
+  const room = placed.top !== undefined ? placed.top + EDGE : (placed.bottom ?? 0) + EDGE;
   return (
     <div
       ref={cardRef}
       data-hetstar-part="style-board"
+      data-board={kind}
       className={`absolute z-20 flex max-w-[calc(100%-16px)] flex-col overflow-hidden text-[10.5px] text-ink-secondary ${CARD_SHELL}`}
-      style={{
-        top,
-        left: place?.left,
-        right: place ? undefined : EDGE,
-        width: width ?? DEFAULT_WIDTH,
-        maxHeight: `calc(100% - ${top + EDGE}px)`,
-      }}
+      style={{ ...placed, width: width ?? defaultWidth, maxHeight: `calc(100% - ${room}px)` }}
     >
       <div className="hs-head cursor-move select-none" onPointerDown={startDrag} title="drag to move the board">
-        <span className="hs-head-title">Style</span>
+        <span className="hs-head-title">{title}</span>
+        {tabs.length > 1 && (
+          <span className="hs-seg ml-1" role="group" aria-label="what the board sets">
+            {tabs.map((candidate) => (
+              <button
+                key={candidate.id}
+                type="button"
+                className="hs-btn hs-btn-sm"
+                aria-pressed={candidate.id === tab?.id}
+                onClick={() => setTab(candidate.id)}
+              >
+                {candidate.title}
+              </button>
+            ))}
+          </span>
+        )}
         {note}
         <button
           type="button"
           className="hs-btn hs-btn-sm hs-btn-icon hs-btn-quiet ml-auto"
-          title="close the style board"
-          aria-label="close the style board"
+          title="close the board (Esc)"
+          aria-label="close the board"
           onClick={onClose}
         >
           {"×"}
@@ -270,36 +335,43 @@ export default function StyleBoard({
         <table className="hs-matrix">
           <colgroup>
             <col className="hs-matrix-namecol" />
-            <col className="hs-matrix-allcol" />
+            {several && <col className="hs-matrix-allcol" />}
             {targets.map((target) => (
-              <col key={target.id} style={{ width: share }} />
+              <col key={target.id} style={{ width: several ? share : undefined }} className={several ? undefined : "hs-matrix-onecol"} />
             ))}
-            <col className="hs-matrix-endcol" />
+            <col className={several ? "hs-matrix-endcol" : undefined} />
           </colgroup>
           <thead>
+            {spans.length > 1 && (
+              <tr className="hs-matrix-spans">
+                <th />
+                <th className="hs-matrix-first" />
+                {spans.map((span, index) => (
+                  <th key={index} colSpan={span.count} className="hs-matrix-span">
+                    <span className="hs-label text-[8.5px]">{span.title}</span>
+                  </th>
+                ))}
+                <th />
+              </tr>
+            )}
             <tr>
               <th />
-              <th className="hs-matrix-first" />
-              {spans.map((span, index) => (
-                <th key={index} colSpan={span.count} className="hs-matrix-span">
-                  <span className="hs-label text-[8.5px]">{span.title}</span>
+              {several && (
+                <th className="hs-matrix-col hs-matrix-first" title="every target that can show the row">
+                  <span className="hs-matrix-label">all</span>
                 </th>
-              ))}
-              <th />
-            </tr>
-            <tr>
-              <th />
-              <th className="hs-matrix-col hs-matrix-first" title="every target that can show the row">
-                <span className="hs-matrix-label">all</span>
-              </th>
+              )}
               {targets.map((target) => (
-                <th key={target.id} className="hs-matrix-col" data-focus={target.id === focus} data-off={target.visible === false}>
+                <th
+                  key={target.id}
+                  className="hs-matrix-col"
+                  data-focus={target.id === focus}
+                  data-main={target.main === true}
+                  data-off={target.visible === false}
+                >
                   <Tooltip content={target.tip}>
-                    <span className="flex flex-col items-center gap-0.5">
-                      <span className="flex items-center gap-1">
-                        {target.swatch !== null && <i className="hs-pip" style={{ background: hexCss(target.swatch) }} />}
-                        {target.main && <span className="hs-tag hs-tag-accent">main</span>}
-                      </span>
+                    <span className="flex items-center justify-center gap-1">
+                      {target.swatch !== null && <i className="hs-pip" style={{ background: hexCss(target.swatch) }} />}
                       <span className="hs-matrix-label">{target.label}</span>
                     </span>
                   </Tooltip>
@@ -307,42 +379,35 @@ export default function StyleBoard({
               ))}
               <th />
             </tr>
-            <tr className="hs-matrix-eyes">
-              <th className="hs-matrix-name">
-                <span className="hs-label text-[8.5px]">shown</span>
-              </th>
-              <th className="hs-matrix-first" />
-              {targets.map((target) => (
-                <th key={target.id} data-focus={target.id === focus}>
-                  {target.visible !== null && (
-                    <button
-                      type="button"
-                      className="hs-cell text-ink-secondary"
-                      aria-pressed={target.visible}
-                      title={`${target.visible ? "hide" : "show"} ${target.title}`}
-                      aria-label={`${target.visible ? "hide" : "show"} ${target.title}`}
-                      onClick={() => target.onVisible?.(!target.visible)}
-                    >
-                      {target.visible ? <EyeIcon /> : <EyeOffIcon />}
-                    </button>
-                  )}
+            {targets.some((target) => target.visible !== null) && (
+              <tr className="hs-matrix-eyes">
+                <th className="hs-matrix-name">
+                  <span className="hs-label text-[8.5px]">shown</span>
                 </th>
-              ))}
-              <th />
-            </tr>
+                {several && <th className="hs-matrix-first" />}
+                {targets.map((target) => (
+                  <th key={target.id} data-focus={target.id === focus}>
+                    {target.visible !== null && (
+                      <button
+                        type="button"
+                        className="hs-cell text-ink-secondary"
+                        aria-pressed={target.visible}
+                        title={`${target.visible ? "hide" : "show"} ${target.title}`}
+                        aria-label={`${target.visible ? "hide" : "show"} ${target.title}`}
+                        onClick={() => target.onVisible?.(!target.visible)}
+                      >
+                        {target.visible ? <EyeIcon /> : <EyeOffIcon />}
+                      </button>
+                    )}
+                  </th>
+                ))}
+                <th />
+              </tr>
+            )}
           </thead>
           <tbody>
-            {groups.map((group, index) => (
-              <Fragment key={group.id}>
-                {group.section !== groups[index - 1]?.section && (
-                  <tr className="hs-matrix-section">
-                    <th colSpan={targets.length + 3}>
-                      <span className="hs-label">{group.section}</span>
-                    </th>
-                  </tr>
-                )}
-                <GroupRows group={group} targets={targets} focus={focus} tipFor={tipFor} rowExtra={rowExtra} />
-              </Fragment>
+            {groups.map((group) => (
+              <GroupRows key={group.id} group={group} targets={targets} focus={focus} tipFor={tipFor} rowExtra={rowExtra} />
             ))}
           </tbody>
         </table>

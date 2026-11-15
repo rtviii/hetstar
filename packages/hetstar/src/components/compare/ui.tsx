@@ -159,12 +159,8 @@ export function Spinner({ className }: { className?: string }) {
 export function PrismMark({ size = 14, label = "computing" }: { size?: number; label?: string }) {
   return (
     <span className="hs-prism" role="status" aria-label={label} style={{ width: size, height: size }}>
-      <svg viewBox="0 0 250 250" aria-hidden="true">
-        <polygon points="24,169 77,169 24,222" />
-      </svg>
-      <svg viewBox="0 0 250 250" aria-hidden="true">
-        <polygon points="220,30 220,167 83,167" />
-      </svg>
+      <i aria-hidden="true" />
+      <i aria-hidden="true" />
     </span>
   );
 }
@@ -338,7 +334,7 @@ export function Tooltip({ content, children }: { content: ReactNode | TipContent
       {children}
       {pos && (
         <div
-          className={`pointer-events-none fixed z-50 w-72 p-2 font-sans text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary ${CARD_SHELL}`}
+          className={`pointer-events-none fixed z-50 w-72 whitespace-normal break-words p-2 text-left font-sans text-[11px] font-normal normal-case leading-snug tracking-normal text-ink-secondary ${CARD_SHELL}`}
           style={{ left: pos.x, top: pos.above ? undefined : pos.y, bottom: pos.above ? window.innerHeight - pos.y : undefined }}
         >
           {isTip(content) ? <TipCard tip={content} /> : content}

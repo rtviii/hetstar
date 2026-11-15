@@ -1,5 +1,5 @@
 "use client";
-import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react";
+import { type Dispatch, type PointerEvent as ReactPointerEvent, type SetStateAction, useEffect, useMemo, useState } from "react";
 import { Vec3 } from "molstar/lib/mol-math/linear-algebra";
 import { frameOffset } from "@dynamic-pdb/hetkit/metrics";
 import type { AtomTable, ResidueRef } from "@dynamic-pdb/hetkit/model";
@@ -12,7 +12,6 @@ import { altlocSummaryOf } from "../../lib/lab/model-bundle";
 import type { LabSelection } from "../../lib/lab/selection";
 import type { ModelLook } from "../../lib/molstar/appearance";
 import { createPoseGroup } from "../../lib/molstar/camera-sync";
-import type { ConformerRamp } from "../../lib/molstar/ghost-theme";
 import type { ReplicaGlass } from "../../lib/molstar/replica";
 import type { SelRepOverlay } from "../../lib/molstar/selrep";
 import { GHOST_B_COLOR } from "../../lib/molstar/style";
@@ -21,20 +20,28 @@ import type { MolstarViewer as ViewerInstance, PickInfo } from "../../lib/molsta
 import type { HetstarPreset } from "../../presets/types";
 import { lookOfSource, metricOfSource } from "../board/board";
 import { metricLabel } from "../compare/metrics";
-import { CARD_SHELL } from "../compare/ui";
 import { isLoadable, maxReplicas, OFF_FRAME_ANGSTROM, withCard, type ModelCards, type SwitchboardOptions } from "./cards";
 import ModelCard, { type HoverTarget, type ModelFact, type ReplicaWiring } from "./SwitchboardBox";
 
 // The Models Switchboard: the layer where the models of an entry are told apart and placed.
-// Every model has a card saying what it is, with the switches that make it the main view,
-// draw it behind the main view, mark it as the reference, and show its replica. A replica
-// is the WHOLE model in a small canvas turned exactly like the main view; it carries the
-// main view's selection, overrides and hover, and marks the region the main view is on, so
-// it reads as a minimap of that model and as a side-by-side of the entry's models.
+// A panel at the viewer's right edge, the models stacked in it; drag its left edge to size
+// it. Every model has a card saying what it is, with the switches that make it the main
+// view, draw it behind the main view, open its style, mark it as the reference, and show
+// its replica. A replica is the WHOLE model in a small canvas turned exactly like the main
+// view; it carries the main view's selection, overrides and hover, and marks the region the
+// main view is on, so it reads as a minimap of that model and as a side-by-side of the
+// entry's models.
 
 const VIEW_SPHERE_DEBOUNCE_MS = 150;
+const MIN_WIDTH = 208;
+const MAX_WIDTH = 560;
+/** the panel's width, kept while the page lives */
+let rememberedWidth = 272;
 
 interface ModelsSwitchboardProps {
+  /** the panel is unfolded; folded, the host shows a chip that opens it */
+  open: boolean;
+  onOpen: (open: boolean) => void;
   mainViewer: ViewerInstance | null;
   /** the main view finished loading its model */
   primaryLoaded: boolean;
@@ -58,10 +65,16 @@ interface ModelsSwitchboardProps {
   onBoxedModels: (modelIds: readonly string[]) => void;
   /** the identity colour of each model */
   colors: ReadonlyMap<string, number>;
-  /** the metric paint of each replica that shows one */
+  /** the metric paint of each model that shows one */
   paints: ReadonlyMap<string, TrackPaint>;
-  /** the ramp the conformer look counts in */
-  ramp: ConformerRamp;
+  /** open the style board on one model */
+  onStyle: (modelId: string) => void;
+  /** the model whose own style board is open */
+  styleModelId: string | null;
+  /** the members of the main view's model when it is an ensemble: their numbers as filed */
+  memberNumbers: readonly number[];
+  memberIndex: number;
+  onMember: (index: number) => void;
   bundles: ModelBundles;
   /** metrics of any model of the entry */
   metrics: ModelMetrics;
@@ -142,6 +155,8 @@ function modelFacts(
 }
 
 export default function ModelsSwitchboard({
+  open,
+  onOpen,
   mainViewer,
   primaryLoaded,
   entry,
@@ -156,7 +171,11 @@ export default function ModelsSwitchboard({
   onBoxedModels,
   colors,
   paints,
-  ramp,
+  onStyle,
+  styleModelId,
+  memberNumbers,
+  memberIndex,
+  onMember,
   bundles,
   metrics,
   onNeedStoredData,
@@ -170,7 +189,7 @@ export default function ModelsSwitchboard({
   options,
 }: ModelsSwitchboardProps) {
   const replicaCap = maxReplicas(options);
-  const [open, setOpen] = useState(options?.defaultOpen ?? true);
+  const [width, setWidth] = useState(rememberedWidth);
   const poseGroup = useMemo(() => createPoseGroup(), []);
 
   const models = useMemo(() => entry?.models ?? [], [entry]);
@@ -258,7 +277,7 @@ export default function ModelsSwitchboard({
     [preset.colorThemes, poseGroup, selection, selRepOverlays, hoverBus, glass, onHoverResidue, onNavigate],
   );
 
-  if (!entry || !mainId) return null;
+  if (!entry || !mainId || !open) return null;
 
   const nameOf = (id: string | null) => {
     const model = id ? models.find((candidate) => candidate.id === id) : undefined;
@@ -266,84 +285,109 @@ export default function ModelsSwitchboard({
   };
   const replicaAllowed = replicaIds.length < replicaCap;
 
+  // the left edge is dragged: the panel grows towards the canvas
+  const startResize = (event: ReactPointerEvent) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = width;
+    const onMove = (move: PointerEvent) => {
+      rememberedWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + startX - move.clientX));
+      setWidth(rememberedWidth);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
   return (
-    <div data-hetstar-part="switchboard" className="flex flex-col items-end gap-1.5">
-      {/* the dock's title stripe: the fold, then which model plays which part */}
+    <aside data-hetstar-part="switchboard" className="hs-panel relative flex shrink-0 flex-col border-l border-line bg-white" style={{ width }}>
       <div
-        className={`pointer-events-auto flex h-6 items-center gap-2.5 pl-2.5 pr-2 text-[10.5px] text-ink-secondary ${CARD_SHELL} bg-surface-head shadow-[inset_2px_0_0_#663be4,0_6px_18px_rgba(26,30,42,0.1)]`}
-      >
+        className="absolute inset-y-0 left-0 z-10 w-1.5 -translate-x-1/2 cursor-ew-resize hover:bg-accent/30"
+        title="drag to change the panel's width"
+        onPointerDown={startResize}
+      />
+      <div className="hs-head">
+        <span className="hs-head-title">Models Switchboard</span>
         <button
           type="button"
-          title="show or hide the model cards"
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-1.5"
+          className="hs-btn hs-btn-sm hs-btn-icon hs-btn-quiet ml-auto"
+          title="fold the Models Switchboard away"
+          aria-label="fold the Models Switchboard away"
+          onClick={() => onOpen(false)}
         >
-          <span className="hs-chevron" aria-hidden />
-          <span className="hs-head-title">Models Switchboard</span>
+          {"\u00bb"}
         </button>
-        {active && (
-          <span title="the model the main view holds; make another one the main view from its card" className="flex min-w-0 items-baseline gap-1">
-            <span className="hs-label">main</span>
-            <span className="max-w-[150px] truncate text-ink">{nameOf(mainId) ?? "none"}</span>
-          </span>
-        )}
-        {active && (
-          <span
-            title="the model the others are compared against; mark another one with the ref button of its card"
-            className="flex min-w-0 items-baseline gap-1"
-          >
-            <span className="hs-label">ref</span>
-            <span className="max-w-[150px] truncate text-ink">{nameOf(referenceId) ?? "none"}</span>
-          </span>
-        )}
       </div>
-      {active && (
-        <div className="flex flex-wrap-reverse items-end justify-end gap-1.5">
-          {models.map((model) => {
-            const card = cards[model.id];
-            if (!card) return null;
-            const state = bundles.states.get(model.id);
-            const isMain = model.id === mainId;
-            const paint = paints.get(model.id);
-            const mode = lookOfSource(card.box.color);
-            const look: ModelLook = {
-              rep: card.box.rep,
-              het: card.box.het,
-              ions: card.box.ions,
-              paint: paint ? { kind: "track", paint } : mode ? { kind: "color", mode, ramp } : { kind: "ghost" },
-            };
-            const name = modelDisplayName(model, models);
-            const boxMetric = metricOfSource(card.box.color);
-            const computing =
-              boxMetric && metrics.requested(model.id, boxMetric)?.status === "computing" ? `${metricLabel(boxMetric)} of ${name}` : null;
-            return (
-              <ModelCard
-                key={model.id}
-                name={name}
-                detail={modelDetailRows(model)}
-                facts={modelFacts(model, state, mainTable, isMain)}
-                color={colors.get(model.id) ?? GHOST_B_COLOR}
-                loadable={isLoadable(model)}
-                bundle={state}
-                isMain={isMain}
-                mainPending={pendingMainId === model.id}
-                onMain={() => onMain(model.id)}
-                sceneVisible={card.sceneVisible}
-                onSceneVisible={() => setCards((previous) => withCard(previous, model.id, (c) => ({ ...c, sceneVisible: !c.sceneVisible })))}
-                isReference={model.id === referenceId}
-                onReference={() => onReference(model.id === referenceId ? null : model.id)}
-                replica={card.replica}
-                replicaAllowed={replicaAllowed}
-                onReplica={() => setCards((previous) => withCard(previous, model.id, (c) => ({ ...c, replica: !c.replica })))}
-                look={look}
-                computing={computing}
-                wiring={wiring}
-              />
-            );
-          })}
-        </div>
-      )}
-    </div>
+      <div className="flex h-[22px] shrink-0 items-center gap-3 border-b border-line px-2.5 text-[10.5px] text-ink-secondary">
+        <span title="the model the others are compared against; mark another one with the ref button of its card" className="flex min-w-0 items-baseline gap-1">
+          <span className="hs-label">ref</span>
+          <span className="truncate text-ink">{nameOf(referenceId) ?? "none"}</span>
+        </span>
+        <span className="hs-label ml-auto shrink-0" title="replicas on, of the most that can be on at once">
+          {replicaIds.length}/{replicaCap} replicas
+        </span>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto bg-surface-muted p-2">
+        {!primaryLoaded && <span className="hs-label px-0.5">waiting for the main view</span>}
+        {models.map((model) => {
+          const card = cards[model.id];
+          if (!card) return null;
+          const state = bundles.states.get(model.id);
+          const isMain = model.id === mainId;
+          const paint = paints.get(model.id);
+          const mode = lookOfSource(card.look.color);
+          const look: ModelLook = {
+            rep: card.look.rep,
+            het: card.look.het,
+            ions: card.look.ions,
+            paint: paint ? { kind: "track", paint } : mode ? { kind: "color", mode } : { kind: "ghost" },
+          };
+          const name = modelDisplayName(model, models);
+          const metric = metricOfSource(card.look.color);
+          const computing = metric && metrics.requested(model.id, metric)?.status === "computing" ? `${metricLabel(metric)} of ${name}` : null;
+          const bundle = state?.status === "ready" ? state.bundle : null;
+          const memberCount = isMain ? memberNumbers.length : (bundle?.ensemble?.modelCount ?? 0);
+          return (
+            <ModelCard
+              key={model.id}
+              name={name}
+              detail={modelDetailRows(model)}
+              facts={modelFacts(model, state, mainTable, isMain)}
+              color={colors.get(model.id) ?? GHOST_B_COLOR}
+              loadable={isLoadable(model)}
+              bundle={state}
+              isMain={isMain}
+              mainPending={pendingMainId === model.id}
+              onMain={() => onMain(model.id)}
+              sceneVisible={card.sceneVisible}
+              onSceneVisible={() => setCards((previous) => withCard(previous, model.id, (c) => ({ ...c, sceneVisible: !c.sceneVisible })))}
+              isReference={model.id === referenceId}
+              onReference={() => onReference(model.id === referenceId ? null : model.id)}
+              replica={active && card.replica}
+              replicaAllowed={replicaAllowed}
+              onReplica={() => setCards((previous) => withCard(previous, model.id, (c) => ({ ...c, replica: !c.replica })))}
+              look={look}
+              computing={computing}
+              wiring={wiring}
+              onStyle={() => onStyle(model.id)}
+              styleOpen={styleModelId === model.id}
+              members={
+                memberCount > 1
+                  ? {
+                      count: memberCount,
+                      index: isMain ? memberIndex : 0,
+                      number: isMain ? (memberNumbers[memberIndex] ?? memberIndex + 1) : 1,
+                      onMember,
+                    }
+                  : null
+              }
+            />
+          );
+        })}
+      </div>
+    </aside>
   );
 }

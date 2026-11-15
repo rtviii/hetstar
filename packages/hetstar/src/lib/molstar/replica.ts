@@ -279,7 +279,6 @@ export class ReplicaViewer {
       ...DEFAULT_REP_STYLE,
       type: repTypeOfKind(this.look.rep),
       colorMode: paint.kind === "color" ? paint.mode : "model",
-      ramp: paint.kind === "color" ? paint.ramp : DEFAULT_REP_STYLE.ramp,
     };
   }
 

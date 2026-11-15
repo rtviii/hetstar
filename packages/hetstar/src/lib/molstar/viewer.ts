@@ -30,6 +30,7 @@ import {
   STYLIZED_POSTPROCESSING,
   WHITE_BACKGROUND,
 } from "./style";
+import { timing } from "../lab/timing";
 
 // Structures are built from the model as deposited (the asymmetric unit). Left to its
 // default, Mol* builds biological assembly 1 whenever the file carries assemblies (every
@@ -150,8 +151,10 @@ export class MolstarViewer {
     this.primaryDataRef = raw.ref;
     const trajectory = await this.ctx.builders.structure.parseTrajectory(raw, "mmcif");
     if (!this.ctx) throw new Error("Viewer disposed during load");
+    timing.mark("Mol* parse");
     this.trajectoryRef = trajectory.ref;
     await this.buildRepresentation(trajectory, opts.view ?? DEFAULT_VIEW);
+    timing.mark("first build of the model");
   }
 
   /**
@@ -163,6 +166,7 @@ export class MolstarViewer {
   async replacePrimary(data: string | Uint8Array, opts: { label?: string; view?: StructureView } = {}): Promise<void> {
     if (!this.ctx) throw new Error("Viewer not initialized");
     const previous = this.primaryDataRef;
+    timing.mark("React render and queue wait");
     this.modelRef = null;
     this.modelCount = 1;
     this.trajectoryRef = null;
@@ -176,6 +180,7 @@ export class MolstarViewer {
         removeParentGhosts: true,
       });
     }
+    timing.mark("old model's subtree removed");
     await this.load(data, opts);
   }
 

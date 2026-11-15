@@ -4,19 +4,17 @@ import { GHOST_B_COLOR, MODEL_A_COLOR } from "../../lib/molstar/style";
 import { SOURCE_GHOST, type Appearance, type ColorSourceId } from "../board/board";
 
 // What the viewer holds about each model of the loaded entry besides its file: whether its
-// replica is on in the switchboard, whether it is drawn in the main view, and how it looks
-// in each of the two. One record per model, kept by the host, read by the switchboard and
-// the style board alike.
+// replica is on in the switchboard, whether it is drawn in the main view, and how it looks.
+// A model has ONE look, the same in the main view and in its replica. One record per model,
+// kept by the host, read by the switchboard and the style board alike.
 
 export interface ModelCard {
   /** its replica canvas is on in the switchboard */
   replica: boolean;
   /** it is drawn in the main view (as the main model, or behind it) */
   sceneVisible: boolean;
-  /** how it looks in the main view */
-  scene: Appearance;
-  /** how its replica looks */
-  box: Appearance;
+  /** how it looks, wherever it is drawn */
+  look: Appearance;
 }
 
 export type ModelCards = Readonly<Record<string, ModelCard>>;
@@ -95,8 +93,7 @@ export function initialModelCards(
     cards[model.id] = {
       replica,
       sceneVisible: isMain || (model.role === "deposited" && isLoadable(model)),
-      scene: { color: isMain ? look.color : SOURCE_GHOST, rep: look.rep, het: true, ions: true },
-      box: { color: SOURCE_GHOST, rep: "cartoon", het: true, ions: true },
+      look: { color: isMain ? look.color : SOURCE_GHOST, rep: look.rep, het: true, ions: true },
     };
   }
   return cards;
@@ -105,4 +102,21 @@ export function initialModelCards(
 export function withCard(cards: ModelCards, modelId: string, change: (card: ModelCard) => ModelCard): ModelCards {
   const card = cards[modelId];
   return card ? { ...cards, [modelId]: change(card) } : cards;
+}
+
+/**
+ * The cards after the main view moved from one model to another. Every model keeps its own
+ * look, with one exception: a model that was a ghost cannot be the main view as one, so it
+ * takes the look of the model it replaces, which becomes the ghost.
+ */
+export function withMainMoved(cards: ModelCards, fromId: string, toId: string): ModelCards {
+  const from = cards[fromId];
+  const to = cards[toId];
+  if (!from || !to) return cards;
+  if (to.look.color !== SOURCE_GHOST) return { ...cards, [toId]: { ...to, sceneVisible: true } };
+  return {
+    ...cards,
+    [fromId]: { ...from, look: { ...from.look, color: SOURCE_GHOST } },
+    [toId]: { ...to, sceneVisible: true, look: { ...to.look, color: from.look.color } },
+  };
 }
