@@ -13,26 +13,35 @@ would need from that API.
   it, and it is collapsed to its highest-occupancy conformer by default and expandable per
   residue. The others stand behind it as translucent ghosts, each shown or hidden on its own;
   the deposited model is shown on load. Any model becomes the main view from its card in the
-  Models Switchboard, in place: the maps, the camera, the selection and the clip sphere stay.
-  A multi-model ensemble loads with a frame scrubber and per-residue RMSF.
-- The Models Switchboard: one card per model of the entry, saying what it is (kind, software,
-  R-work and R-free, altlocs or members, distance from the main model as filed), with switches
-  for main view, drawn in the main view, reference, and its replica (the model alone in a
-  small canvas turned like the main view).
+  Models Switchboard, in place: the maps, the camera, the selection and the clip sphere stay,
+  and a model that returns as the main view gets back the member and the expanded conformers
+  it was left on. A multi-model ensemble loads with a member stepper on its card and
+  per-residue RMSF.
+- The Models Switchboard: a panel at the right edge of the viewer, resizable by its left edge,
+  with one card per model of the entry stacked in it. A card says what the model is (kind,
+  software, R-work and R-free, altlocs or members, distance from the main model as filed) and
+  carries switches for main view, drawn in the main view, its replica (the model alone in a
+  small canvas turned like the main view), its style, and reference. The main view's model is
+  the card ruled in the accent colour.
 - Experimental density computed in the browser. The deposited structure factors (sf-cif) are
   FFT'd by Mol* into 2Fo-Fc and Fo-Fc maps, then carved around the model. Sigma, opacity and
   clip controls are available. Density loads in the background and is off until toggled.
 - Per-residue metrics from `@dynamic-pdb/hetkit`: conformer count, occupancy entropy, mean
   B-iso, bond variability, ensemble RMSF, model A vs B RMSD, altloc RMSF delta, and Fo-Fc
-  mean, peak and support delta.
-- One style board for every choice of look. Its rows are what a look is made of: shape first
-  (cartoon, cartoon with side chains, sticks, atoms; ligands and ions on or off), then the
-  sources of colour grouped by concept (looks, motion, heterogeneity, comparisons, fit to the
-  map, stored values, loci). Its columns are the things that have a look: each model drawn in
-  the main view, the 2Fo-Fc map, the sequence lane, each replica. A cell switches one target,
-  the "all" column every target that can show the row, and the eye under a column's name
-  shows or hides that target. A metric is coloured on one range in every 3D view showing it;
-  the range is printed at the end of its row.
+  mean, peak and support delta. Two are computed only when asked for, against the 2Fo-Fc map:
+  RSCC and Q-score (MapQ's definition, with symmetry copies as neighbours and an altloc rule
+  of its own; not yet checked against MapQ or ChimeraX on an entry).
+- One style board for every choice of look. A model has one look, the same in the main view
+  and in its replica. The board has two tabs: Colour (the sources of colour grouped by
+  concept: looks, motion, heterogeneity, comparisons, fit to the map, stored values, loci) and
+  Representation (cartoon, cartoon with side chains, sticks, atoms; ligands and ions on or
+  off). Its columns are the things that have a look: each model that is drawn somewhere, and
+  the 2Fo-Fc map. A cell switches one target, the "all" column every target that can show the
+  row, and the eye under a column's name shows or hides that target. A metric is coloured on
+  one range in every 3D view showing it; the range is printed at the end of its row. The same
+  board opens on one model alone from the style button of its card, and on the sequence lane
+  alone from the colour button of the lanes strip: the rows are one catalogue, so the three
+  never differ in what they offer. Escape closes a board.
 - A sequence lane viewer under the canvas: one chain at a time, secondary structure, PDBe
   domain and modification annotations, ligand contacts, and metric plots, all linked to the 3D
   selection.
@@ -93,8 +102,8 @@ import "@dynamic-pdb/hetstar/styles.css";
 - `modelId` is the model the main view opens on; omitted, the viewer picks (qFit, else the
   ensemble, else the deposited model). Changing it while `entryId` stays the same switches the
   main view in place, as the card's own switch does.
-- `switchboard` controls the Models Switchboard, the dock of model cards at the bottom right
-  of the canvas (`packages/hetstar/src/components/switchboard/`). It is on by default; `false`
+- `switchboard` controls the Models Switchboard, the panel of model cards at the right edge
+  of the viewer (`packages/hetstar/src/components/switchboard/`). It is on by default; `false`
   removes it, and `{ defaultOpen, boxes, maxBoxes }` sets whether it starts open, whether an
   entry opens with a replica for every model whose file is small (the default, `boxes: "all"`)
   or for the main view's model alone (`boxes: "primary"`), and how many replicas it allows (4
@@ -105,8 +114,10 @@ import "@dynamic-pdb/hetstar/styles.css";
   hover and selection representations, and draws a translucent sphere where the main view is
   (its clip sphere, or what its camera frames once zoomed in). Rotating any view rotates all
   of them; clicking a residue in a replica sends the main view there. Hosts that need
-  to find the dock or the top-right tray in the DOM can use `[data-hetstar-part="switchboard"]`
-  and `[data-hetstar-part="tray"]`.
+  to find the panel or the top-right tray in the DOM can use `[data-hetstar-part="switchboard"]`
+  and `[data-hetstar-part="tray"]`. To time a switch of the main view, set
+  `localStorage["hetstar.timing"] = "1"` (or add `?hetstar-timing` to the URL): each switch
+  prints one table of its steps to the console.
 - It is client-only. Mol* needs `window` and WebGL, so render it through
   `next/dynamic(..., { ssr: false })`.
 - It ships raw TypeScript (like hetkit), so a Next host needs both packages in
