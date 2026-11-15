@@ -352,7 +352,7 @@ export function metricTooltip(id: MetricId, prov: MetricProvenance): TipContent 
         is: metricDescription(id),
         rows: [
           { label: "motion", text: registry("motion-total") },
-          { label: "compared", text: "The two models of the main view and every model that has a box in the switchboard." },
+          { label: "compared", text: "Every model drawn in the main view and every model whose replica is on in the switchboard." },
           { label: "weights", text: WEIGHTS_NOTE },
           { label: "frame", text: FRAME_NOTE },
         ],

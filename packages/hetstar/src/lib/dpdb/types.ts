@@ -90,18 +90,27 @@ function loadable(m: EntryManifest, x: ManifestModel): LoadableModel {
   return x as LoadableModel;
 }
 
-/**
- * The A/B pair this pass renders. A host that picked a model gets that model as A; otherwise
- * qFit, else an ensemble, else the deposited model. B is the deposited model unless A is it.
- */
-export function pickPair(m: EntryManifest, modelId?: string | null): { a: LoadableModel; b: LoadableModel | null } {
+/** the model an entry opens on when the host names none: qFit, else an ensemble, else the deposited model */
+export function defaultMainModel(models: readonly ManifestModel[]): ManifestModel | null {
+  return (
+    models.find((x) => x.role === "qfit") ??
+    models.find((x) => x.role === "ensemble") ??
+    models.find((x) => x.role === "deposited") ??
+    null
+  );
+}
+
+/** The model the main view opens on: the one the host picked, else the entry's default. */
+export function pickMainModel(m: EntryManifest, modelId?: string | null): LoadableModel {
   if (modelId && !m.models.some((x) => x.id === modelId)) throw new Error(`${m.pdbId} has no model ${modelId}`);
-  const a = modelId
-    ? m.models.find((x) => x.id === modelId)
-    : (m.models.find((x) => x.role === "qfit") ??
-      m.models.find((x) => x.role === "ensemble") ??
-      m.models.find((x) => x.role === "deposited"));
-  if (!a) throw new Error(`${m.pdbId} has no loadable model (qFit, ensemble or deposited)`);
-  const b = a.role === "deposited" ? null : (m.models.find((x) => x.role === "deposited") ?? null);
-  return { a: loadable(m, a), b: b ? loadable(m, b) : null };
+  const main = modelId ? m.models.find((x) => x.id === modelId) : defaultMainModel(m.models);
+  if (!main) throw new Error(`${m.pdbId} has no loadable model (qFit, ensemble or deposited)`);
+  return loadable(m, main);
+}
+
+/** The deposited model when its file can be loaded: the entry's own header, polymer scheme
+ * and secondary structure are read from it. */
+export function depositedModel(m: EntryManifest): LoadableModel | null {
+  const deposited = m.models.find((x) => x.role === "deposited" && x.url && x.format);
+  return deposited ? (deposited as LoadableModel) : null;
 }

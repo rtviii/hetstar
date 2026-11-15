@@ -4,7 +4,7 @@ import { GroupLabel, HintMark, SwitchButton, TinyText } from "./ui";
 
 // The maps themselves: which are drawn, the 2Fo-Fc contour, their opacity and the grid they
 // are carved at. One row per knob. What the 2Fo-Fc surface is painted with belongs to the
-// colour board; the last row names it and opens the board on the map. Rendered inside the
+// style board; the last row names it and opens the board on the map. Rendered inside the
 // tray's flyout on the density icon (whose CLICK toggles the maps); state lives in
 // HetstarViewer.
 
@@ -43,7 +43,7 @@ export default function DensityFlyout({
   onDensityQuality: (q: DensityQuality) => void;
   /** what the 2Fo-Fc surface is painted with, by name */
   paintLabel: string;
-  /** open the colour board on the map */
+  /** open the style board on the map */
   onOpenColor: () => void;
 }) {
   return (
@@ -139,7 +139,7 @@ export default function DensityFlyout({
         <button
           type="button"
           className="hs-btn min-w-0 justify-start normal-case tracking-normal"
-          title="what the 2Fo-Fc surface is painted with; opens the colour board on the map"
+          title="what the 2Fo-Fc surface is painted with; opens the style board on the map"
           onClick={onOpenColor}
         >
           <span className="truncate">{paintLabel}</span>

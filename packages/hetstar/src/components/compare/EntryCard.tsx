@@ -280,7 +280,7 @@ export default function EntryCard({
 
       {stats && (
         <Section
-          title="Model A"
+          title="Main model"
           storageKey={`${FOLD}model`}
           summary={`${stats.polymerResidues.toLocaleString()} res${stats.splitResidues > 0 ? ` · ${splitPercent}% alt` : ""}`}
         >

@@ -350,31 +350,38 @@
 .hetstar .hs-dense a { color: #663be4; }
 .hetstar .hs-dense a:hover { text-decoration: underline; }
 
-/* The colour board: sources down the side, targets across the top, one mark per cell. */
-.hetstar .hs-matrix { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+/* The style board: rows down the side, targets across the top, one mark per cell. The
+   table fills its card; the name and row-end columns keep to their content and the target
+   columns share what is left. */
+.hetstar .hs-matrix { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .hetstar .hs-matrix th, .hetstar .hs-matrix td { padding: 0; font-weight: 400; text-align: left; }
-.hetstar .hs-matrix thead th { position: sticky; z-index: 2; background: #ffffff; }
-.hetstar .hs-matrix thead tr:first-child th { top: 0; height: 15px; }
-.hetstar .hs-matrix thead tr:last-child th { top: 15px; height: 26px; box-shadow: 0 1px 0 #d0d2e0; }
-.hetstar .hs-matrix .hs-matrix-span { padding: 0 4px; border-left: 1px solid #e6e7f0; }
+.hetstar .hs-matrix thead { position: sticky; top: 0; z-index: 2; }
+.hetstar .hs-matrix thead th { background: #ffffff; }
+.hetstar .hs-matrix thead tr:first-child th { height: 15px; }
+.hetstar .hs-matrix thead tr:last-child th { box-shadow: 0 1px 0 #d0d2e0; }
+.hetstar .hs-matrix .hs-matrix-namecol, .hetstar .hs-matrix .hs-matrix-endcol { width: 1%; }
+.hetstar .hs-matrix .hs-matrix-allcol { width: 40px; }
+.hetstar .hs-matrix .hs-matrix-span { padding: 0 4px; border-left: 1px solid #e6e7f0; white-space: nowrap; }
 .hetstar .hs-matrix .hs-matrix-col {
-  width: 40px;
-  min-width: 40px;
-  max-width: 40px;
+  min-width: 56px;
   text-align: center;
   vertical-align: bottom;
-  padding-bottom: 2px;
+  padding: 2px 3px;
 }
-.hetstar .hs-matrix .hs-matrix-col > span {
-  display: block;
+.hetstar .hs-matrix .hs-matrix-label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-family: var(--font-plex-mono), ui-monospace, monospace;
-  font-size: 8.5px;
+  font-size: 9.5px;
   line-height: 1.2;
-  color: #3d414f;
+  color: #1a1e2a;
 }
+.hetstar .hs-matrix .hs-matrix-end { padding: 0 8px 0 6px; white-space: nowrap; }
+.hetstar .hs-matrix .hs-matrix-section > th { height: 16px; padding: 0 10px; background: #ece8fb; box-shadow: inset 2px 0 0 #663be4, 0 1px 0 #d9d2f3; }
+.hetstar .hs-matrix [data-off="true"] > * { opacity: 0.3; }
+.hetstar .hs-matrix thead th[data-off="true"] > * { opacity: 0.45; }
 .hetstar .hs-matrix .hs-matrix-first { border-left: 1px solid #e6e7f0; }
 .hetstar .hs-matrix [data-focus="true"] { background: #f1edfd; }
 .hetstar .hs-matrix thead th[data-focus="true"] { background: #f1edfd; }

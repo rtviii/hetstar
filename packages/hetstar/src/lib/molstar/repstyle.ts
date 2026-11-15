@@ -28,6 +28,19 @@ import { buildComponentQuery, mergeExpressions } from "./queries";
 // lab-polymer / lab-het / lab-ion so applyRepStyle knows each component's role.
 
 export type RepType = "ball-and-stick" | "spacefill" | "cartoon";
+/** what a model's polymer is drawn as, as the style board offers it: a Mol* type, or the
+ * trace with its side chains as sticks on top (an overlay component, lib/molstar/appearance.ts) */
+export type RepKind = RepType | "cartoon-sticks";
+export const REP_KINDS: readonly RepKind[] = ["cartoon", "cartoon-sticks", "ball-and-stick", "spacefill"];
+export function repTypeOfKind(kind: RepKind): RepType {
+  return kind === "cartoon-sticks" ? "cartoon" : kind;
+}
+/** the bounds of each representation type's size factor, as the style board offers it */
+export const REP_SCALE_RANGE: Record<RepType, { min: number; max: number; step: number }> = {
+  "ball-and-stick": { min: 0.05, max: 0.5, step: 0.01 },
+  spacefill: { min: 0.1, max: 2, step: 0.05 },
+  cartoon: { min: 0.05, max: 1, step: 0.05 },
+};
 /** "conformer": the structure-card look — ghost chains, purple ramp by conformer count, ligand hues */
 export type RepColorMode = "conformer" | "model" | "element" | "chain";
 export type RepQuality = "auto" | "high" | "medium" | "low";
@@ -128,7 +141,7 @@ function componentKind(c: StructureComponentRef): string | null {
   return t?.name === "static" ? (t.params as string) : null;
 }
 
-function componentRole(c: StructureComponentRef): LabRole | null {
+export function componentRole(c: StructureComponentRef): LabRole | null {
   const tags = c.cell.transform.tags;
   if (!tags) return null;
   if (tags.includes(LAB_TAG.polymer)) return "polymer";

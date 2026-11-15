@@ -80,6 +80,9 @@ export class MolstarViewer {
   // State ref of the primary structure (the one load()/buildRepresentation created), so callers can
   // target its hierarchy components (transparency/overpaint/clip) without guessing indices.
   private primaryStructureRef: string | null = null;
+  // State ref of the primary's raw data node: the root of everything load() built, so the
+  // primary can be swapped without touching the density or the other models in the tree.
+  private primaryDataRef: string | null = null;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async init(container: HTMLElement, colorThemes: readonly ColorTheme.Provider<any, any>[] = []): Promise<void> {
@@ -144,6 +147,7 @@ export class MolstarViewer {
       label: opts.label,
     });
     if (!this.ctx) throw new Error("Viewer disposed during load");
+    this.primaryDataRef = raw.ref;
     const trajectory = await this.ctx.builders.structure.parseTrajectory(raw, "mmcif");
     if (!this.ctx) throw new Error("Viewer disposed during load");
     this.trajectoryRef = trajectory.ref;
@@ -151,20 +155,45 @@ export class MolstarViewer {
   }
 
   /**
+   * Swap the primary model for another one of the same scene: only the primary's own
+   * subtree is removed, so the density and the other models stay where they are. The camera
+   * is left alone. Root-level nodes built from the old primary's atoms (bond dashes,
+   * measurements) are the caller's to remove first.
+   */
+  async replacePrimary(data: string | Uint8Array, opts: { label?: string; view?: StructureView } = {}): Promise<void> {
+    if (!this.ctx) throw new Error("Viewer not initialized");
+    const previous = this.primaryDataRef;
+    this.modelRef = null;
+    this.modelCount = 1;
+    this.trajectoryRef = null;
+    this.primaryStructureRef = null;
+    this.primaryDataRef = null;
+    this.prevHighlight = null;
+    if (previous) {
+      await PluginCommands.State.RemoveObject(this.ctx, {
+        state: this.ctx.state.data,
+        ref: previous,
+        removeParentGhosts: true,
+      });
+    }
+    await this.load(data, opts);
+  }
+
+  /**
    * Add a SECOND structure to the existing state tree without touching the primary
    * load/clear lifecycle or the frame-scrubbing refs. Rendered ball-and-stick in one
    * uniform color so the two models read apart. With `split` the components are the
    * lab's tagged expression components (lab-polymer/het/ion — what applyRepStyle
-   * expects) instead of Mol*'s static kinds. Returns the structure's state ref
-   * (toggle it with setSubtreeVisibility; a viewer.clear() removes it with everything
-   * else). The representations are born hidden: the caller reveals them once its own
-   * styling (ghost transparency, rep style) is on, so the opaque first build never
-   * shows. Format defaults to mmCIF.
+   * expects) instead of Mol*'s static kinds. Returns the structure's state ref (toggle it
+   * with setSubtreeVisibility) and its data ref (remove it to drop the model; a
+   * viewer.clear() removes it with everything else). The representations are born hidden:
+   * the caller reveals them once its own styling (ghost transparency, rep style) is on, so
+   * the opaque first build never shows. Format defaults to mmCIF.
    */
   async loadSecondary(
     data: string | Uint8Array,
     opts: { label?: string; format?: "mmcif" | "pdb"; color?: number; split?: CompSplit } = {},
-  ): Promise<string | null> {
+  ): Promise<{ structureRef: string; dataRef: string } | null> {
     const ctx = this.ctx;
     if (!ctx) throw new Error("Viewer not initialized");
     const raw = await ctx.builders.data.rawData({
@@ -216,7 +245,7 @@ export class MolstarViewer {
     // intercept picks meant for the primary (PickInfo carries no structure identity, so a
     // pick through the ghost would silently drive primary-side actions on the wrong model).
     setReprsPickable(ctx, reprRefs, false);
-    return structure.ref;
+    return { structureRef: structure.ref, dataRef: raw.ref };
   }
 
   // Build the structure from the trajectory's first model and render it with the requested
@@ -286,6 +315,7 @@ export class MolstarViewer {
     this.modelCount = 1;
     this.trajectoryRef = null;
     this.primaryStructureRef = null;
+    this.primaryDataRef = null;
     this.prevHighlight = null;
     if (!this.ctx) return;
     await PluginCommands.State.RemoveObject(this.ctx, {
@@ -304,8 +334,10 @@ export class MolstarViewer {
 
   // --- structure access (for building queries) ---
 
+  /** the primary model's structure (other models share the tree, so never "the first one") */
   getCurrentStructure(): Structure | undefined {
-    return this.ctx?.managers.structure.hierarchy.current.structures[0]?.cell.obj?.data;
+    if (!this.ctx || !this.primaryStructureRef) return undefined;
+    return this.ctx.state.data.cells.get(this.primaryStructureRef)?.obj?.data as Structure | undefined;
   }
 
   getPrimaryStructureRef(): string | null {

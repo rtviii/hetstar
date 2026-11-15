@@ -786,9 +786,12 @@
   text-decoration: underline;
 }
 
-/* The colour board: sources down the side, targets across the top, one mark per cell. */
+/* The style board: rows down the side, targets across the top, one mark per cell. The
+   table fills its card; the name and row-end columns keep to their content and the target
+   columns share what is left. */
 
 .hetstar .hs-matrix {
+  width: 100%;
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;
 }
@@ -799,46 +802,74 @@
   text-align: left;
 }
 
-.hetstar .hs-matrix thead th {
+.hetstar .hs-matrix thead {
   position: sticky;
+  top: 0;
   z-index: 2;
+}
+
+.hetstar .hs-matrix thead th {
   background: #ffffff;
 }
 
 .hetstar .hs-matrix thead tr:first-child th {
-  top: 0;
   height: 15px;
 }
 
 .hetstar .hs-matrix thead tr:last-child th {
-  top: 15px;
-  height: 26px;
   box-shadow: 0 1px 0 #d0d2e0;
+}
+
+.hetstar .hs-matrix .hs-matrix-namecol, .hetstar .hs-matrix .hs-matrix-endcol {
+  width: 1%;
+}
+
+.hetstar .hs-matrix .hs-matrix-allcol {
+  width: 40px;
 }
 
 .hetstar .hs-matrix .hs-matrix-span {
   padding: 0 4px;
   border-left: 1px solid #e6e7f0;
+  white-space: nowrap;
 }
 
 .hetstar .hs-matrix .hs-matrix-col {
-  width: 40px;
-  min-width: 40px;
-  max-width: 40px;
+  min-width: 56px;
   text-align: center;
   vertical-align: bottom;
-  padding-bottom: 2px;
+  padding: 2px 3px;
 }
 
-.hetstar .hs-matrix .hs-matrix-col > span {
-  display: block;
+.hetstar .hs-matrix .hs-matrix-label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-family: var(--font-plex-mono), ui-monospace, monospace;
-  font-size: 8.5px;
+  font-size: 9.5px;
   line-height: 1.2;
-  color: #3d414f;
+  color: #1a1e2a;
+}
+
+.hetstar .hs-matrix .hs-matrix-end {
+  padding: 0 8px 0 6px;
+  white-space: nowrap;
+}
+
+.hetstar .hs-matrix .hs-matrix-section > th {
+  height: 16px;
+  padding: 0 10px;
+  background: #ece8fb;
+  box-shadow: inset 2px 0 0 #663be4, 0 1px 0 #d9d2f3;
+}
+
+.hetstar .hs-matrix [data-off="true"] > * {
+  opacity: 0.3;
+}
+
+.hetstar .hs-matrix thead th[data-off="true"] > * {
+  opacity: 0.45;
 }
 
 .hetstar .hs-matrix .hs-matrix-first {
@@ -1142,10 +1173,6 @@
   margin-right: auto;
 }
 
-.hetstar .mb-0\.5 {
-  margin-bottom: 0.125rem;
-}
-
 .hetstar .ml-auto {
   margin-left: auto;
 }
@@ -1202,10 +1229,6 @@
   height: 0.25rem;
 }
 
-.hetstar .h-1\.5 {
-  height: 0.375rem;
-}
-
 .hetstar .h-2 {
   height: 0.5rem;
 }
@@ -1234,10 +1257,6 @@
   height: 18px;
 }
 
-.hetstar .h-\[20px\] {
-  height: 20px;
-}
-
 .hetstar .h-\[22px\] {
   height: 22px;
 }
@@ -1262,8 +1281,12 @@
   min-height: 0px;
 }
 
-.hetstar .w-0 {
-  width: 0px;
+.hetstar .w-1\.5 {
+  width: 0.375rem;
+}
+
+.hetstar .w-12 {
+  width: 3rem;
 }
 
 .hetstar .w-3 {
@@ -1276,6 +1299,10 @@
 
 .hetstar .w-40 {
   width: 10rem;
+}
+
+.hetstar .w-48 {
+  width: 12rem;
 }
 
 .hetstar .w-6 {
@@ -1310,8 +1337,8 @@
   min-width: 0.75rem;
 }
 
-.hetstar .min-w-full {
-  min-width: 100%;
+.hetstar .max-w-\[136px\] {
+  max-width: 136px;
 }
 
 .hetstar .max-w-\[150px\] {
@@ -1326,12 +1353,12 @@
   max-width: 260px;
 }
 
-.hetstar .max-w-\[72px\] {
-  max-width: 72px;
+.hetstar .max-w-\[280px\] {
+  max-width: 280px;
 }
 
-.hetstar .max-w-\[84px\] {
-  max-width: 84px;
+.hetstar .max-w-\[72px\] {
+  max-width: 72px;
 }
 
 .hetstar .max-w-\[calc\(100\%-16px\)\] {
@@ -1387,6 +1414,10 @@
 
 .hetstar .cursor-auto {
   cursor: auto;
+}
+
+.hetstar .cursor-ew-resize {
+  cursor: ew-resize;
 }
 
 .hetstar .cursor-help {
@@ -2081,10 +2112,6 @@
   border-top-width: 0px;
 }
 
-.hetstar .last\:border-b-0:last-child {
-  border-bottom-width: 0px;
-}
-
 .hetstar .hover\:border-accent:hover {
   --tw-border-opacity: 1;
   border-color: rgb(102 59 228 / var(--tw-border-opacity, 1));
@@ -2098,6 +2125,10 @@
 .hetstar .hover\:bg-accent-soft:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(241 237 253 / var(--tw-bg-opacity, 1));
+}
+
+.hetstar .hover\:bg-accent\/20:hover {
+  background-color: rgb(102 59 228 / 0.2);
 }
 
 .hetstar .hover\:bg-accent\/40:hover {
@@ -2127,28 +2158,10 @@
   opacity: 0.8;
 }
 
-.hetstar .focus\:bg-surface-hover:focus {
-  --tw-bg-opacity: 1;
-  background-color: rgb(239 235 251 / var(--tw-bg-opacity, 1));
-}
-
-.hetstar .focus\:outline-none:focus {
-  outline: 2px solid transparent;
-  outline-offset: 2px;
-}
-
 .hetstar .disabled\:cursor-default:disabled {
   cursor: default;
 }
 
 .hetstar .disabled\:opacity-40:disabled {
   opacity: 0.4;
-}
-
-.hetstar .disabled\:opacity-50:disabled {
-  opacity: 0.5;
-}
-
-.hetstar .disabled\:hover\:bg-transparent:hover:disabled {
-  background-color: transparent;
 }

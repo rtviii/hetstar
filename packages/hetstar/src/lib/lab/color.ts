@@ -1,4 +1,4 @@
-// Small color helpers shared by the 1D track lanes, the colour board and the metric paints.
+// Small color helpers shared by the 1D track lanes, the style board and the metric paints.
 
 export function hexToRgb(c: number): [number, number, number] {
   return [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];

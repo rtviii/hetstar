@@ -190,7 +190,7 @@ export const STAGE_LABELS: Record<StageId, string> = {
 };
 
 export interface ProvenanceRecord {
-  role: "model A" | "model B" | "structure factors" | "maps";
+  role: "main model" | "deposited model" | "structure factors" | "maps";
   /** prose: what the file is and where it came from */
   desc: string;
   /** the concrete URL (rendered as a link) or app-served path (rendered as mono text) */

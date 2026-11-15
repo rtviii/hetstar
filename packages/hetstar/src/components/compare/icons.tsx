@@ -24,20 +24,7 @@ export function ConformersIcon() {
   );
 }
 
-export function StyleIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-      <line x1="2" y1="4" x2="14" y2="4" />
-      <line x1="2" y1="8" x2="14" y2="8" />
-      <line x1="2" y1="12" x2="14" y2="12" />
-      <circle cx="6" cy="4" r="1.6" fill="currentColor" stroke="none" />
-      <circle cx="11" cy="8" r="1.6" fill="currentColor" stroke="none" />
-      <circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-// a row of squares filling in: a colour scale (the colour board)
+// a row of squares filling in: a colour scale (the style board)
 export function ColorIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden>
@@ -140,6 +127,35 @@ export function BondsIcon() {
       <circle cx="3.5" cy="12.5" r="1.8" />
       <circle cx="12.5" cy="3.5" r="1.8" />
       <path d="M5.2 10.8 L10.8 5.2" strokeDasharray="1.8 1.5" />
+    </svg>
+  );
+}
+
+export function EyeOffIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <path d="M1.5 8c1.7-3 3.9-4.5 6.5-4.5S12.8 5 14.5 8c-1.7 3-3.9 4.5-6.5 4.5S3.2 11 1.5 8z" opacity="0.45" />
+      <path d="M3 13 L13 3" />
+    </svg>
+  );
+}
+
+// a viewport with the model filling it: this model is the main view's
+export function MainViewIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <rect x="1.8" y="2.8" width="12.4" height="10.4" />
+      <rect x="5" y="6" width="6" height="4" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+// a small viewport beside a larger one: the model's own replica in the switchboard
+export function ReplicaIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <rect x="1.8" y="1.8" width="8.4" height="8.4" opacity="0.45" />
+      <rect x="6.8" y="6.8" width="7.4" height="7.4" />
     </svg>
   );
 }

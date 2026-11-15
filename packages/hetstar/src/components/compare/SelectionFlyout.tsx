@@ -144,7 +144,7 @@ export default function SelectionFlyout({
 
         {picked && supportRows && (
           <>
-            <GroupLabel>Conformer support, model A</GroupLabel>
+            <GroupLabel>Conformer support, main model</GroupLabel>
             <table className="hs-table">
               <thead>
                 <tr>
@@ -288,7 +288,7 @@ export default function SelectionFlyout({
         ) : (
           <>
             <ConformerStatesPanel letters={stateLetters} active={globalAlt} disabled={!primaryLoaded} onChange={onGlobalAlt} />
-            {!stateLetters.length && <TinyText>conformer states appear when model A carries altloc letters</TinyText>}
+            {!stateLetters.length && <TinyText>conformer states appear when the main model carries altloc letters</TinyText>}
           </>
         )}
       </div>

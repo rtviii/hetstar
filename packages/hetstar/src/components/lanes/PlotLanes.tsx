@@ -131,7 +131,7 @@ const ConformerLaneView = memo(function ConformerLaneView({ ctx, view }: LanePro
 export const conformerLane: LaneModule = {
   id: "conformers",
   label: "Conformers",
-  description: "conformers per residue in model A (heavy-atom altloc letters); gray stubs are single-conformer residues",
+  description: "conformers per residue in the main model (heavy-atom altloc letters); gray stubs are single-conformer residues",
   defaultOn: true,
   height: CONFORMER_H,
   unavailable: (ctx) => (ctx.aTable ? null : "load a model"),

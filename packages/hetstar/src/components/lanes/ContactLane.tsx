@@ -186,7 +186,7 @@ const ContactLaneView = memo(function ContactLaneView({ ctx, onSelectSpan }: Lan
 export const ligandContactLane: LaneModule = {
   id: LANE_ID,
   label: "Ligand contacts",
-  description: `polymer residues with a heavy atom within ${CONTACT_R} A of a ligand or ion in model A, per ligand instance; computed from the shown coordinates`,
+  description: `polymer residues with a heavy atom within ${CONTACT_R} A of a ligand or ion in the main model, per ligand instance; computed from the shown coordinates`,
   defaultOn: false,
   height: (ctx) => {
     const n = ctx.aTable ? instancesOnChain(ctx.aTable, ctx.chain).length : 0;
@@ -195,7 +195,7 @@ export const ligandContactLane: LaneModule = {
   },
   unavailable: (ctx) => {
     if (!ctx.aTable) return "load a model";
-    if (!ligandContacts(ctx.aTable).length) return "no ligands or ions in model A";
+    if (!ligandContacts(ctx.aTable).length) return "no ligands or ions in the main model";
     if (!instancesOnChain(ctx.aTable, ctx.chain).length) return "none on this chain";
     return null;
   },

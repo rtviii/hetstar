@@ -182,7 +182,7 @@ export default function SelectionActionsPopup({
               rows: [
                 { label: "drawn", text: "Sticks in the locus's own colour over the structure, which stays as it is underneath." },
                 { label: "where", text: "A row in the loci stack (the bracket icon, top right): hide, select again, remove." },
-                { label: "metrics", text: "Its RSCC against the density, computed and painted from that row or the colour board." },
+                { label: "metrics", text: "Its RSCC against the density, computed and painted from that row or the style board." },
                 { label: "kept", text: "For this entry, any number of them." },
               ],
             }}

@@ -326,9 +326,9 @@ export default function SequenceLanes({
   /** the height the lanes would take without scrolling (stripe, board, readout),
    * reported whenever it changes, so the host can size the strip to the enabled lanes */
   onNaturalHeight?: (px: number) => void;
-  /** the metric the sequence lane's residues are coloured by (the colour board decides) */
+  /** the metric the sequence lane's residues are coloured by (the style board decides) */
   colorBy: LaneMetric | null;
-  /** that choice by name, for the button that opens the colour board */
+  /** that choice by name, for the button that opens the style board */
   colorLabel: string;
   onOpenColor: () => void;
   /** fold the whole panel away (the host keeps a chip to bring it back) */
@@ -673,7 +673,7 @@ export default function SequenceLanes({
               <button
                 type="button"
                 className="hs-btn"
-                title="what the residues are coloured by; opens the colour board"
+                title="what the residues are coloured by; opens the style board"
                 onClick={onOpenColor}
               >
                 color

@@ -31,20 +31,20 @@ export function modelDisplayName(model: ManifestModel, siblings: readonly Manife
   return parts.join(" · ");
 }
 
-const ROLE_SHORT: Record<ManifestModel["role"], string> = {
-  deposited: "depos",
+const ROLE_COLUMN: Record<ManifestModel["role"], string> = {
+  deposited: "Deposited",
   qfit: "qFit",
-  rerefined: "reref",
-  ensemble: "ensem",
-  other: "model",
+  rerefined: "Re-refined",
+  ensemble: "Ensemble",
+  other: "Model",
 };
 
-/** the model in a few letters, for a narrow column head: its role, numbered when another
- * model of the entry has the same role */
-export function modelShortName(model: ManifestModel, siblings: readonly ManifestModel[] = []): string {
+/** the model at the head of a column: its role in full, numbered when another model of the
+ * entry has the same role */
+export function modelColumnName(model: ManifestModel, siblings: readonly ManifestModel[] = []): string {
   const sameRole = siblings.filter((other) => other.role === model.role);
-  const short = ROLE_SHORT[model.role];
-  return sameRole.length > 1 ? `${short} ${sameRole.findIndex((other) => other.id === model.id) + 1}` : short;
+  const name = ROLE_COLUMN[model.role];
+  return sameRole.length > 1 ? `${name} ${sameRole.findIndex((other) => other.id === model.id) + 1}` : name;
 }
 
 /** everything else the catalogue records about the model, as labelled facts */

@@ -85,6 +85,14 @@ export const buildComponentQuery = (compId: string) =>
     "residue-test": MS.core.rel.eq([MS.ammp("label_comp_id"), compId]),
   });
 
+// The side chains of the given polymer components, from the CA outwards: every atom but the
+// backbone N, C and O. Glycine has none and is left out, so it does not become a lone sphere.
+export const buildSideChainQuery = (compIds: readonly string[]) =>
+  MS.struct.generator.atomGroups({
+    "residue-test": MS.core.set.has([MS.set(...compIds.filter((comp) => comp !== "GLY")), MS.ammp("label_comp_id")]),
+    "atom-test": MS.core.logic.not([MS.core.set.has([MS.set("N", "C", "O", "OXT"), MS.ammp("label_atom_id")])]),
+  });
+
 // Exactly the named water residues (chain + auth seq, every insertion-code copy), limited to
 // the given altloc letters ("" = blank). The comp test guards against an auth chain+seq
 // collision with a polymer residue; comps is passed in so this module stays free of lab imports.

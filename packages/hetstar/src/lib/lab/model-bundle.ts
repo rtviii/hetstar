@@ -2,13 +2,16 @@ import {
   buildAtomTable,
   parseCifText,
   pdbToCifText,
+  summarizeAltlocs,
   summarizeEnsemble,
+  type AltlocSummary,
   type AtomTable,
   type EnsembleSummary,
   type MolCifFile,
 } from "@dynamic-pdb/hetkit/model";
 import { toFetchableUrl } from "../dpdb/client";
 import type { LoadableModel } from "../dpdb/types";
+import { planConformers, type ConformerPlan } from "../molstar/conformers";
 import { compSplitFromTable, type CompSplit } from "../molstar/repstyle";
 
 // Everything the viewer derives from one model file, built once and shared: the main view
@@ -48,6 +51,25 @@ export async function bundleFromText(model: LoadableModel, text: string): Promis
 
 export async function loadModelBundle(model: LoadableModel): Promise<ModelBundle> {
   return bundleFromText(model, await fetchModelText(model));
+}
+
+const altlocCache = new WeakMap<AtomTable, AltlocSummary | null>();
+const planCache = new WeakMap<AtomTable, ConformerPlan>();
+
+/** the altloc census of a model's first frame (null: no altlocs to count), computed once per table */
+export function altlocSummaryOf(bundle: ModelBundle): AltlocSummary | null {
+  if (!altlocCache.has(bundle.table)) altlocCache.set(bundle.table, summarizeAltlocs(bundle.table));
+  return altlocCache.get(bundle.table) ?? null;
+}
+
+/** which conformer each split residue of a model collapses to, computed once per table */
+export function conformerPlanOf(bundle: ModelBundle): ConformerPlan {
+  let plan = planCache.get(bundle.table);
+  if (!plan) {
+    plan = planConformers(altlocSummaryOf(bundle));
+    planCache.set(bundle.table, plan);
+  }
+  return plan;
 }
 
 const memberTableCache = new WeakMap<MolCifFile, AtomTable[]>();

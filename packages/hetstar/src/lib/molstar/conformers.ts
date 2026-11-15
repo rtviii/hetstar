@@ -20,14 +20,8 @@ import {
   type HetcifRowIndex,
 } from "@dynamic-pdb/hetkit/model";
 import { ALT_FALLBACK_COLOR, AltColors } from "./altloc-theme";
-import {
-  type AltGroupSelector,
-  buildAltGroupExpression,
-  executeQuery,
-  structureToLoci,
-} from "./queries";
+import { type AltGroupSelector, buildAltGroupExpression, executeQuery } from "./queries";
 import { type ConformerRamp, conformerFadeLayers, lociWhereConformerCount } from "./ghost-theme";
-import { SECONDARY_TRANSPARENCY } from "./style";
 
 // The collapse engine for the viewer. One ball-and-stick representation covers
 // the whole structure (splitting conformers into components leaves cross-component bonds
@@ -158,6 +152,15 @@ export function isWorldSticksComponent(c: StructureComponentRef): boolean {
   return !!c.cell.transform.tags?.includes(WORLD_STICKS_TAG);
 }
 
+// the side-chain overlay of the "cartoon + side chains" representation: thin sticks over
+// the polymer's side chains while the polymer itself is a trace. Exempt from the rep-style
+// pass and the chemistry rebuild; takes the collapse/accent layers, which is the point of it
+// (alternate conformers stay visible under a cartoon).
+export const SIDE_CHAINS_TAG = "lab-sidechains";
+export function isSideChainsComponent(c: StructureComponentRef): boolean {
+  return !!c.cell.transform.tags?.includes(SIDE_CHAINS_TAG);
+}
+
 // a locus (lib/molstar/loci.ts): a selection set apart as a component of its own. Exempt
 // from the rep-style pass, the chemistry rebuild and the collapse/accent layers alike: it
 // shows every conformer of its atoms whatever the structure underneath is showing.
@@ -167,7 +170,13 @@ export function isLocusComponent(c: StructureComponentRef): boolean {
 
 /** any app-managed overlay component whose lifecycle its own effect owns */
 export function isOverlayComponent(c: StructureComponentRef): boolean {
-  return isBondsComponent(c) || isSelRepComponent(c) || isWorldSticksComponent(c) || isLocusComponent(c);
+  return (
+    isBondsComponent(c) ||
+    isSelRepComponent(c) ||
+    isWorldSticksComponent(c) ||
+    isSideChainsComponent(c) ||
+    isLocusComponent(c)
+  );
 }
 
 /**
@@ -315,12 +324,4 @@ export async function applyConformerStyling(
       lociGetter(buildAltGroupExpression(selectors)),
     );
   }
-}
-
-/** The comparison model: one whole-structure translucency layer, further back than A's ghost. */
-export async function applySecondaryGhost(ctx: PluginContext, structureRef: string): Promise<void> {
-  const comps = componentsForStructure(ctx, structureRef);
-  if (!comps.length) return;
-  await clearStructureTransparency(ctx, comps);
-  await setStructureTransparency(ctx, comps, SECONDARY_TRANSPARENCY, async (root) => structureToLoci(root));
 }

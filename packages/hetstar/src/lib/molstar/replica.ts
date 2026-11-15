@@ -3,51 +3,28 @@ import { Vec3 } from "molstar/lib/mol-math/linear-algebra";
 import { type Structure, StructureElement } from "molstar/lib/mol-model/structure";
 import { PluginCommands } from "molstar/lib/mol-plugin/commands";
 import { PluginContext } from "molstar/lib/mol-plugin/context";
-import {
-  clearStructureTransparency,
-  setStructureTransparency,
-} from "molstar/lib/mol-plugin-state/helpers/structure-transparency";
 import type { ColorTheme } from "molstar/lib/mol-theme/color";
 import { Color } from "molstar/lib/mol-util/color";
 import type { LabSelection } from "../lab/selection";
 import { EMPTY_SELECTION } from "../lab/selection";
 import type { FitSphere } from "./camera-sync";
-import {
-  applyConformerStyling,
-  componentsForStructure,
-  isOverlayComponent,
-  planConformers,
-  type ResidueRange,
-} from "./conformers";
-import type { ConformerRamp } from "./ghost-theme";
+import { applyModelLook, applyModelVisibility, type ModelLook } from "./appearance";
+import type { ConformerPlan, ResidueRange } from "./conformers";
 import { ensureLookingGlass, type LookingGlass, type LookingGlassRefs } from "./looking-glass";
-import { executeQuery, residueLoci, selectionExpression, structureToLoci } from "./queries";
-import {
-  applyRepStyle,
-  DEFAULT_REP_STYLE,
-  ensureLabComponents,
-  type CompSplit,
-  type RepColorMode,
-  type RepStyle,
-} from "./repstyle";
+import { executeQuery, residueLoci, selectionExpression } from "./queries";
+import { DEFAULT_REP_STYLE, ensureLabComponents, repTypeOfKind, type CompSplit, type RepStyle } from "./repstyle";
 import { syncSelRepOverlays, type SelRepOverlay } from "./selrep";
 import { replicaSpec } from "./spec";
 import { STYLIZED_POSTPROCESSING, WHITE_BACKGROUND } from "./style";
-import { TRACK_THEME_NAME, TrackColorThemeProvider, type TrackPaint } from "./track-theme";
+import { TrackColorThemeProvider } from "./track-theme";
 import { AS_MODELED, pickFromLoci, type ClickMeta, type PickInfo } from "./viewer";
 
 // One switchboard box: a headless Mol* plugin showing a whole model as a small replica of
 // what the main view holds. The box owns nothing about WHAT to show: the switchboard hands
-// it a desired state (model, facet, mirrored selection and overrides, looking glass) and
+// it a desired state (model, look, mirrored selection and overrides, looking glass) and
 // one reconcile loop applies whatever changed, in a fixed order. The order matters the same
-// way the main view's effect order does: a facet change rewrites every representation's
+// way the main view's effect order does: a look change rewrites every representation's
 // params, which drops the selection marks, so the selection is always the last stage.
-
-/** how the replica is painted */
-export type ReplicaFacet =
-  | { kind: "ghost" }
-  | { kind: "color"; mode: RepColorMode; ramp: ConformerRamp }
-  | { kind: "track"; paint: TrackPaint };
 
 export interface ReplicaModel {
   /** identity of the loaded text: a change reloads the box */
@@ -55,6 +32,8 @@ export interface ReplicaModel {
   text: string;
   split: CompSplit;
   color: number;
+  /** which conformer each split residue collapses to */
+  plan: ConformerPlan;
 }
 
 export interface ReplicaGlass extends LookingGlass {
@@ -67,7 +46,9 @@ const GHOST_TRANSPARENCY = 0.55;
 /** a camera-derived looking glass is hidden once the main view frames most of the model */
 const GLASS_MAX_FRACTION = 0.6;
 
-type Stage = "load" | "facet" | "selRep" | "glass" | "selection";
+type Stage = "load" | "look" | "selRep" | "glass" | "selection";
+
+const DEFAULT_LOOK: ModelLook = { rep: "cartoon", het: true, ions: true, paint: { kind: "ghost" } };
 
 export class ReplicaViewer {
   ctx: PluginContext | null = null;
@@ -83,7 +64,7 @@ export class ReplicaViewer {
   private glassRefs: LookingGlassRefs | null = null;
 
   private model: ReplicaModel | null = null;
-  private facet: ReplicaFacet = { kind: "ghost" };
+  private look: ModelLook = DEFAULT_LOOK;
   private selRep: readonly SelRepOverlay[] = [];
   private glass: ReplicaGlass | null = null;
   private selection: LabSelection = EMPTY_SELECTION;
@@ -166,9 +147,9 @@ export class ReplicaViewer {
     this.mark("load");
   }
 
-  setFacet(facet: ReplicaFacet): void {
-    this.facet = facet;
-    this.mark("facet");
+  setLook(look: ModelLook): void {
+    this.look = look;
+    this.mark("look");
   }
 
   setSelRep(overlays: readonly SelRepOverlay[]): void {
@@ -259,7 +240,7 @@ export class ReplicaViewer {
       if (!ctx || this.disposed) return;
       if (this.take("load")) {
         await this.load(ctx);
-        for (const stage of ["facet", "selRep", "glass", "selection"] as const) this.dirty.add(stage);
+        for (const stage of ["look", "selRep", "glass", "selection"] as const) this.dirty.add(stage);
         continue;
       }
       if (this.take("glass")) {
@@ -272,8 +253,8 @@ export class ReplicaViewer {
         this.dirty.clear();
         return;
       }
-      if (this.take("facet")) {
-        await this.applyFacet(ctx, structureRef, model);
+      if (this.take("look")) {
+        await this.applyLook(ctx, structureRef, model);
         this.dirty.add("selection");
         continue;
       }
@@ -293,12 +274,12 @@ export class ReplicaViewer {
   }
 
   private style(): RepStyle {
-    const facet = this.facet;
+    const paint = this.look.paint;
     return {
       ...DEFAULT_REP_STYLE,
-      type: "cartoon",
-      colorMode: facet.kind === "color" ? facet.mode : "model",
-      ramp: facet.kind === "color" ? facet.ramp : DEFAULT_REP_STYLE.ramp,
+      type: repTypeOfKind(this.look.rep),
+      colorMode: paint.kind === "color" ? paint.mode : "model",
+      ramp: paint.kind === "color" ? paint.ramp : DEFAULT_REP_STYLE.ramp,
     };
   }
 
@@ -331,34 +312,18 @@ export class ReplicaViewer {
     this.onLoaded?.();
   }
 
-  private async applyFacet(ctx: PluginContext, structureRef: string, model: ReplicaModel): Promise<void> {
-    const facet = this.facet;
-    await applyRepStyle(ctx, structureRef, this.style(), {
+  private async applyLook(ctx: PluginContext, structureRef: string, model: ReplicaModel): Promise<void> {
+    const look = this.look;
+    await applyModelLook(ctx, structureRef, look, {
+      base: DEFAULT_REP_STYLE,
       uniformColor: model.color,
-      colorOverride:
-        facet.kind === "track" ? { color: TRACK_THEME_NAME, colorParams: { paint: facet.paint } } : undefined,
+      polymerComps: model.split.polymer,
+      plan: model.plan,
+      ghostTransparency: GHOST_TRANSPARENCY,
+      flatGhost: false,
+      pickable: true,
     });
-    if (facet.kind === "color" && facet.mode === "conformer") {
-      // the card look's per-count fade on the trace (clears the previous layers itself)
-      await applyConformerStyling(ctx, structureRef, planConformers(null), {
-        shown: new Set(),
-        globalAlt: null,
-        polymerAsTrace: true,
-        polymerFade: facet.ramp,
-      });
-      return;
-    }
-    const components = componentsForStructure(ctx, structureRef);
-    if (!components.length) return;
-    await clearStructureTransparency(ctx, components);
-    if (facet.kind === "ghost") {
-      await setStructureTransparency(
-        ctx,
-        components.filter((c) => !isOverlayComponent(c)),
-        GHOST_TRANSPARENCY,
-        async (root) => structureToLoci(root),
-      );
-    }
+    applyModelVisibility(ctx, structureRef, { visible: true, het: look.het, ions: look.ions });
   }
 
   private async applyGlass(ctx: PluginContext): Promise<void> {

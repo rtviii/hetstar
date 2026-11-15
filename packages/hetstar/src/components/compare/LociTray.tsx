@@ -161,7 +161,7 @@ export default function LociTray({
                   rows: [
                     { label: "value", text: "RSCC of the main view's model." },
                     { label: "rest", text: "The map outside the mask keeps its colour." },
-                    { label: "also", text: "The same switch as the map column of the colour board." },
+                    { label: "also", text: "The same switch as the map column of the style board." },
                   ],
                 }}
               >
