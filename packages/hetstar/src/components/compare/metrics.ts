@@ -32,6 +32,7 @@ export type MetricId =
   | "fofc-peak"
   | "support-delta"
   | "rscc-computed"
+  | "qscore"
   | "rscc-delta"
   | StoredMetricId;
 
@@ -54,6 +55,7 @@ export const METRIC_ORDER: MetricId[] = [
   "fofc-peak",
   "support-delta",
   "rscc-computed",
+  "qscore",
   "rscc-delta",
   "stored-rscc",
   "stored-b-iso",
@@ -165,6 +167,11 @@ const METRIC_LOOK: Record<MetricId, MetricLook> = {
     colors: DIVERGING_BWR,
   },
   "rscc-computed": {
+    unionSplat: false,
+    onRequest: true,
+    colors: LOW_IS_NOTABLE_RAMP,
+  },
+  qscore: {
     unionSplat: false,
     onRequest: true,
     colors: LOW_IS_NOTABLE_RAMP,
@@ -429,6 +436,25 @@ export function metricTooltip(id: MetricId, prov: MetricProvenance): TipContent 
             text: "Against the stored RSCC of two deposited models: 4N0X at 1.63 A (r 0.91, mean difference 0.016, 258 residues), 7APT at 1.13 A (r 0.74, mean difference 0.040, 127 residues). Other resolutions untested.",
           },
           { label: "limits", text: "No symmetry mates or bulk solvent in the simulated density: residues at lattice contacts read low." },
+          { label: "computed", text: ON_REQUEST_NOTE },
+          twoFoFcMap,
+        ],
+      };
+    case "qscore":
+      return {
+        ...base,
+        is: registry(id),
+        rows: [
+          { label: "sampled", text: "At the atom and on 20 shells out to 2 A, at the points no other atom comes nearer than 0.9 of the shell radius; the map values are correlated with the Gaussian's." },
+          { label: "altlocs", text: "An atom of a conformer is shadowed by its own conformer and by unsplit atoms only. MapQ itself lets conformers shadow each other, so split residues differ from it." },
+          { label: "ensemble", text: "Each member is scored alone; the residue takes the mean over the members." },
+          { label: "crystal", text: "Symmetry copies of the model shadow too, built from the cell and space group in the entry's files; an entry that states neither is scored without them." },
+          { label: "scope", text: "Polymer residues. Ligands, ions and waters shadow and are not scored." },
+          {
+            label: "caveat",
+            text: "Defined for cryo-EM maps. Here every model is scored against the entry's one map, which is phased by the deposited model, and the score falls with resolution: compare the models of one entry, not entries.",
+          },
+          { label: "checked", text: "Against a direct transcription of MapQ's rule on synthetic models only; not yet against MapQ or ChimeraX on an entry." },
           { label: "computed", text: ON_REQUEST_NOTE },
           twoFoFcMap,
         ],

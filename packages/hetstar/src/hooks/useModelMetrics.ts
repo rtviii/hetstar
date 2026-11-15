@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Track } from "@dynamic-pdb/hetkit/metrics";
 import type { AtomTable } from "@dynamic-pdb/hetkit/model";
 import { METRIC_UI, type MetricId } from "../components/compare/metrics";
+import { afterPaint } from "../lib/lab/after-paint";
+import { crystalOf, symmetryOperatorsAround } from "../lib/molstar/crystal";
 import { memberTablesOf } from "../lib/lab/model-bundle";
 import {
   createMetricEngine,
@@ -76,6 +78,19 @@ export function useModelMetrics(args: {
   const [revision, setRevision] = useState(0);
 
   const access = useMemo(() => {
+    // the models of an entry share one crystal: read from the first file that states it
+    let crystal: ReturnType<typeof crystalOf> = null;
+    for (const state of bundleStates.values()) {
+      if (state.status !== "ready") continue;
+      crystal = crystalOf(state.bundle.file);
+      if (crystal) break;
+    }
+    // keyed on the model's first frame, so stepping through an ensemble keeps the list
+    const symmetryFor = (modelId: string, fallback: AtomTable) => {
+      if (!crystal) return null;
+      const state = bundleStates.get(modelId);
+      return symmetryOperatorsAround(crystal, state?.status === "ready" ? state.bundle.table : fallback);
+    };
     const inputsFor = (modelId: string): ModelInputs | null => {
       const storedTracks = catalogued ? stored.get(modelId) : null;
       if (primary && primary.modelId === modelId) {
@@ -84,6 +99,7 @@ export function useModelMetrics(args: {
           modelId,
           table: primary.table,
           ensemble: members.length ? { count: members.length, key: members, tables: () => members } : null,
+          symmetry: symmetryFor(modelId, primary.table),
           stored: storedTracks,
           local: primary.local,
         };
@@ -94,6 +110,7 @@ export function useModelMetrics(args: {
       return {
         modelId,
         table: bundle.table,
+        symmetry: symmetryFor(modelId, bundle.table),
         ensemble: bundle.ensemble
           ? { count: bundle.ensemble.modelCount, key: bundle.file, tables: () => memberTablesOf(bundle) }
           : null,
@@ -120,19 +137,16 @@ export function useModelMetrics(args: {
     (modelId: string, metricId: MetricId) => {
       const key = `${modelId}|${metricId}`;
       setComputing((previous) => new Set(previous).add(key));
-      // the pass holds the main thread: let the loading mark reach the screen first
-      requestAnimationFrame(() =>
-        setTimeout(() => {
-          const model = accessRef.current.inputsFor(modelId);
-          if (model) engine.compute(metricId, model, accessRef.current.contextFor(modelId));
-          setComputing((previous) => {
-            const next = new Set(previous);
-            next.delete(key);
-            return next;
-          });
-          setRevision((count) => count + 1);
-        }, 0),
-      );
+      afterPaint(() => {
+        const model = accessRef.current.inputsFor(modelId);
+        if (model) engine.compute(metricId, model, accessRef.current.contextFor(modelId));
+        setComputing((previous) => {
+          const next = new Set(previous);
+          next.delete(key);
+          return next;
+        });
+        setRevision((count) => count + 1);
+      });
     },
     [engine],
   );

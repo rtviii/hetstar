@@ -6,6 +6,7 @@ import {
   STORED_METRICS,
   type MapSampler,
   type StoredMetricId,
+  type SymmetryOperator,
   type Track,
 } from "@dynamic-pdb/hetkit/metrics";
 import type { AtomTable } from "@dynamic-pdb/hetkit/model";
@@ -28,6 +29,9 @@ export interface ModelInputs {
   table: AtomTable;
   /** null for single-model files; `key` changes when the member tables would */
   ensemble: { count: number; key: unknown; tables(): readonly AtomTable[] } | null;
+  /** the transforms onto the model's symmetry copies in the entry's crystal; null when no
+   * file of the entry states the cell and space group. The list keeps its identity. */
+  symmetry?: readonly SymmetryOperator[] | null;
   /** stored residue data as tracks: undefined while it is on its way, null when the model has none */
   stored: StoredTracks | null | undefined;
   /** metrics only the main view produces for this model: the track, or why it is not there yet */
@@ -129,6 +133,7 @@ function computationOf(id: MetricId, model: ModelInputs, context: MetricContext)
       overMembers ? model.ensemble?.key : model.table,
       reference ? (referenceOverMembers ? reference.ensemble?.key : reference.table) : null,
       sampler,
+      model.symmetry ?? null,
     ],
     run: () => {
       const resolved = resolveMetric(id, {
@@ -138,6 +143,7 @@ function computationOf(id: MetricId, model: ModelInputs, context: MetricContext)
         referenceMembers: referenceOverMembers ? reference?.ensemble?.tables() : undefined,
         maps: context.maps,
         resolution: context.resolution,
+        symmetryOperators: model.symmetry ?? null,
       });
       return "track" in resolved ? resolved.track : null;
     },
