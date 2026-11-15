@@ -6,8 +6,10 @@ import { ensembleRmsf } from "./ensemble-rmsf";
 import type { MapSampler } from "./map";
 import { mapSupportDelta, mapValueTracks } from "./map";
 import { motionTracks } from "./motion";
+import { qScore } from "./qscore";
 import { modelRmsd } from "./rmsd";
 import { realSpaceCorrelation, realSpaceCorrelationJoint } from "./rscc";
+import type { SymmetryOperator } from "./symmetry";
 import type { Level, Track } from "./tracks";
 import { trackDelta } from "./tracks";
 
@@ -22,8 +24,17 @@ export type MetricInput =
   | { kind: "model-list"; models: AtomTable[] }
   /** a model as its coordinate frames: `members` holds one table per ensemble member, empty for a single model */
   | { kind: "states"; model: AtomTable; members: AtomTable[] }
-  /** the same, against a map from data that reach `resolution` (A) */
-  | { kind: "states-map"; model: AtomTable; members: AtomTable[]; sample: MapSampler; resolution: number }
+  /** the same, against a map from data that reach `resolution` (A); `symmetryOperators` are
+   * the Cartesian transforms onto the model's symmetry copies, for the metrics that look at
+   * an atom's surroundings in the crystal (absent: the model is taken alone) */
+  | {
+      kind: "states-map";
+      model: AtomTable;
+      members: AtomTable[];
+      sample: MapSampler;
+      resolution: number;
+      symmetryOperators?: readonly SymmetryOperator[] | null;
+    }
   /** two models as their coordinate frames, against one map */
   | {
       kind: "states-pair-map";
@@ -196,6 +207,16 @@ const list: AnyMetric[] = [
     input: "states-map",
     map: "2fofc",
     compute: (i) => realSpaceCorrelation(statesOf(i), i.sample, { resolution: i.resolution }),
+  },
+  {
+    id: "qscore",
+    label: "Q-score",
+    description:
+      "How closely the 2Fo-Fc map around each atom follows a Gaussian of width 0.6 A centred on it (MapQ's Q-score), as the occupancy-weighted mean over the residue's non-hydrogen atoms.",
+    level: "residue",
+    input: "states-map",
+    map: "2fofc",
+    compute: (i) => qScore(statesOf(i), i.sample, { symmetryOperators: i.symmetryOperators }).track,
   },
   {
     id: "rscc-delta",

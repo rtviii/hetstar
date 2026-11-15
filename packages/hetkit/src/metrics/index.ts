@@ -17,6 +17,8 @@ export { bIsoMean } from "./bfactor";
 export { ensembleRmsf } from "./ensemble-rmsf";
 export { conformerSupport, mapSupportDelta, mapValueTracks, stateSupport } from "./map";
 export type { ConformerSupportRow, MapSampler, StateSupportRow } from "./map";
+export { QSCORE_SIGMA, qScore, qScoreAtoms, spherePoints, spiralDirections } from "./qscore";
+export type { AtomQScores, QScoreOptions, QScoreResult } from "./qscore";
 export { frameOffset, modelRmsd } from "./rmsd";
 export {
   realSpaceCorrelation,
@@ -33,3 +35,5 @@ export type {
   SelectionCorrelation,
   SelectionCorrelationOptions,
 } from "./rscc";
+export { altlocCodes, symmetryMates, symmetryOperatorFromColumnMajor, SYMMETRY_MATE_PADDING } from "./symmetry";
+export type { AltlocCodes, SymmetryMates, SymmetryOperator } from "./symmetry";

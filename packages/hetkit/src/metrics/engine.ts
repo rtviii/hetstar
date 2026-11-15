@@ -1,6 +1,7 @@
 import type { AtomTable } from "../model/atoms";
 import type { MapSampler } from "./map";
 import { METRICS, type MapKind } from "./registry";
+import type { SymmetryOperator } from "./symmetry";
 import type { Track } from "./tracks";
 
 // One question, one answer: "metric X of this model, optionally against a reference".
@@ -19,6 +20,9 @@ export interface MetricSources {
   maps?: { twoFoFc?: MapSampler | null; foFc?: MapSampler | null };
   /** resolution limit of the data behind the maps, in A */
   resolution?: number | null;
+  /** Cartesian transforms onto the symmetry copies of `table` (and of each of `members`:
+   * they share the crystal frame), identity left out; see SymmetryOperator for the layout */
+  symmetryOperators?: readonly SymmetryOperator[] | null;
 }
 
 /** used where the entry does not state its resolution */
@@ -87,6 +91,7 @@ export function resolveMetric(id: string, sources: MetricSources): MetricResolut
           members: members ? [...members] : [],
           sample,
           resolution: sources.resolution ?? FALLBACK_RESOLUTION,
+          symmetryOperators: sources.symmetryOperators,
         }),
       };
     case "states-pair-map":

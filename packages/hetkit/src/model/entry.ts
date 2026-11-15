@@ -40,6 +40,8 @@ export interface EntryDescription {
   method: string | null;
   /** _symmetry.space_group_name_H-M */
   spaceGroup: string | null;
+  /** the unit cell from _cell: edges in angstrom, angles in degrees; null unless all six are stated */
+  cell: { a: number; b: number; c: number; alpha: number; beta: number; gamma: number } | null;
   /** angstroms; _refine.ls_d_res_high, falling back to _reflns.d_resolution_high */
   resolution: number | null;
   rWork: number | null;
@@ -98,11 +100,19 @@ function primaryCitation(citation: MolCifCategory | undefined): EntryCitation | 
   return null;
 }
 
+function unitCell(cat: MolCifCategory | undefined): EntryDescription["cell"] {
+  const [a, b, c, alpha, beta, gamma] = ["length_a", "length_b", "length_c", "angle_alpha", "angle_beta", "angle_gamma"].map((field) =>
+    num(cat, field),
+  );
+  if (a === null || b === null || c === null || alpha === null || beta === null || gamma === null) return null;
+  return a > 0 && b > 0 && c > 0 ? { a, b, c, alpha, beta, gamma } : null;
+}
+
 export function describeEntry(file: MolCifFile, blockIndex = 0): EntryDescription {
   const block = file.blocks[blockIndex];
   const empty: EntryDescription = {
     entryId: null, citation: null,
-    title: null, method: null, spaceGroup: null, resolution: null, rWork: null, rFree: null,
+    title: null, method: null, spaceGroup: null, cell: null, resolution: null, rWork: null, rFree: null,
     depositedDate: null, authorCount: 0, firstAuthor: null, ph: null, temperatureK: null, entities: [],
   };
   if (!block) return empty;
@@ -157,6 +167,7 @@ export function describeEntry(file: MolCifFile, blockIndex = 0): EntryDescriptio
     title: text(cats["struct"], "title"),
     method: text(cats["exptl"], "method"),
     spaceGroup: text(cats["symmetry"], "space_group_name_H-M"),
+    cell: unitCell(cats["cell"]),
     resolution: num(cats["refine"], "ls_d_res_high") ?? num(cats["reflns"], "d_resolution_high"),
     rWork: num(cats["refine"], "ls_R_factor_R_work"),
     rFree: num(cats["refine"], "ls_R_factor_R_free"),
