@@ -454,7 +454,14 @@ export function metricTooltip(id: MetricId, prov: MetricProvenance): TipContent 
             label: "caveat",
             text: "Defined for cryo-EM maps. Here every model is scored against the entry's one map, which is phased by the deposited model, and the score falls with resolution: compare the models of one entry, not entries.",
           },
-          { label: "checked", text: "Against a direct transcription of MapQ's rule on synthetic models only; not yet against MapQ or ChimeraX on an entry." },
+          {
+            label: "checked",
+            text: "Against ChimeraX's QScore on the same map, two deposited models: 4N0X at 1.63 A (r 0.995, mean difference 0.008, 258 residues), 7APT at 1.13 A (r 0.984, mean difference 0.006, 127 residues). This one reads lower by that much. Not checked against MapQ itself, nor at lower resolution.",
+          },
+          {
+            label: "reading",
+            text: "Near its ceiling at these resolutions (mean 0.95 on both entries): it sets apart the poorly ordered residues and says little about the rest.",
+          },
           { label: "computed", text: ON_REQUEST_NOTE },
           twoFoFcMap,
         ],
