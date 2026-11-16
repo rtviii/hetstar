@@ -53,6 +53,13 @@ export interface PickInfo {
   position3d?: [number, number, number];
 }
 
+export interface PrimaryLoadOptions {
+  label?: string;
+  view?: StructureView;
+  /** the structure alone, nothing drawn: the caller builds its components */
+  bare?: boolean;
+}
+
 export interface ClickMeta {
   /** Mol* button flag of the released button: 1 left, 2 right, 4 middle */
   button: number;
@@ -139,9 +146,10 @@ export class MolstarViewer {
     this.ctx?.canvas3d?.handleResize();
   }
 
-  // --- data loading (parses + applies a flat ball-and-stick representation) ---
+  // --- data loading (parses, then draws `view`; with `bare` nothing is drawn: the caller
+  // builds the components itself, in its own look) ---
 
-  async load(data: string | Uint8Array, opts: { label?: string; view?: StructureView } = {}): Promise<void> {
+  async load(data: string | Uint8Array, opts: PrimaryLoadOptions = {}): Promise<void> {
     if (!this.ctx) throw new Error("Viewer not initialized");
     const raw = await this.ctx.builders.data.rawData({
       data: data as string | Uint8Array<ArrayBuffer>,
@@ -153,7 +161,7 @@ export class MolstarViewer {
     if (!this.ctx) throw new Error("Viewer disposed during load");
     timing.mark("Mol* parse");
     this.trajectoryRef = trajectory.ref;
-    await this.buildRepresentation(trajectory, opts.view ?? DEFAULT_VIEW);
+    await this.buildRepresentation(trajectory, opts.bare ? null : (opts.view ?? DEFAULT_VIEW));
     timing.mark("first build of the model");
   }
 
@@ -163,7 +171,7 @@ export class MolstarViewer {
    * is left alone. Root-level nodes built from the old primary's atoms (bond dashes,
    * measurements) are the caller's to remove first.
    */
-  async replacePrimary(data: string | Uint8Array, opts: { label?: string; view?: StructureView } = {}): Promise<void> {
+  async replacePrimary(data: string | Uint8Array, opts: PrimaryLoadOptions = {}): Promise<void> {
     if (!this.ctx) throw new Error("Viewer not initialized");
     const previous = this.primaryDataRef;
     timing.mark("React render and queue wait");
@@ -257,8 +265,9 @@ export class MolstarViewer {
   // representation + colour theme (defaulting to the app's flat ball-and-stick look). Trace-based
   // representations (cartoon / putty) are restricted to the polymer; everything else covers all
   // non-solvent components. Records the model transform ref + frame count for frame scrubbing.
+  // A null view stops at the structure.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async buildRepresentation(trajectory: any, view: StructureView): Promise<void> {
+  private async buildRepresentation(trajectory: any, view: StructureView | null): Promise<void> {
     const ctx = this.ctx;
     if (!ctx) return;
     this.modelCount = trajectory?.data?.frameCount ?? 1;
@@ -268,6 +277,7 @@ export class MolstarViewer {
     const structure = await ctx.builders.structure.createStructure(model, AS_MODELED);
     if (!this.ctx) return;
     this.primaryStructureRef = structure.ref;
+    if (!view) return;
     const components = POLYMER_ONLY_REPRESENTATIONS.includes(view.representation)
       ? POLYMER_COMPONENTS
       : BALL_AND_STICK_COMPONENTS;

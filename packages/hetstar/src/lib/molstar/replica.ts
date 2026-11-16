@@ -304,7 +304,8 @@ export class ReplicaViewer {
     const modelNode = await ctx.builders.structure.createModel(trajectory);
     const structure = await ctx.builders.structure.createStructure(modelNode, AS_MODELED);
     if (this.disposed) return;
-    await ensureLabComponents(ctx, structure.ref, model.split, this.style(), { uniformColor: model.color });
+    // born hidden: the look stage that follows styles the model and then shows it
+    await ensureLabComponents(ctx, structure.ref, model.split, this.style(), { uniformColor: model.color, hidden: true });
     this.structureRef = structure.ref;
     const boundary = structure.data?.boundary.sphere;
     this.sphere = boundary ? { center: Vec3.clone(boundary.center), radius: boundary.radius } : null;

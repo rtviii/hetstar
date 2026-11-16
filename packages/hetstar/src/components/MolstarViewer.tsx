@@ -15,6 +15,7 @@ export default function MolstarViewer({
   schedule,
   binary,
   view,
+  bare,
   onReady,
   onLoaded,
   colorThemes,
@@ -28,8 +29,12 @@ export default function MolstarViewer({
   schedule?: (load: () => Promise<void>) => void;
   binary: boolean;
   view?: StructureView;
+  /** load the structure with nothing drawn: the host builds what is drawn, in its own look,
+   * and frames the camera once that shows (a fresh scene has nothing to frame before) */
+  bare?: boolean;
   onReady?: (viewer: MolstarViewerInstance | null) => void;
-  onLoaded?: (info: { modelCount: number }) => void;
+  /** freshScene: the tree was cleared for this load, so the camera is not placed yet */
+  onLoaded?: (info: { modelCount: number; freshScene: boolean }) => void;
   /** the preset's Mol* colour themes, registered at plugin init */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   colorThemes?: readonly ColorTheme.Provider<any, any>[];
@@ -89,17 +94,17 @@ export default function MolstarViewer({
         const sameScene =
           sceneKey !== null && loadedSceneRef.current === sceneKey && viewer.getPrimaryStructureRef() !== null;
         if (sameScene) {
-          await viewer.replacePrimary(data, { label: "structure", view });
+          await viewer.replacePrimary(data, { label: "structure", view, bare });
         } else {
           loadedSceneRef.current = null;
           await viewer.clear();
           if (cancelled) return;
-          await viewer.load(data, { label: "structure", view });
-          viewer.resetCamera();
+          await viewer.load(data, { label: "structure", view, bare });
+          if (!bare) viewer.resetCamera();
         }
         loadedSceneRef.current = sceneKey;
         if (cancelled) return;
-        onLoadedRef.current?.({ modelCount: viewer.getModelCount() });
+        onLoadedRef.current?.({ modelCount: viewer.getModelCount(), freshScene: !sameScene });
       } catch (e) {
         console.error("Mol* failed to load structure:", e);
       }
@@ -110,7 +115,7 @@ export default function MolstarViewer({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewer, ready, data, sceneKey, binary, viewKey]);
+  }, [viewer, ready, data, sceneKey, binary, viewKey, bare]);
 
   return (
     <div className="relative h-full w-full">

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import MolstarViewer from "./components/MolstarViewer";
 import type { MolstarViewer as ViewerInstance, PickInfo } from "./lib/molstar/viewer";
-import { MODEL_A_COLOR, type StructureView } from "./lib/molstar/style";
+import { MODEL_A_COLOR } from "./lib/molstar/style";
 import {
   buildIsosurfaces,
   clipSphereObject,
@@ -23,6 +23,7 @@ import {
 import { CARVE_RADIUS, carveDensityToStructure } from "./lib/molstar/carve";
 import {
   applyRepStyle,
+  BORN_HIDDEN,
   compSplitFromTable,
   ensureLabComponents,
   NO_HYDROGENS,
@@ -263,7 +264,6 @@ function dashesForOverlays(
   return { dashes, waters: [...waters.values()].map((w) => ({ ...w, alts: [...w.alts] })) };
 }
 
-const VIEW: StructureView = { representation: "ball-and-stick", colorTheme: "uniform", uniformColor: MODEL_A_COLOR };
 
 /** every metric paint in the 3D views; one range per metric, so a colour means one value everywhere */
 interface Paints {
@@ -462,6 +462,14 @@ export default function HetstarViewer({
   const [aTable, setATable] = useState<AtomTable | null>(null);
   const [aFile, setAFile] = useState<MolCifFile | null>(null);
   const [primaryLoaded, setPrimaryLoaded] = useState(false);
+  // The main view's model is loaded with nothing drawn and put together hidden: whatever
+  // makes a representation on it while mainHiddenRef is set makes it born hidden, and the
+  // visibility pass, the last of the passes that build it, shows it whole. No build in
+  // another look is ever on screen.
+  const [mainRevealed, setMainRevealed] = useState(false);
+  const mainHiddenRef = useRef(true);
+  // a fresh scene has no camera placement yet: the model is framed as it is shown
+  const frameOnRevealRef = useRef(false);
   // which MODEL frame of a multi-model (ensemble) main model is on screen
   const [memberIndex, setMemberIndex] = useState(0);
   // bumps once a member scrub's Mol* commit has landed: memberIndex changes first, while
@@ -741,6 +749,8 @@ export default function HetstarViewer({
 
       // reset everything scene-derived; setting new texts clears the Mol* state tree
       setPrimaryLoaded(false);
+      mainHiddenRef.current = true;
+      setMainRevealed(false);
       setMemberIndex(0);
       setAText(null);
       setATable(null);
@@ -879,7 +889,10 @@ export default function HetstarViewer({
       // the task may run well after enqueue; if the tree was cleared/reloaded since,
       // bail — the fresh effect run handles the new tree
       if (viewer.getPrimaryStructureRef() !== structureRef) return;
-      await ensureLabComponents(ctx, structureRef, aSplit, repStyleRef.current, { uniformColor: mainColorRef.current });
+      await ensureLabComponents(ctx, structureRef, aSplit, repStyleRef.current, {
+        uniformColor: mainColorRef.current,
+        hidden: mainHiddenRef.current,
+      });
       timing.mark("component rebuild");
     });
   }, [viewer, primaryLoaded, aSplit, runStyling]);
@@ -899,6 +912,7 @@ export default function HetstarViewer({
       if (viewer.getPrimaryStructureRef() !== structureRef) return;
       await syncSelRepOverlays(ctx, structureRef, selRepRefs.current, selRepOverlays, repStyleRef.current, {
         uniformColor: mainColorRef.current,
+        hidden: mainHiddenRef.current,
       });
     });
   }, [viewer, primaryLoaded, selRepOverlays, runStyling]);
@@ -997,11 +1011,15 @@ export default function HetstarViewer({
       // letter colour wherever the user moved a variable off the top world
       const style: RepStyle = { ...repStyleRef.current, type: "ball-and-stick", ballStick: { sizeFactor: SELREP_BALLSTICK_SIZE } };
       const spec = reprSpecForRole("polymer", style, { uniformColor: mainColorRef.current });
-      await ctx.builders.structure.representation.addRepresentation(comp, {
-        ...spec,
-        typeParams: { ...spec.typeParams, clip: { variant: "pixel", objects: modelClipRef.current } },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any);
+      await ctx.builders.structure.representation.addRepresentation(
+        comp,
+        {
+          ...spec,
+          typeParams: { ...spec.typeParams, clip: { variant: "pixel", objects: modelClipRef.current } },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any,
+        mainHiddenRef.current ? BORN_HIDDEN : undefined,
+      );
     });
     // colorMode: the sticks follow the model's colour mode, so a mode change rebuilds them
   }, [viewer, primaryLoaded, worldSticks, repStyle.colorMode, runStyling]);
@@ -1021,6 +1039,7 @@ export default function HetstarViewer({
         uniformColor: mainColorRef.current,
         colorOverride: structurePaint ? { color: TRACK_THEME_NAME, colorParams: { paint: structurePaint } } : undefined,
         clip: modelClipRef.current,
+        hidden: mainHiddenRef.current,
       });
     });
     // the overlay is outside the rep-style pass, so whatever colours the polymer restyles it here
@@ -1068,7 +1087,8 @@ export default function HetstarViewer({
   }, [viewer, primaryLoaded, repStyle, structurePaint, aSplit, mainColor, runStyling]);
 
   // the main view's model shown or hidden, and its ligands and ions within it. Declared after
-  // everything that makes components on it, since those are born visible.
+  // everything that makes components on it, since those are born visible. On a model that was
+  // just loaded this is the pass that shows it (see mainHiddenRef), once its components exist.
   const mainVisible = mainCard?.sceneVisible ?? true;
   const mainHet = mainCard?.look.het ?? true;
   const mainIons = mainCard?.look.ions ?? true;
@@ -1079,7 +1099,16 @@ export default function HetstarViewer({
     if (!structureRef) return;
     runStyling("vis-a", async () => {
       if (viewer.getPrimaryStructureRef() !== structureRef) return;
+      // the file can be in before its table is: nothing is built yet, so nothing is shown yet
+      if (mainHiddenRef.current && !aSplit) return;
       applyModelVisibility(ctx, structureRef, { visible: mainVisible, het: mainHet, ions: mainIons });
+      if (!mainHiddenRef.current) return;
+      mainHiddenRef.current = false;
+      if (frameOnRevealRef.current) {
+        frameOnRevealRef.current = false;
+        viewer.resetCamera(0);
+      }
+      setMainRevealed(true);
     });
   }, [viewer, primaryLoaded, mainVisible, mainHet, mainIons, aSplit, selRepOverlays, worldSticks, mainSideChains, memberIndex, runStyling]);
 
@@ -1122,7 +1151,8 @@ export default function HetstarViewer({
   }, [entry, mainModelId, cards, bundles.states, identityColors, paints.models]);
   const sceneModels = useSceneModels({
     viewer,
-    ready: primaryLoaded,
+    // the other models go in once the main one is on screen
+    ready: mainRevealed,
     canLoad: densityState !== "loading",
     specs: sceneSpecs,
     base: sceneBase,
@@ -2428,6 +2458,8 @@ export default function HetstarViewer({
       restoreMemberRef.current = kept?.memberIndex ?? 0;
       setPendingMainId(null);
       setPrimaryLoaded(false);
+      mainHiddenRef.current = true;
+      setMainRevealed(false);
       setMemberIndex(0);
       setShownConformers(kept?.shownConformers ?? new Set());
       setGlobalAlt(kept?.globalAlt ?? null);
@@ -3079,8 +3111,9 @@ export default function HetstarViewer({
     [viewer, aTable],
   );
 
-  const onPrimaryLoaded = useCallback(() => {
+  const onPrimaryLoaded = useCallback((info: { freshScene: boolean }) => {
     timingLoadedRef.current = true;
+    if (info.freshScene) frameOnRevealRef.current = true;
     setPrimaryLoaded(true);
   }, []);
   // the main model's loads ride the styling queue, so they never overlap another write to the tree
@@ -3230,7 +3263,7 @@ export default function HetstarViewer({
               sceneKey={String(sceneSerial)}
               schedule={scheduleLoad}
               binary={false}
-              view={VIEW}
+              bare
               onReady={setViewer}
               onLoaded={onPrimaryLoaded}
               colorThemes={mainColorThemes}
@@ -3250,9 +3283,10 @@ export default function HetstarViewer({
               </div>
             )}
             {/* faint scrim while the bundle loads: covers the fetch/table phase AND the
-                window where Mol* is still parsing/building (loading is already false,
-                primaryLoaded not yet true — the slow part for big ensembles) */}
-            {!loadError && (loading || (!!aText && !primaryLoaded)) && (
+                window where Mol* is still parsing and the model is being put together
+                hidden (loading is already false, mainRevealed not yet true: the slow part
+                for big ensembles) */}
+            {!loadError && (loading || (!!aText && !mainRevealed)) && (
               <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/40 backdrop-blur-[1px]">
                 <div className={`flex items-center gap-2 px-2.5 py-1.5 ${CARD_SHELL}`}>
                   <Spinner className="h-3.5 w-3.5" />

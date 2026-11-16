@@ -152,6 +152,10 @@ export function componentRole(c: StructureComponentRef): LabRole | null {
 // outside reprSpecForRole spreads this too.
 export const NO_HYDROGENS = { ignoreHydrogens: true } as const;
 
+/** A representation made while its model is still being put together is born hidden, so no
+ * half-styled build is ever on screen; applyModelVisibility shows the model once it is done. */
+export const BORN_HIDDEN = { initialState: { isHidden: true } } as const;
+
 function typeParamsFor(type: RepType, style: RepStyle) {
   return type === "ball-and-stick"
     ? {
@@ -274,14 +278,15 @@ function reprSpecLegacy(kind: string | null, style: RepStyle, opts: { uniformCol
  * Replace the structure's components with the three chemistry components of `split`
  * (skipping empty groups) and add one representation per component using the role
  * rules. The conformer/selection layers on the old components die with them — callers
- * re-assert those downstream (the panel's effect order guarantees it).
+ * re-assert those downstream (the panel's effect order guarantees it). With `hidden` the
+ * new representations are born hidden (BORN_HIDDEN).
  */
 export async function ensureLabComponents(
   ctx: PluginContext,
   structureRef: string,
   split: CompSplit,
   style: RepStyle,
-  opts: { uniformColor: number; ghost?: boolean },
+  opts: { uniformColor: number; ghost?: boolean; hidden?: boolean },
 ): Promise<void> {
   // create the new components before deleting the old ones: if anything in the
   // create loop fails, the previous components stay on screen instead of nothing.
@@ -318,6 +323,7 @@ export async function ensureLabComponents(
       comp,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       reprSpecForRole(g.role, style, opts) as any,
+      opts.hidden ? BORN_HIDDEN : undefined,
     );
     if (repr) reprRefs.push(repr.ref);
   }

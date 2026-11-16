@@ -3,6 +3,7 @@ import type { ResidueRange } from "./conformers";
 import { removeNode } from "./density";
 import { buildResidueQuery, mergeExpressions } from "./queries";
 import {
+  BORN_HIDDEN,
   reprSpecForRole,
   SELREP_BALLSTICK_SIZE,
   SELREP_SPACEFILL_SIZE,
@@ -29,7 +30,7 @@ export async function syncSelRepOverlays(
   refs: Map<string, string>,
   overlays: readonly SelRepOverlay[],
   style: RepStyle,
-  opts: { uniformColor: number },
+  opts: { uniformColor: number; hidden?: boolean },
 ): Promise<void> {
   for (const ref of refs.values()) {
     try {
@@ -59,6 +60,7 @@ export async function syncSelRepOverlays(
       component,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       reprSpecForRole("polymer", overlayStyle, opts) as any,
+      opts.hidden ? BORN_HIDDEN : undefined,
     );
   }
 }

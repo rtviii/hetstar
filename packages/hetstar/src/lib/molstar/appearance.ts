@@ -21,6 +21,7 @@ import { removeNode, setReprsPickable, type ClipObjectSpec } from "./density";
 import { buildSideChainQuery, structureToLoci } from "./queries";
 import {
   applyRepStyle,
+  BORN_HIDDEN,
   componentRole,
   reprSpecForRole,
   repTypeOfKind,
@@ -62,7 +63,7 @@ export async function syncSideChains(
   structureRef: string,
   polymerComps: readonly string[] | null,
   style: RepStyle,
-  opts: { uniformColor: number; ghost?: boolean; colorOverride?: ColorOverride; clip?: ClipObjectSpec[] },
+  opts: { uniformColor: number; ghost?: boolean; colorOverride?: ColorOverride; clip?: ClipObjectSpec[]; hidden?: boolean },
 ): Promise<void> {
   const existing = componentsForStructure(ctx, structureRef).find(isSideChainsComponent);
   if (!polymerComps || !polymerComps.length) {
@@ -91,8 +92,12 @@ export async function syncSideChains(
     { label: "side chains", tags: [SIDE_CHAINS_TAG] },
   );
   if (!component) return;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const representation = await ctx.builders.structure.representation.addRepresentation(component, spec as any);
+  const representation = await ctx.builders.structure.representation.addRepresentation(
+    component,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    spec as any,
+    opts.hidden ? BORN_HIDDEN : undefined,
+  );
   if (opts.ghost && representation) setReprsPickable(ctx, [representation.ref], false);
 }
 
