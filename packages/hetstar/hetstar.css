@@ -1347,6 +1347,10 @@
   width: 272px;
 }
 
+.hetstar .w-\[42\%\] {
+  width: 42%;
+}
+
 .hetstar .w-auto {
   width: auto;
 }
@@ -1363,8 +1367,16 @@
   min-width: 0.75rem;
 }
 
+.hetstar .min-w-\[148px\] {
+  min-width: 148px;
+}
+
 .hetstar .max-w-\[160px\] {
   max-width: 160px;
+}
+
+.hetstar .max-w-\[232px\] {
+  max-width: 232px;
 }
 
 .hetstar .max-w-\[260px\] {
@@ -1584,6 +1596,10 @@
 
 .hetstar .self-start {
   align-self: flex-start;
+}
+
+.hetstar .self-stretch {
+  align-self: stretch;
 }
 
 .hetstar .overflow-auto {

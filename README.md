@@ -21,8 +21,9 @@ would need from that API.
   with one card per model of the entry stacked in it. A card says what the model is (kind,
   software, R-work and R-free, altlocs or members, distance from the main model as filed) and
   carries switches for main view, drawn in the main view, its replica (the model alone in a
-  small canvas turned like the main view), its style, and reference. The main view's model is
-  the card ruled in the accent colour.
+  small canvas turned like the main view), its style, and reference. The facts and switches
+  are the card's left half and the replica its right half, so that more models fit in the
+  panel's height. The main view's model is the card ruled in the accent colour.
 - Experimental density computed in the browser. The deposited structure factors (sf-cif) are
   FFT'd by Mol* into 2Fo-Fc and Fo-Fc maps, then carved around the model. Sigma, opacity and
   clip controls are available. Density loads in the background and is off until toggled.
@@ -30,7 +31,7 @@ would need from that API.
   B-iso, bond variability, ensemble RMSF, model A vs B RMSD, altloc RMSF delta, and Fo-Fc
   mean, peak and support delta. Two are computed only when asked for, against the 2Fo-Fc map:
   RSCC and Q-score (MapQ's definition, with symmetry copies as neighbours and an altloc rule
-  of its own; not yet checked against MapQ or ChimeraX on an entry).
+  of its own; within 0.01 per residue of ChimeraX's QScore on the two entries it was checked on).
 - One style board for every choice of look. A model has one look, the same in the main view
   and in its replica. The board has two tabs: Colour (the sources of colour grouped by
   concept: looks, motion, heterogeneity, comparisons, fit to the map, stored values, loci) and

@@ -25,18 +25,18 @@ import ModelCard, { type HoverTarget, type ModelFact, type ReplicaWiring } from 
 
 // The Models Switchboard: the layer where the models of an entry are told apart and placed.
 // A panel at the viewer's right edge, the models stacked in it; drag its left edge to size
-// it. Every model has a card saying what it is, with the switches that make it the main
-// view, draw it behind the main view, open its style, mark it as the reference, and show
-// its replica. A replica is the WHOLE model in a small canvas turned exactly like the main
-// view; it carries the main view's selection, overrides and hover, and marks the region the
-// main view is on, so it reads as a minimap of that model and as a side-by-side of the
-// entry's models.
+// it. Every model has a card: on its left what the model is, with the switches that make it
+// the main view, draw it behind the main view, open its style, mark it as the reference, and
+// show its replica; on its right that replica. A replica is the WHOLE model in a small canvas
+// turned exactly like the main view; it carries the main view's selection, overrides and
+// hover, and marks the region the main view is on, so it reads as a minimap of that model
+// and as a side-by-side of the entry's models.
 
 const VIEW_SPHERE_DEBOUNCE_MS = 150;
-const MIN_WIDTH = 208;
-const MAX_WIDTH = 560;
-/** the panel's width, kept while the page lives */
-let rememberedWidth = 272;
+const MIN_WIDTH = 300;
+const MAX_WIDTH = 720;
+/** the panel's width, kept while the page lives: a card is its facts beside its replica */
+let rememberedWidth = 400;
 
 interface ModelsSwitchboardProps {
   /** the panel is unfolded; folded, the host shows a chip that opens it */

@@ -136,8 +136,10 @@ function ReplicaCanvas({
   const problem = viewerError ?? renderError ?? (bundle?.status === "error" ? bundle.message : null);
   const busy = !problem && (!viewer || !ready);
 
+  // the sizer gives the canvas its 4:3 height; a taller facts column stretches it further
   return (
-    <div className="relative aspect-[4/3] max-h-64 w-full border-b border-line bg-white" onContextMenu={(e) => e.preventDefault()}>
+    <div className="relative min-w-0 flex-1 self-stretch bg-white" onContextMenu={(e) => e.preventDefault()}>
+      <div className="aspect-[4/3] max-h-64" />
       <div ref={containerRef} className="absolute inset-0" />
       {busy && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -198,9 +200,10 @@ interface ModelCardProps {
   members: { count: number; index: number; number: number; onMember: (index: number) => void } | null;
 }
 
-// One model of the entry in the Models Switchboard: what it is, its replica when that is on,
-// and the switches that place it in the viewer (main view, drawn behind it, reference). The
-// main view's model is the card ruled in the accent.
+// One model of the entry in the Models Switchboard: on the left what it is, with the switches
+// that place it in the viewer (main view, drawn behind it, reference), and on the right its
+// replica when that is on, as tall as the card. Side by side, so that the panel holds more
+// models in its height. The main view's model is the card ruled in the accent.
 export default function ModelCard({
   name,
   detail,
@@ -226,144 +229,147 @@ export default function ModelCard({
   members,
 }: ModelCardProps) {
   const loading = bundle?.status === "loading";
+  const showReplica = replica && loadable;
   return (
-    <div className={`hs-dense flex shrink-0 flex-col overflow-hidden ${CARD_SHELL}`} data-main={isMain}>
-      <div className="flex h-[22px] items-center gap-1 border-b border-line pl-1.5 pr-1 text-[10.5px] text-ink">
-        <span className="hs-pip" style={{ background: hexCss(color) }} />
-        <span className="min-w-0 flex-1 truncate">
-          <Tooltip content={{ title: name, rows: detail }}>
-            <span className="block truncate">{name}</span>
-          </Tooltip>
-        </span>
-        {!isMain && (loading || mainPending) && <Spinner className="h-3 w-3" />}
-      </div>
-      {replica && loadable && <ReplicaCanvas bundle={bundle} color={color} look={look} computing={computing} wiring={wiring} />}
-      <div className="flex h-[22px] items-center gap-px border-b border-line px-1">
-        <button
-          type="button"
-          className={`hs-btn hs-btn-sm hs-btn-icon ${isMain ? "" : "hs-btn-quiet"}`}
-          aria-pressed={isMain}
-          disabled={!loadable}
-          title={
-            isMain
-              ? "this model is the main view: picks, the lanes and the conformer tools act on it"
-              : mainPending
-                ? "becomes the main view as soon as its file and the maps are in"
-                : "make this model the main view; the others stand behind it as ghosts"
-          }
-          aria-label={`make ${name} the main view`}
-          onClick={onMain}
-        >
-          <MainViewIcon />
-        </button>
-        <button
-          type="button"
-          className={`hs-btn hs-btn-sm hs-btn-icon ${sceneVisible ? "" : "hs-btn-quiet"}`}
-          aria-pressed={sceneVisible}
-          disabled={!loadable}
-          title={sceneVisible ? "drawn in the main view; click to hide it there" : "not drawn in the main view; click to show it there"}
-          aria-label={`${sceneVisible ? "hide" : "show"} ${name} in the main view`}
-          onClick={onSceneVisible}
-        >
-          {sceneVisible ? <EyeIcon /> : <EyeOffIcon />}
-        </button>
-        <button
-          type="button"
-          className={`hs-btn hs-btn-sm hs-btn-icon ${replica ? "" : "hs-btn-quiet"}`}
-          aria-pressed={replica}
-          disabled={!loadable || (!replica && !replicaAllowed)}
-          title={
-            replica
-              ? "its replica is on: the model alone, turned like the main view; click to fold it away"
-              : replicaAllowed
-                ? "show its replica: the model alone, turned like the main view"
-                : "no more replicas at once; fold one away first"
-          }
-          aria-label={`${replica ? "hide" : "show"} the replica of ${name}`}
-          onClick={onReplica}
-        >
-          <ReplicaIcon />
-        </button>
-        <button
-          type="button"
-          className={`hs-btn hs-btn-sm hs-btn-icon ${styleOpen ? "" : "hs-btn-quiet"}`}
-          aria-pressed={styleOpen}
-          disabled={!loadable}
-          title="style of this model alone: what it is drawn as and coloured by, wherever it is drawn"
-          aria-label={`style of ${name}`}
-          onClick={onStyle}
-        >
-          <ColorIcon />
-        </button>
-        <button
-          type="button"
-          className={`hs-btn hs-btn-sm ml-auto ${isReference ? "" : "hs-btn-quiet"}`}
-          aria-pressed={isReference}
-          disabled={!loadable}
-          title={
-            isReference
-              ? "the other models are compared against this one; click to go back to the default reference"
-              : "compare the other models against this one"
-          }
-          onClick={onReference}
-        >
-          ref
-        </button>
-      </div>
-      {members && members.count > 1 && (
-        <div
-          className="flex h-[22px] items-center gap-1 border-b border-line px-1"
-          title={
-            isMain
-              ? "the member of the ensemble on screen; the main view, the lanes and the metrics follow it"
-              : "the members are stepped through while this model is the main view; elsewhere its first member is drawn"
-          }
-        >
-          <span className="hs-seg" role="group" aria-label="ensemble member">
-            <button
-              type="button"
-              className="hs-btn hs-btn-sm hs-btn-icon"
-              disabled={!isMain || members.index <= 0}
-              aria-label="previous member"
-              onClick={() => members.onMember(members.index - 1)}
-            >
-              &minus;
-            </button>
-            <button
-              type="button"
-              className="hs-btn hs-btn-sm hs-btn-icon"
-              disabled={!isMain || members.index >= members.count - 1}
-              aria-label="next member"
-              onClick={() => members.onMember(members.index + 1)}
-            >
-              +
-            </button>
+    <div className={`hs-dense flex shrink-0 overflow-hidden ${CARD_SHELL}`} data-main={isMain}>
+      <div className={`flex min-w-0 flex-col ${showReplica ? "w-[42%] min-w-[148px] max-w-[232px] shrink-0 border-r border-line" : "flex-1"}`}>
+        <div className="flex h-[22px] items-center gap-1 border-b border-line pl-1.5 pr-1 text-[10.5px] text-ink">
+          <span className="hs-pip" style={{ background: hexCss(color) }} />
+          <span className="min-w-0 flex-1 truncate">
+            <Tooltip content={{ title: name, rows: detail }}>
+              <span className="block truncate">{name}</span>
+            </Tooltip>
           </span>
-          <input
-            type="range"
-            className="min-w-0 flex-1 accent-[#663be4]"
-            min={0}
-            max={members.count - 1}
-            step={1}
-            value={members.index}
-            disabled={!isMain}
-            aria-label="ensemble member"
-            onChange={(event) => members.onMember(Number(event.target.value))}
-          />
-          <span className="hs-value shrink-0 text-[9.5px]">
-            {members.number}
-            <span className="hs-unit"> {members.index + 1}/{members.count}</span>
-          </span>
+          {!isMain && (loading || mainPending) && <Spinner className="h-3 w-3" />}
         </div>
-      )}
-      <dl className="hs-kv px-1.5 py-1" style={{ ["--hs-kv-key" as string]: "52px" }}>
-        {facts.map((fact) => (
-          <Fragment key={fact.label}>
-            <dt>{fact.label}</dt>
-            <dd className={fact.warn ? "text-danger" : undefined}>{fact.text}</dd>
-          </Fragment>
-        ))}
-      </dl>
+        <div className="flex h-[22px] items-center gap-px border-b border-line px-1">
+          <button
+            type="button"
+            className={`hs-btn hs-btn-sm hs-btn-icon ${isMain ? "" : "hs-btn-quiet"}`}
+            aria-pressed={isMain}
+            disabled={!loadable}
+            title={
+              isMain
+                ? "this model is the main view: picks, the lanes and the conformer tools act on it"
+                : mainPending
+                  ? "becomes the main view as soon as its file and the maps are in"
+                  : "make this model the main view; the others stand behind it as ghosts"
+            }
+            aria-label={`make ${name} the main view`}
+            onClick={onMain}
+          >
+            <MainViewIcon />
+          </button>
+          <button
+            type="button"
+            className={`hs-btn hs-btn-sm hs-btn-icon ${sceneVisible ? "" : "hs-btn-quiet"}`}
+            aria-pressed={sceneVisible}
+            disabled={!loadable}
+            title={sceneVisible ? "drawn in the main view; click to hide it there" : "not drawn in the main view; click to show it there"}
+            aria-label={`${sceneVisible ? "hide" : "show"} ${name} in the main view`}
+            onClick={onSceneVisible}
+          >
+            {sceneVisible ? <EyeIcon /> : <EyeOffIcon />}
+          </button>
+          <button
+            type="button"
+            className={`hs-btn hs-btn-sm hs-btn-icon ${replica ? "" : "hs-btn-quiet"}`}
+            aria-pressed={replica}
+            disabled={!loadable || (!replica && !replicaAllowed)}
+            title={
+              replica
+                ? "its replica is on: the model alone, turned like the main view; click to fold it away"
+                : replicaAllowed
+                  ? "show its replica: the model alone, turned like the main view"
+                  : "no more replicas at once; fold one away first"
+            }
+            aria-label={`${replica ? "hide" : "show"} the replica of ${name}`}
+            onClick={onReplica}
+          >
+            <ReplicaIcon />
+          </button>
+          <button
+            type="button"
+            className={`hs-btn hs-btn-sm hs-btn-icon ${styleOpen ? "" : "hs-btn-quiet"}`}
+            aria-pressed={styleOpen}
+            disabled={!loadable}
+            title="style of this model alone: what it is drawn as and coloured by, wherever it is drawn"
+            aria-label={`style of ${name}`}
+            onClick={onStyle}
+          >
+            <ColorIcon />
+          </button>
+          <button
+            type="button"
+            className={`hs-btn hs-btn-sm ml-auto ${isReference ? "" : "hs-btn-quiet"}`}
+            aria-pressed={isReference}
+            disabled={!loadable}
+            title={
+              isReference
+                ? "the other models are compared against this one; click to go back to the default reference"
+                : "compare the other models against this one"
+            }
+            onClick={onReference}
+          >
+            ref
+          </button>
+        </div>
+        {members && members.count > 1 && (
+          <div
+            className="flex h-[22px] items-center gap-1 border-b border-line px-1"
+            title={
+              isMain
+                ? "the member of the ensemble on screen; the main view, the lanes and the metrics follow it"
+                : "the members are stepped through while this model is the main view; elsewhere its first member is drawn"
+            }
+          >
+            <span className="hs-seg" role="group" aria-label="ensemble member">
+              <button
+                type="button"
+                className="hs-btn hs-btn-sm hs-btn-icon"
+                disabled={!isMain || members.index <= 0}
+                aria-label="previous member"
+                onClick={() => members.onMember(members.index - 1)}
+              >
+                &minus;
+              </button>
+              <button
+                type="button"
+                className="hs-btn hs-btn-sm hs-btn-icon"
+                disabled={!isMain || members.index >= members.count - 1}
+                aria-label="next member"
+                onClick={() => members.onMember(members.index + 1)}
+              >
+                +
+              </button>
+            </span>
+            <input
+              type="range"
+              className="min-w-0 flex-1 accent-[#663be4]"
+              min={0}
+              max={members.count - 1}
+              step={1}
+              value={members.index}
+              disabled={!isMain}
+              aria-label="ensemble member"
+              onChange={(event) => members.onMember(Number(event.target.value))}
+            />
+            <span className="hs-value shrink-0 text-[9.5px]">
+              {members.number}
+              <span className="hs-unit"> {members.index + 1}/{members.count}</span>
+            </span>
+          </div>
+        )}
+        <dl className="hs-kv px-1.5 py-1" style={{ ["--hs-kv-key" as string]: "46px" }}>
+          {facts.map((fact) => (
+            <Fragment key={fact.label}>
+              <dt>{fact.label}</dt>
+              <dd className={fact.warn ? "text-danger" : undefined}>{fact.text}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      </div>
+      {showReplica && <ReplicaCanvas bundle={bundle} color={color} look={look} computing={computing} wiring={wiring} />}
     </div>
   );
 }
