@@ -18,8 +18,14 @@ const MISSING_COLOR = Color(0xd9d9d9);
 
 /** residue key (hetkit residueKey) to colour, resolved once per track + domain + ramp */
 export interface TrackPaint {
+  /** Sets this paint apart from every other. Mol* repaints a representation only when its
+   * colour theme's props differ by value, and its comparison reads any two Maps as equal:
+   * without the serial, going from one metric straight to another repaints nothing. */
+  serial: number;
   colors: ReadonlyMap<string, Color>;
 }
+
+let lastPaintSerial = 0;
 
 export function trackPaint(track: Track, domain: [number, number], stops: number[]): TrackPaint {
   const colors = new Map<string, Color>();
@@ -30,7 +36,8 @@ export function trackPaint(track: Track, domain: [number, number], stops: number
     const [r, g, b] = rampColor(stops, span > 0 ? (value - domain[0]) / span : 0);
     colors.set(residueKey(track.keys[i]), Color.fromRgb(Math.round(r), Math.round(g), Math.round(b)));
   }
-  return { colors };
+  lastPaintSerial += 1;
+  return { serial: lastPaintSerial, colors };
 }
 
 function residueColors(model: Model, paint: TrackPaint): Uint32Array {
