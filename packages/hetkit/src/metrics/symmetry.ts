@@ -33,6 +33,9 @@ export function symmetryOperatorFromColumnMajor(matrix: ArrayLike<number>): numb
 /** how far beyond the model's bounding box a symmetry copy is kept, in A: a Q-score shell
  * point lies up to 2.0 A from its atom and is tested against atoms up to 1.8 A from it */
 export const SYMMETRY_MATE_PADDING = 4;
+/** how far the last row of an operator may be from 0 0 0 1 (a translation in a column-major
+ * matrix handed over by mistake is angstroms away, not rounding) */
+const LAST_ROW_TOLERANCE = 1e-6;
 
 export interface AltlocCodes {
   /** per atom row: index into `labels`; 0 for an atom with no altloc */
@@ -112,7 +115,9 @@ export function symmetryMates(
   const rows: number[] = [];
   const made: number[] = [];
   operators.forEach((m, index) => {
-    if (m.length !== 16 || m[12] !== 0 || m[13] !== 0 || m[14] !== 0 || m[15] !== 1) {
+    // to within rounding: a matrix composed from a cell's transforms is off by an ulp or two
+    const off = (value: number, expected: number) => Math.abs(value - expected) > LAST_ROW_TOLERANCE;
+    if (m.length !== 16 || off(m[12], 0) || off(m[13], 0) || off(m[14], 0) || off(m[15], 1)) {
       throw new Error(`symmetry operator ${index} is not a row-major 4x4 transform with last row 0 0 0 1`);
     }
     for (const row of heavyRows) {

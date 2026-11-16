@@ -369,6 +369,20 @@ describe("Q-score", () => {
     expect(() => symmetryMates(table, [columnMajor])).toThrow();
   });
 
+  it("should_accept_an_operator_when_its_last_row_is_off_by_rounding", async () => {
+    // given
+    const table = await model([{ at: [1, 2, 3] }, { at: [5, 2, 3], seq: 2 }]);
+    // a shift of (2, 0, 0) as a product of cell transforms leaves it: the last row an ulp off
+    const rounded = [1, 0, 0, 2, 0, 1, 0, 0, 0, 0, 1, 0, 1e-17, -2e-17, 0, 1 + 2.220446049250313e-16];
+
+    // when
+    const mates = symmetryMates(table, [rounded]);
+
+    // then
+    expect(mates.count).toBe(2);
+    expect([mates.x[0], mates.y[0], mates.z[0]]).toEqual([3, 2, 3]);
+  });
+
   it("should_average_the_members_when_the_model_is_an_ensemble_of_two", async () => {
     // given
     const first = await model([{ at: [0, 0, 0] }, { at: [0, 0, 1.5], name: "CB" }]);
