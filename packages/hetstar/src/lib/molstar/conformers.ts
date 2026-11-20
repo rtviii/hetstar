@@ -12,12 +12,9 @@ import {
 } from "molstar/lib/mol-plugin-state/helpers/structure-transparency";
 import { Color } from "molstar/lib/mol-util/color";
 import {
-  isPolymerComp,
   residueKey,
   type AltlocResidue,
   type AltlocSummary,
-  type AtomTable,
-  type HetcifRowIndex,
 } from "@dynamic-pdb/hetkit/model";
 import { ALT_FALLBACK_COLOR, AltColors } from "./altloc-theme";
 import { type AltGroupSelector, buildAltGroupExpression, executeQuery } from "./queries";
@@ -108,19 +105,19 @@ export interface ConformerStyleState {
   /** the card look's per-count transparency on the polymer trace (single-conformer residues
    * ghosted); only read with polymerAsTrace, where the collapse layers leave the polymer alone */
   polymerFade?: boolean;
-  /** a world from the file's hetcif categories (one state per variable): it decides the
-   * hidden conformers of every residue a variable covers; residues with altlocs that no
-   * variable covers fall back to the per-residue collapse; globalAlt is ignored */
-  world?: WorldStyle;
+  /** a module's choice of conformers (module.ts): it decides the hidden conformers of every
+   * residue it covers; residues with altlocs it does not cover fall back to the per-residue
+   * collapse; globalAlt is ignored */
+  override?: ConformerOverride;
 }
 
-export interface WorldStyle {
-  /** atoms hidden by the chosen states (hetkit hiddenRowsForWorld, as selectors) */
+export interface ConformerOverride {
+  /** atoms hidden by the choice */
   hidden: AltGroupSelector[];
-  /** residueKeys (chain|seq|ins) touched by any variable */
+  /** residueKeys (chain|seq|ins) the choice decides */
   covered: ReadonlySet<string>;
-  /** the visible atoms of variables the user moved off the top world, by altloc letter, for
-   * the accent overpaint (same role as the globalAlt accent) */
+  /** visible atoms to set apart, by altloc letter, for the accent overpaint (same role as the
+   * globalAlt accent) */
   accent: Map<string, AltGroupSelector[]>;
 }
 
@@ -143,13 +140,14 @@ export function isSelRepComponent(c: StructureComponentRef): boolean {
   return !!c.cell.transform.tags?.includes("lab-selrep");
 }
 
-// the world-sticks overlay: ball-and-stick over every polymer residue a hetcif variable
-// covers, present only while the polymer is a trace (cartoon), where the collapse layers
-// leave the polymer alone and the world's choices would otherwise move nothing on screen.
-// Exempt from the rep-style pass and the chemistry rebuild; takes the collapse/accent layers.
-export const WORLD_STICKS_TAG = "lab-worldsticks";
-export function isWorldSticksComponent(c: StructureComponentRef): boolean {
-  return !!c.cell.transform.tags?.includes(WORLD_STICKS_TAG);
+// the module-sticks overlay: ball-and-stick over the polymer residues a module's conformer
+// override covers (module.ts stickRanges), present only while the polymer is a trace
+// (cartoon), where the collapse layers leave the polymer alone and the override would
+// otherwise move nothing on screen. Exempt from the rep-style pass and the chemistry
+// rebuild; takes the collapse/accent layers.
+export const MODULE_STICKS_TAG = "lab-modulesticks";
+export function isModuleSticksComponent(c: StructureComponentRef): boolean {
+  return !!c.cell.transform.tags?.includes(MODULE_STICKS_TAG);
 }
 
 // the side-chain overlay of the "cartoon + side chains" representation: thin sticks over
@@ -173,31 +171,10 @@ export function isOverlayComponent(c: StructureComponentRef): boolean {
   return (
     isBondsComponent(c) ||
     isSelRepComponent(c) ||
-    isWorldSticksComponent(c) ||
+    isModuleSticksComponent(c) ||
     isSideChainsComponent(c) ||
     isLocusComponent(c)
   );
-}
-
-/**
- * The polymer residues any hetcif variable covers, as contiguous per-chain ranges in table
- * order: the extent of the world-sticks overlay. Waters, ligands and ions a variable covers
- * are left out — their components are ball-and-stick under every polymer type already.
- */
-export function worldStickRanges(table: AtomTable, index: HetcifRowIndex): ResidueRange[] {
-  const ranges: ResidueRange[] = [];
-  let lastKey = "";
-  for (let i = 0; i < table.count; i++) {
-    const key = `${table.chain[i]}|${table.seq[i]}|${table.ins[i]}`;
-    if (key === lastKey) continue;
-    lastKey = key;
-    if (!index.byResidue.has(key) || !isPolymerComp(table.compId[i])) continue;
-    const last = ranges[ranges.length - 1];
-    if (last && last.chain === table.chain[i] && table.seq[i] === last.to + 1) last.to = table.seq[i];
-    else if (last && last.chain === table.chain[i] && table.seq[i] === last.to) continue; // insertion-code copy
-    else ranges.push({ chain: table.chain[i], from: table.seq[i], to: table.seq[i] });
-  }
-  return ranges;
 }
 
 /**
@@ -207,15 +184,15 @@ export function worldStickRanges(table: AtomTable, index: HetcifRowIndex): Resid
  */
 export function hiddenConformerSelectors(plan: ConformerPlan, state: ConformerStyleState): AltGroupSelector[] {
   const hidden: AltGroupSelector[] = [];
-  if (state.world) {
-    // the world's hidden atoms, except on expanded residues (which show every letter)
-    for (const h of state.world.hidden) {
+  if (state.override) {
+    // the override's hidden atoms, except on expanded residues (which show every letter)
+    for (const h of state.override.hidden) {
       if (state.shown.has(`${h.chain}|${h.seqStart}|`)) continue;
       hidden.push(h);
     }
   }
   for (const [key, res] of plan.byKey) {
-    if (state.world?.covered.has(key) && !state.shown.has(key)) continue; // the world decided
+    if (state.override?.covered.has(key) && !state.shown.has(key)) continue; // the override decided
     if (state.shown.has(key)) {
       // expanded residue: every letter visible EXCEPT the individually muted ones
       if (state.muted?.size) {
@@ -233,7 +210,7 @@ export function hiddenConformerSelectors(plan: ConformerPlan, state: ConformerSt
       continue;
     }
     const kept =
-      !state.world && state.globalAlt && res.altIds.includes(state.globalAlt) ? state.globalAlt : plan.kept.get(key);
+      !state.override && state.globalAlt && res.altIds.includes(state.globalAlt) ? state.globalAlt : plan.kept.get(key);
     for (const letter of res.altIds) {
       if (letter === kept) continue;
       hidden.push({
@@ -300,8 +277,8 @@ export async function applyConformerStyling(
   // active global state: the residues the state actually switched (they carry the letter)
   // get their visible letter atoms painted in the letter color — the rest of the model
   // (unsplit residues, fallback residues) stays base, so the state reads at a glance
-  if (state.world) {
-    for (const [letter, selectors] of state.world.accent) {
+  if (state.override) {
+    for (const [letter, selectors] of state.override.accent) {
       const list = byLetter.get(letter) ?? [];
       list.push(...selectors);
       byLetter.set(letter, list);

@@ -1,5 +1,5 @@
 "use client";
-import { ENTRY_GROUP_LABELS, STAGE_LABELS, STAGES, type EntryDef, type EntryGroup, type StageId, type StageState } from "../../lib/lab/entries";
+import { STAGE_LABELS, STAGES, type EntryDef, type StageId, type StageState } from "../../lib/lab/entries";
 import { knownEntryIds, PDB_ALIASES } from "../../lib/dpdb/resolve";
 import type { EntryManifest } from "../../lib/dpdb/types";
 import { PinPopover, SectionLabel, Spinner, TinyText, Tooltip } from "./ui";
@@ -77,7 +77,8 @@ export default function EntryChip({
   );
 
   const loadedDef = entry ? examples.find((e) => e.id === entry.pdbId || e.id === entry.id) ?? null : null;
-  const groups = (["hetcif", "ensemble"] as EntryGroup[]).map((g) => ({ g, items: examples.filter((e) => e.group === g) })).filter((x) => x.items.length);
+  // one optgroup per heading, in the order the headings first appear in the list
+  const groups = [...new Set(examples.map((e) => e.group))].map((g) => ({ g, items: examples.filter((e) => e.group === g) }));
   const popover = (
     <div className="flex flex-col gap-2">
       <label className="flex flex-col gap-1">
@@ -93,7 +94,7 @@ export default function EntryChip({
         >
           <option value="">pick an example...</option>
           {groups.map(({ g, items }) => (
-            <optgroup key={g} label={ENTRY_GROUP_LABELS[g]}>
+            <optgroup key={g} label={g}>
               {items.map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.label}
@@ -146,7 +147,7 @@ export default function EntryChip({
       <TinyText className="border-t border-line pt-2">
         Any example above by id, any dpdb_... id from the Dynamic PDB catalogue, or {Object.keys(PDB_ALIASES).join(", ")} by PDB id.
         Deposited models and structure factors come from RCSB; qFit models from files.dynamicpdb.com (through the local /api proxy
-        in dev); hetcif examples are local files from the hetcif repo.
+        in dev).
       </TinyText>
     </div>
   );

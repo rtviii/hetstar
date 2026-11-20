@@ -1,25 +1,25 @@
 "use client";
 import { useMemo, useState } from "react";
+import { BACKBONE_ATOMS, isHeavy, type AtomTable } from "@dynamic-pdb/hetkit/model";
 import {
-  BACKBONE_ATOMS,
   hetcifComponents,
   hetcifRowFor,
   hetcifStateRows,
   hetcifTableFor,
   hetcifWorldCount,
   hetcifWorlds,
-  isHeavy,
-  type AtomTable,
+  stateSupport,
   type HetcifModel,
   type HetcifRowIndex,
   type HetcifState,
   type HetcifTable,
   type HetcifVariable,
   type HetcifWorld,
-} from "@dynamic-pdb/hetkit/model";
-import { stateSupport, type MapSampler, type StateSupportRow } from "@dynamic-pdb/hetkit/metrics";
-import { altColorCss } from "../../lib/molstar/altloc-theme";
-import { GroupLabel, Help, SectionLabel, SwitchButton, TinyText } from "./ui";
+  type StateSupportRow,
+} from "@dynamic-pdb/hetkit/hetcif";
+import type { MapSampler } from "@dynamic-pdb/hetkit/metrics";
+import { altColorCss } from "../lib/molstar/altloc-theme";
+import { GroupLabel, Help, SectionLabel, SwitchButton, TinyText } from "../components/compare/ui";
 
 // The world chooser for a file that carries hetcif categories (~/dev/hetcif, docs/format.md).
 // A world is one state per variable; the viewer shows exactly one. This panel explains the

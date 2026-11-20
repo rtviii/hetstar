@@ -1,8 +1,8 @@
-import type { AtomTable } from "./atoms";
-import type { MolCifBlock, MolCifFile } from "./cif";
-import { normValue } from "./cif";
-import type { AltSelector, AtomKey } from "./het-ext";
-import { matchesSelector } from "./het-ext";
+import type { AtomTable } from "../model/atoms";
+import type { MolCifBlock, MolCifFile } from "../model/cif";
+import { normValue } from "../model/cif";
+import type { AltSelector, AtomKey } from "../model/het-ext";
+import { matchesSelector } from "../model/het-ext";
 
 // The hetcif categories (~/dev/hetcif, docs/format.md), read with the same semantics as
 // the Python package there:

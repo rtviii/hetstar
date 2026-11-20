@@ -90,16 +90,25 @@ import "@dynamic-pdb/hetstar/styles.css";
 - `dpdb.apiBase` is the JSON:API base (default `/api/dpdb`, the dev proxy).
 - `dpdb.fileProxy` is a route that takes `?u=<artifact uri>` and returns the file (default
   `/api/dpdb-file`). An empty string fetches artifact URIs directly.
-- `preset` carries a consumer's opinions and nothing else: the representation the viewer
-  opens with, the colour modes the style board offers, the Mol* colour themes to register, and
-  the example entries the entry chip lists (`packages/hetstar/src/presets/`). Omitted, the
-  viewer uses `dynamicpdbPreset`, the structure-card look (ghost cartoon, purple ramp by
-  conformer count, ligand hues), so the website passes nothing. `hetcifPreset` is
-  ball-and-stick with letter colours and the hetcif example files. Everything the viewer does
-  because of what a file carries (altlocs, model numbers, hetcif state variables) is the same
-  under every preset; a preset must not be the place where engine behaviour changes. One
-  example: under a cartoon, the polymer residues hetcif variables cover are drawn as thin
-  sticks over the trace, so a world choice moves atoms under the card look too.
+- `preset` carries a consumer's choices: the representation the viewer opens with, the colour
+  modes the style board offers, the Mol* colour themes to register, the example entries the
+  entry chip lists, and optionally a module (`packages/hetstar/src/presets/`,
+  `packages/hetstar/src/module.ts`). Omitted, the viewer uses `dynamicpdbPreset`, the
+  structure-card look (ghost cartoon, purple ramp by conformer count, ligand hues) with no
+  module, so the website passes nothing. What the viewer does because of what a file carries
+  in standard mmCIF (altlocs, model numbers) is the engine's and the same under every preset.
+- A module is behaviour beside the engine that only some consumers want. The viewer calls the
+  module's hook with the main model and wires what comes back into places it already has: an
+  override of the conformer collapse, a stick overlay under a cartoon, a states section in
+  the selection flyout. The viewer never names a module, the main entry
+  (`@dynamic-pdb/hetstar`) imports none, and a preset without one runs none. The hetcif work
+  (`~/dev/hetcif`) is the first module: `packages/hetstar/src/hetcif/` and
+  `packages/hetkit/src/hetcif/`, exported as `@dynamic-pdb/hetstar/hetcif` and
+  `@dynamic-pdb/hetkit/hetcif`, opened in the dev app at `/hetcif`. Dynamic PDB does not use
+  it and must not come to depend on it: a hetcif feature that needs a new place in the viewer
+  adds a field to `ModuleOutput`, not a hetcif branch in the viewer.
+- The website pins the `dynamicpdb` branch of this repository through its submodule. `main` is
+  where all work lands; `dynamicpdb` moves forward only to a commit checked on the website.
 - `modelId` is the model the main view opens on; omitted, the viewer picks (qFit, else the
   ensemble, else the deposited model). Changing it while `entryId` stays the same switches the
   main view in place, as the card's own switch does.

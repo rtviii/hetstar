@@ -8,6 +8,10 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./hetcif": {
+      "types": "./src/hetcif/index.ts",
+      "default": "./src/hetcif/index.ts"
+    },
     "./styles.css": "./hetstar.css",
     "./package.json": "./package.json"
   },

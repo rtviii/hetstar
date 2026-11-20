@@ -54,7 +54,7 @@ export interface RepStyle {
   cartoon: { sizeFactor: number };
 }
 
-/** The engine's neutral default (the hetcif preset uses it as is); the dynamicpdb preset
+/** The engine's neutral default (a preset may use it as is); the dynamicpdb preset
  * overrides type and colour mode for the card look. Size params at Mol*'s defaults. */
 export const DEFAULT_REP_STYLE: RepStyle = {
   type: "ball-and-stick",

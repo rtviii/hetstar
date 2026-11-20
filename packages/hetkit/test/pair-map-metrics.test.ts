@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { buildAtomTable, parseCifText } from "../src/model";
-import { conformerSupport, makeTrack, mapSupportDelta, mapValueTracks, scopeTrack, stateSupport, trackDelta } from "../src/metrics";
+import { conformerSupport, makeTrack, mapSupportDelta, mapValueTracks, scopeTrack, trackDelta } from "../src/metrics";
+import { stateSupport } from "../src/hetcif";
 
 // Same hand-computable synthetic as synthetic.test.ts: residue A/1 with CA split A/B at
 // 0.5/0.5 one Angstrom apart in x, A/2 a lone CA, A/3 backbone unsplit with CB split

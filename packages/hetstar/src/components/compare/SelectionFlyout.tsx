@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { PickInfo } from "../../lib/molstar/viewer";
 import type { ResidueRange } from "../../lib/molstar/conformers";
 import { altColorCss } from "../../lib/molstar/altloc-theme";
@@ -8,7 +8,6 @@ import type { AtomTable } from "@dynamic-pdb/hetkit/model";
 import type { BondPair } from "../../lib/molstar/interactions";
 import BondList, { type BondRow } from "./BondList";
 import ConformerStatesPanel, { type StateLetter } from "./ConformerStatesPanel";
-import WorldPanel, { type WorldPanelProps } from "./WorldPanel";
 import { GroupLabel, SliderRow, TinyText } from "./ui";
 
 // The conformers/selection flyout on the icon tray: reports WHATEVER is selected — a
@@ -52,7 +51,7 @@ export default function SelectionFlyout({
   stateLetters,
   globalAlt,
   onGlobalAlt,
-  world,
+  statesPanel,
   primaryLoaded,
   memberNums,
   memberIndex,
@@ -78,8 +77,9 @@ export default function SelectionFlyout({
   stateLetters: StateLetter[];
   globalAlt: string | null;
   onGlobalAlt: (letter: string | null) => void;
-  /** the hetcif world chooser; null when model A carries no hetcif categories */
-  world: WorldPanelProps | null;
+  /** a module's own states section (module.ts statesPanel), drawn instead of the
+   * conformer-state buttons; null when the preset has no module or it has nothing to show */
+  statesPanel: ReactNode | null;
   primaryLoaded: boolean;
   /** pdbx_PDB_model_num of each ensemble member of model A; length < 2 hides the section */
   memberNums: number[];
@@ -283,8 +283,8 @@ export default function SelectionFlyout({
       )}
 
       <div className="border-t border-line pt-1.5">
-        {world ? (
-          <WorldPanel {...world} densitySampler={densitySampler} fofcSampler={fofcSampler} disabled={!primaryLoaded} />
+        {statesPanel ? (
+          statesPanel
         ) : (
           <>
             <ConformerStatesPanel letters={stateLetters} active={globalAlt} disabled={!primaryLoaded} onChange={onGlobalAlt} />

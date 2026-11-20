@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  describeHeterogeneity,
   hetcifComponents,
   hetcifMarginals,
   hetcifStateRows,
@@ -11,7 +10,8 @@ import {
   hiddenRowsForWorld,
   parseHetcif,
   rowsToSelectors,
-} from "../src/model";
+} from "../src/hetcif";
+import { describeHeterogeneity } from "../src/model";
 import { loadFixture, loadTable } from "./load";
 
 // Contract with the Python package in ~/dev/hetcif: the fixtures are its examples/hetcif
@@ -76,11 +76,13 @@ describe("7a1x_flagship.cif", () => {
     expect(Object.keys(top)).toHaveLength(382);
   });
 
-  it("is exposed through describeHeterogeneity and maps residues to variables", async () => {
+  it("stays out of describeHeterogeneity and maps residues to variables", async () => {
     const file = await loadFixture("7a1x_flagship.cif");
     const d = describeHeterogeneity(file);
-    expect(d.hetcif?.variables.size).toBe(382);
-    const index = buildHetcifRowIndex(d.table!, d.hetcif!);
+    expect("hetcif" in d).toBe(false);
+    const m = parseHetcif(file)!;
+    expect(m.variables.size).toBe(382);
+    const index = buildHetcifRowIndex(d.table!, m);
     expect(index.byResidue.get("A|102|")).toEqual(["A97-102", "A102"]);
     expect(index.byResidue.get("A|99|")).toEqual(["A97-102"]);
   });

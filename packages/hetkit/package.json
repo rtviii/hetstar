@@ -12,6 +12,10 @@
       "types": "./src/metrics/index.ts",
       "default": "./src/metrics/index.ts"
     },
+    "./hetcif": {
+      "types": "./src/hetcif/index.ts",
+      "default": "./src/hetcif/index.ts"
+    },
     "./package.json": "./package.json"
   },
   "peerDependencies": {

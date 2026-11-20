@@ -1,7 +1,7 @@
 // Turns whatever the user typed into an EntryManifest: an RCSB example row, a dpdb id, or one
 // of a few PDB ids we know the dpdb id for.
 
-import { ENTRIES, findEntry, type EntryDef } from "../lab/entries";
+import { ENSEMBLE_ENTRIES, findEntry, type EntryDef } from "../lab/entries";
 import { fetchEntryManifest } from "./client";
 import type { EntryManifest, ManifestModel } from "./types";
 
@@ -13,7 +13,7 @@ export const PDB_ALIASES: Record<string, { dpdb: string; sfBytesHint?: number }>
   "5R8T": { dpdb: "dpdb_eknnmj7a", sfBytesHint: 445e6 }, // PanDDA deposit, unmerged data in the sf-cif
 };
 
-export function knownEntryIds(entries: readonly EntryDef[] = ENTRIES): string[] {
+export function knownEntryIds(entries: readonly EntryDef[] = ENSEMBLE_ENTRIES): string[] {
   return [...entries.map((e) => e.id), ...Object.keys(PDB_ALIASES)];
 }
 
@@ -35,7 +35,7 @@ function manifestFromExample(def: EntryDef): EntryManifest {
   };
 }
 
-export async function resolveEntry(input: string, entries: readonly EntryDef[] = ENTRIES): Promise<EntryManifest> {
+export async function resolveEntry(input: string, entries: readonly EntryDef[] = ENSEMBLE_ENTRIES): Promise<EntryManifest> {
   const id = input.trim();
   const local = findEntry(id, entries);
   if (local) return manifestFromExample(local);

@@ -44,12 +44,9 @@ import {
   planConformers,
   representationRefsForStructure,
   residueIdKey,
-  WORLD_STICKS_TAG,
-  worldStickRanges,
+  MODULE_STICKS_TAG,
   type ResidueRange,
-  type WorldStyle,
 } from "./lib/molstar/conformers";
-import type { WorldPanelProps } from "./components/compare/WorldPanel";
 import { MetricProjector, samplerForVolume, trackToPoints } from "./lib/molstar/project";
 import {
   buildAltGroupExpression,
@@ -131,6 +128,7 @@ import type { BondRow } from "./components/compare/BondList";
 import StyleTray from "./components/compare/StyleTray";
 import { dynamicpdbPreset } from "./presets/dynamicpdb";
 import type { HetstarPreset } from "./presets/types";
+import { useNoModule } from "./module";
 import LociTray from "./components/compare/LociTray";
 import { CARD_SHELL, CardBoundsContext, Spinner, useStoredFlag, type TipContent } from "./components/compare/ui";
 import ModelsSwitchboard from "./components/switchboard/ModelsSwitchboard";
@@ -185,15 +183,8 @@ import {
 import { resolveEntry } from "./lib/dpdb/resolve";
 import { configureDpdb, toFetchableUrl, type DpdbConfig } from "./lib/dpdb/client";
 import {
-  buildHetcifRowIndex,
   buildSequenceModel,
   describeEntry,
-  hetcifMarginals,
-  hetcifStateRows,
-  hetcifTopWorld,
-  hiddenRowsForWorld,
-  parseHetcif,
-  rowsToSelectors,
   isHeavy,
   readSecondaryStructure,
   residueKey,
@@ -496,8 +487,10 @@ export default function HetstarViewer({
   const [hoverInfo, setHoverInfo] = useState<PickInfo | null>(null);
   const [shownConformers, setShownConformers] = useState<ReadonlySet<string>>(new Set());
   const [globalAlt, setGlobalAlt] = useState<string | null>(null);
-  // hetcif world overrides: variable id -> state id the user chose; empty = the top world
-  const [worldChoice, setWorldChoice] = useState<Record<string, string>>({});
+  // the preset's module (module.ts), fixed at mount like the rest of the preset, and its
+  // state for the model on screen, which is the module's to read: undefined = untouched
+  const [useModule] = useState(() => preset.module?.useModule ?? useNoModule);
+  const [moduleState, setModuleState] = useState<unknown>(undefined);
   // individually toggled-off conformers of expanded residues (`${residueKey}|${letter}`);
   // the structure layers, the selection marker and the bonds overlay all subtract them
   const [mutedAlts, setMutedAlts] = useState<ReadonlySet<string>>(new Set());
@@ -523,8 +516,8 @@ export default function HetstarViewer({
   const modelClipRef = useRef<ClipObjectSpec[]>([]);
   const [selRepOverlays, setSelRepOverlays] = useState<SelRepOverlay[]>([]);
   const selRepRefs = useRef(new Map<string, string>());
-  // the world-sticks overlay component (lab-worldsticks), see the hetcif world section
-  const worldSticksRef = useRef<string | null>(null);
+  // the module-sticks overlay component (lab-modulesticks), see the module section
+  const moduleSticksRef = useRef<string | null>(null);
 
   // --- distance measurements ---
   // the armed first atom of a two-click measure; version bumps refresh the count readout
@@ -643,13 +636,13 @@ export default function HetstarViewer({
         memberIndex: number;
         shownConformers: ReadonlySet<string>;
         globalAlt: string | null;
-        worldChoice: Record<string, string>;
+        moduleState: unknown;
         mutedAlts: ReadonlySet<string>;
       }
     >(),
   );
-  const liveModelStateRef = useRef({ memberIndex, shownConformers, globalAlt, worldChoice, mutedAlts });
-  liveModelStateRef.current = { memberIndex, shownConformers, globalAlt, worldChoice, mutedAlts };
+  const liveModelStateRef = useRef({ memberIndex, shownConformers, globalAlt, moduleState, mutedAlts });
+  liveModelStateRef.current = { memberIndex, shownConformers, globalAlt, moduleState, mutedAlts };
   // the member to step back to once the returning model is loaded
   const restoreMemberRef = useRef(0);
   // set once the hooks they belong to exist, further down
@@ -767,7 +760,7 @@ export default function HetstarViewer({
       setHoverInfo(null);
       setShownConformers(new Set());
       setGlobalAlt(null);
-      setWorldChoice({});
+      setModuleState(undefined);
       setMutedAlts(new Set());
       setClip(null);
       setPopup(null);
@@ -780,7 +773,7 @@ export default function HetstarViewer({
       setSelRepOverlays([]);
       selRepRefs.current.clear();
       locusNodesRef.current.clear();
-      worldSticksRef.current = null;
+      moduleSticksRef.current = null;
       setMeasureArm(null);
       setMeasureVersion((v) => v + 1);
       setStatus(null);
@@ -938,77 +931,55 @@ export default function HetstarViewer({
   const altSummary = useMemo(() => (aTable ? summarizeAltlocs(aTable) : null), [aTable]);
   const confPlan = useMemo(() => planConformers(altSummary), [altSummary]);
 
-  // --- hetcif world: one state per variable decides the visible conformers ---
-  // A file with hetcif categories (~/dev/hetcif) names the variables its altlocs belong to
-  // and the joint over them. The viewer shows one world: the most probable by default, with
-  // the user's per-variable or per-group overrides. Residues covered by a variable take
-  // their visibility from the world; the per-residue collapse keeps handling the rest.
-  const hetcifModel = useMemo(() => (aFile ? parseHetcif(aFile) : null), [aFile]);
-  const hetcifIndex = useMemo(
-    () => (hetcifModel && aTable ? buildHetcifRowIndex(aTable, hetcifModel) : null),
-    [hetcifModel, aTable],
-  );
-  const hetcifTop = useMemo(() => (hetcifModel ? hetcifTopWorld(hetcifModel) : null), [hetcifModel]);
-  const hetcifMarg = useMemo(() => (hetcifModel ? hetcifMarginals(hetcifModel) : null), [hetcifModel]);
-  const effectiveWorld = useMemo(() => (hetcifTop ? { ...hetcifTop, ...worldChoice } : null), [hetcifTop, worldChoice]);
-  const worldStyle = useMemo<WorldStyle | undefined>(() => {
-    if (!hetcifModel || !hetcifIndex || !aTable || !effectiveWorld) return undefined;
-    const hidden = rowsToSelectors(aTable, hiddenRowsForWorld(hetcifIndex, effectiveWorld));
-    const accent = new Map<string, AltGroupSelector[]>();
-    for (const vid of Object.keys(worldChoice)) {
-      if (!hetcifModel.variables.has(vid)) continue;
-      const state = effectiveWorld[vid];
-      const rows = hetcifStateRows(hetcifIndex, vid).get(state) ?? [];
-      if (!rows.length) continue;
-      const list = accent.get(state) ?? [];
-      list.push(...rowsToSelectors(aTable, rows));
-      accent.set(state, list);
-    }
-    return { hidden, covered: new Set(hetcifIndex.byResidue.keys()), accent };
-  }, [hetcifModel, hetcifIndex, aTable, effectiveWorld, worldChoice]);
+  // --- the preset's module (module.ts) ---
+  // A module may decide which conformers show on the residues it covers (the collapse engine
+  // takes its override; the per-residue collapse keeps handling the rest) and may put its own
+  // states section in the selection flyout. Without a module all of this is null.
+  const moduleOut = useModule({ file: aFile, table: aTable, state: moduleState, setState: setModuleState });
+  const conformerOverride = moduleOut?.conformers;
 
-  // --- world sticks: the variables' polymer residues as ball-and-stick under a cartoon ---
+  // --- module sticks: the override's polymer residues as ball-and-stick under a cartoon ---
   // Cartoon marks transparency per residue, so the collapse layers skip the polymer trace
-  // (polymerAsTrace) and a world choice on a protein variable would move nothing on screen.
-  // This overlay draws every polymer residue a variable covers as sticks on top of the
+  // (polymerAsTrace) and an override on a protein residue would move nothing on screen.
+  // This overlay draws the polymer residues the module names as sticks on top of the
   // trace; the collapse/accent layers apply to it like to any non-polymer component, so
-  // the chosen state's atoms show and the others vanish. Null when the polymer is not a
-  // trace (the polymer component is sticks itself) or the file has no hetcif variables.
-  const worldSticks = useMemo<ResidueRange[] | null>(() => {
+  // the chosen atoms show and the others vanish. Null when the polymer is not a trace (the
+  // polymer component is sticks itself) or no module names any residue.
+  const moduleStickRanges = moduleOut?.stickRanges;
+  const moduleSticks = useMemo<ResidueRange[] | null>(() => {
     // with the side chains drawn over the trace, every covered residue is sticks already
-    if (!hetcifIndex || !aTable || repStyle.type !== "cartoon" || mainSideChains) return null;
-    const ranges = worldStickRanges(aTable, hetcifIndex);
-    return ranges.length ? ranges : null;
-  }, [hetcifIndex, aTable, repStyle.type, mainSideChains]);
+    if (!moduleStickRanges?.length || repStyle.type !== "cartoon" || mainSideChains) return null;
+    return moduleStickRanges;
+  }, [moduleStickRanges, repStyle.type, mainSideChains]);
 
   useEffect(() => {
     const ctx = viewer?.ctx;
     if (!ctx || !viewer || !primaryLoaded) return;
     const structureRef = viewer.getPrimaryStructureRef();
     if (!structureRef) return;
-    runStyling("worldsticks", async () => {
+    runStyling("modulesticks", async () => {
       if (viewer.getPrimaryStructureRef() !== structureRef) return;
-      if (worldSticksRef.current) {
+      if (moduleSticksRef.current) {
         try {
-          await removeNode(ctx, worldSticksRef.current);
+          await removeNode(ctx, moduleSticksRef.current);
         } catch {
           // died with a tree rebuild
         }
-        worldSticksRef.current = null;
+        moduleSticksRef.current = null;
       }
-      if (!worldSticks) return;
-      const exprs = worldSticks.map((r) => buildResidueQuery(r.chain, r.from, r.to === r.from ? undefined : r.to));
+      if (!moduleSticks) return;
+      const exprs = moduleSticks.map((r) => buildResidueQuery(r.chain, r.from, r.to === r.from ? undefined : r.to));
       const comp = await ctx.builders.structure.tryCreateComponentFromExpression(
         structureRef,
         mergeExpressions(exprs),
-        WORLD_STICKS_TAG,
-        { label: "world sticks", tags: [WORLD_STICKS_TAG] },
+        MODULE_STICKS_TAG,
+        { label: "module sticks", tags: [MODULE_STICKS_TAG] },
       );
       if (!comp) return;
-      worldSticksRef.current = comp.ref;
+      moduleSticksRef.current = comp.ref;
       // thin sticks in the active colour mode (the card look paints them ghost-conformer,
       // so covered residues read purple like their trace); the accent overpaint adds the
-      // letter colour wherever the user moved a variable off the top world
+      // letter colour on the atoms the override sets apart
       const style: RepStyle = { ...repStyleRef.current, type: "ball-and-stick", ballStick: { sizeFactor: SELREP_BALLSTICK_SIZE } };
       const spec = reprSpecForRole("polymer", style, { uniformColor: mainColorRef.current });
       await ctx.builders.structure.representation.addRepresentation(
@@ -1022,9 +993,9 @@ export default function HetstarViewer({
       );
     });
     // colorMode: the sticks follow the model's colour mode, so a mode change rebuilds them
-  }, [viewer, primaryLoaded, worldSticks, repStyle.colorMode, runStyling]);
+  }, [viewer, primaryLoaded, moduleSticks, repStyle.colorMode, runStyling]);
 
-  // --- side chains over the trace ("cartoon + side chains"): an overlay like the world
+  // --- side chains over the trace ("cartoon + side chains"): an overlay like the module
   // sticks, over every side chain of the polymer. Declared before the conformer layers, which
   // collapse and accent it like any non-trace component.
 
@@ -1059,15 +1030,15 @@ export default function HetstarViewer({
         polymerAsTrace: repStyle.type === "cartoon",
         // a metric painted on the model is read at full strength: no per-count fade under it
         polymerFade: repStyle.colorMode === "conformer" && !structurePaint,
-        world: worldStyle,
+        override: conformerOverride,
       });
     });
     // memberIndex: a frame scrub rebuilds the structure in place, dropping the layers;
     // aSplit: a component rebuild drops them too; repStyle.type: cartoon excludes the
     // polymer from the collapse layers, so a type switch re-applies them;
-    // selRepOverlays / worldSticks / mainSideChains: a fresh overlay component needs the layers applied to it;
+    // selRepOverlays / moduleSticks / mainSideChains: a fresh overlay component needs the layers applied to it;
     // colorMode/structurePaint: the card look's per-count transparency is one of these layers
-  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, mutedAlts, worldStyle, memberIndex, aSplit, repStyle.type, repStyle.colorMode, structurePaint, selRepOverlays, worldSticks, mainSideChains, runStyling]);
+  }, [viewer, primaryLoaded, confPlan, shownConformers, globalAlt, mutedAlts, conformerOverride, memberIndex, aSplit, repStyle.type, repStyle.colorMode, structurePaint, selRepOverlays, moduleSticks, mainSideChains, runStyling]);
 
   // --- representation style: in-place state-tree updates on the main view's model ---
 
@@ -1110,7 +1081,7 @@ export default function HetstarViewer({
       }
       setMainRevealed(true);
     });
-  }, [viewer, primaryLoaded, mainVisible, mainHet, mainIons, aSplit, selRepOverlays, worldSticks, mainSideChains, memberIndex, runStyling]);
+  }, [viewer, primaryLoaded, mainVisible, mainHet, mainIons, aSplit, selRepOverlays, moduleSticks, mainSideChains, memberIndex, runStyling]);
 
   // --- the other models in the main scene: each a ghost unless its card gives it a look,
   // each shown or hidden on its own. Built on first showing, kept until the entry changes.
@@ -1209,8 +1180,8 @@ export default function HetstarViewer({
   // hover asks at pointer rate.
 
   const hiddenSelectors = useMemo(
-    () => hiddenConformerSelectors(confPlan, { shown: shownConformers, globalAlt, muted: mutedAlts, world: worldStyle }),
-    [confPlan, shownConformers, globalAlt, mutedAlts, worldStyle],
+    () => hiddenConformerSelectors(confPlan, { shown: shownConformers, globalAlt, muted: mutedAlts, override: conformerOverride }),
+    [confPlan, shownConformers, globalAlt, mutedAlts, conformerOverride],
   );
   const hiddenLociCacheRef = useRef<{
     structure: Structure;
@@ -2413,7 +2384,7 @@ export default function HetstarViewer({
     setPopup(null);
     setShownConformers(new Set());
     setGlobalAlt(null);
-    setWorldChoice({});
+    setModuleState(undefined);
     setMutedAlts(new Set());
     setBaseStyle(sanitizeRepStyle(null, preset.repStyle));
     if (mainModelId) {
@@ -2463,7 +2434,7 @@ export default function HetstarViewer({
       setMemberIndex(0);
       setShownConformers(kept?.shownConformers ?? new Set());
       setGlobalAlt(kept?.globalAlt ?? null);
-      setWorldChoice(kept?.worldChoice ?? {});
+      setModuleState(kept?.moduleState);
       setMutedAlts(kept?.mutedAlts ?? new Set());
       setPopup(null);
       setHoverInfo(null);
@@ -2473,7 +2444,7 @@ export default function HetstarViewer({
       bondWatersReprRef.current = null;
       selRepRefs.current.clear();
       locusNodesRef.current.clear();
-      worldSticksRef.current = null;
+      moduleSticksRef.current = null;
       // the nodes at the root that were built from the old model's atoms go first; the swap
       // itself follows on the same queue (MolstarViewer's schedule), once the new text is set
       runStyling("switch-main", async () => {
@@ -2962,35 +2933,6 @@ export default function HetstarViewer({
     }));
   }, [altSummary]);
 
-  // variables touching the selected residues, in file order (the world panel's rows)
-  const selectedVariables = useMemo(() => {
-    if (!hetcifIndex || !aTable || !residueRanges.length) return [];
-    const out: string[] = [];
-    for (const res of aTable.residues) {
-      const inSel = residueRanges.some((r) => r.chain === res.ref.chain && res.ref.seq >= r.from && res.ref.seq <= r.to);
-      if (!inSel) continue;
-      for (const vid of hetcifIndex.byResidue.get(residueKey(res.ref)) ?? []) if (!out.includes(vid)) out.push(vid);
-    }
-    return out;
-  }, [hetcifIndex, aTable, residueRanges]);
-
-  const worldPanel = useMemo<WorldPanelProps | null>(() => {
-    if (!hetcifModel || !hetcifIndex || !aTable || !hetcifMarg || !hetcifTop || !effectiveWorld) return null;
-    const overridden = new Set(Object.keys(worldChoice).filter((v) => worldChoice[v] !== hetcifTop[v]));
-    return {
-      model: hetcifModel,
-      table: aTable,
-      index: hetcifIndex,
-      marginals: hetcifMarg,
-      world: effectiveWorld,
-      overridden,
-      selectedVariables,
-      onChoose: (v: string, st: string) => setWorldChoice((prev) => ({ ...prev, [v]: st })),
-      onChooseMany: (states: Record<string, string>) => setWorldChoice((prev) => ({ ...prev, ...states })),
-      onReset: () => setWorldChoice({}),
-    };
-  }, [hetcifModel, hetcifIndex, aTable, hetcifMarg, hetcifTop, effectiveWorld, worldChoice, selectedVariables]);
-
   // --- sequence lanes: the structure-sequence bridge ---
   // The deposited file carries the polymer scheme (SEQRES with author numbering) and the
   // secondary-structure records; qFit output has neither. So the deposited file frames the
@@ -3191,7 +3133,9 @@ export default function HetstarViewer({
       stateLetters={stateLetters}
       globalAlt={globalAlt}
       onGlobalAlt={setGlobalAlt}
-      world={worldPanel}
+      statesPanel={
+        moduleOut?.statesPanel?.({ selection: residueRanges, densitySampler, fofcSampler, disabled: !primaryLoaded }) ?? null
+      }
       primaryLoaded={primaryLoaded}
       memberNums={ensembleInfo?.modelNums ?? []}
       memberIndex={memberIndex}
@@ -3326,7 +3270,7 @@ export default function HetstarViewer({
                 onShowDensity={setShowDensity}
                 densityFlyout={densityFlyout}
                 selectionFlyout={selectionFlyout}
-                selectionFlyoutWidth={worldPanel ? 480 : 300}
+                selectionFlyoutWidth={moduleOut?.statesPanel ? (moduleOut.statesPanelWidth ?? 300) : 300}
                 boardOpen={colorBoard.open}
                 onBoard={openColor}
               />
